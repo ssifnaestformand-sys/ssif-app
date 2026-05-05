@@ -2,14 +2,12 @@
 header('Access-Control-Allow-Origin: *');
 header('Content-Type: application/json');
 
-$email = $_POST['Email'] ?? 'IKKE MODTAGET';
-$password = $_POST['Adgangskode'] ?? 'IKKE MODTAGET';
-
 $data = http_build_query([
     'Version' => '2',
-    'Log_ind_med' => 'email',
-    'Email' => $email,
-    'Adgangskode' => $password,
+    'Log_ind_med' => 'mobil',
+    'Mobil' => '22391328',
+    'Mobil_land_alpha2' => 'DK',
+    'Adgangskode' => 'vmna44',
     'Foreningsid' => '1031'
 ]);
 
@@ -21,9 +19,5 @@ curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
 $result = curl_exec($ch);
 curl_close($ch);
 
-echo json_encode([
-    'debug_email' => $email,
-    'debug_password' => $password,
-    'conventus_svar' => json_decode($result)
-]);
+echo $result;
 ?>
