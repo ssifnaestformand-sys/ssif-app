@@ -9,7 +9,8 @@ curl_setopt($ch, CURLOPT_POSTFIELDS, [
     'Log_ind_med' => 'email',
     'Email' => $_POST['Email'],
     'Adgangskode' => $_POST['Adgangskode'],
-    'Foreningsid' => '1031'
+    'Foreningsid' => '1031',
+    'Key' => '1284bc2a4f61c8a72da715573b80acdd7043bb4f8c58d2c359ae77c0807964b3'
 ]);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
