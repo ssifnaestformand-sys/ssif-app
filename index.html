@@ -1,12 +1,26 @@
 <!DOCTYPE html>
 <html lang="da">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SSIF App</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#1a5c2a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="SSIF" />
+  <meta name="description" content="Officiel app for Sejs-Svejbæk IF" />
+  <link rel="manifest" href="/app/manifest.json" />
+  <link rel="apple-touch-icon" href="/app/icon-192.png" />
+  <title>SSIF App</title>
 </head>
 <body>
-    <h1>Hej Sejs-Svejbæk IF! 👋</h1>
-    <p>App kommer her snart... 🚀</p>
+  <div id="root"></div>
+  <script type="module" src="/src/main.jsx"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/app/sw.js', { scope: '/app/' })
+      })
+    }
+  </script>
 </body>
 </html>
