@@ -137,7 +137,7 @@ function HoldPill({ holdId }) {
 
 // ─── Login ────────────────────────────────────────────────────────────────────
 
-function LoginPage() {
+function LoginPage({ onDemoLogin }) {
   const [email, setEmail] = useState('')
   const [sent, setSent] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -193,8 +193,23 @@ function LoginPage() {
             </button>
           </form>
         )}
-        <p style={{ marginTop: 20, fontSize: 12, color: 'var(--text3)', textAlign: 'center' }}>
-          Du logger ind med et enganglink — ingen adgangskode nødvendig.
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '18px 0', color: 'var(--text3)', fontSize: 12 }}>
+          <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+          eller
+          <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+        </div>
+
+        <button
+          className="btn btn-ghost"
+          style={{ width: '100%', height: 42, fontSize: 14 }}
+          onClick={onDemoLogin}
+        >
+          Demo adgang (admin)
+        </button>
+
+        <p style={{ marginTop: 16, fontSize: 12, color: 'var(--text3)', textAlign: 'center' }}>
+          Demo-tilstand bruger ikke rigtige data og gemmer ingenting.
         </p>
       </div>
     </div>
@@ -219,7 +234,7 @@ function UnauthorizedPage({ user }) {
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 
-function Sidebar({ page, setPage, userDoc, user }) {
+function Sidebar({ page, setPage, userDoc, user, onLogout }) {
   const nav = [
     { id: 'dashboard', label: 'Dashboard',  icon: 'home'    },
     { id: 'messages',  label: 'Beskeder',   icon: 'message' },
@@ -259,7 +274,7 @@ function Sidebar({ page, setPage, userDoc, user }) {
             </div>
           </div>
         </div>
-        <button className="nav-item nav-item-logout" onClick={() => signOut(auth)}>
+        <button className="nav-item nav-item-logout" onClick={onLogout}>
           <Icon name="logout" size={15} color="currentColor" />
           Log ud
         </button>
@@ -1379,6 +1394,9 @@ function UsersPage({ authUser }) {
 
 // ─── Root App ─────────────────────────────────────────────────────────────────
 
+const DEMO_AUTH_USER = { uid: 'demo-uid', email: 'demo@ssif.dk', displayName: 'Demo Admin' }
+const DEMO_USER_DOC  = { id: 'demo-uid', email: 'demo@ssif.dk', displayName: 'Demo Admin', role: 'admin', holds: [] }
+
 const PAGE_TITLES = {
   dashboard: 'Dashboard',
   messages:  'Beskeder',
@@ -1392,6 +1410,20 @@ export default function AdminApp() {
   const [authUser, setAuthUser] = useState(undefined)
   const [userDoc, setUserDoc]   = useState(null)
   const [page, setPage]         = useState('dashboard')
+  const isDemoMode              = useRef(false)
+
+  function handleDemoLogin() {
+    isDemoMode.current = true
+    setAuthUser(DEMO_AUTH_USER)
+    setUserDoc(DEMO_USER_DOC)
+  }
+
+  function handleLogout() {
+    isDemoMode.current = false
+    setAuthUser(null)
+    setUserDoc(null)
+    signOut(auth).catch(() => {})
+  }
 
   useEffect(() => {
     if (isSignInWithEmailLink(auth, window.location.href)) {
@@ -1410,6 +1442,7 @@ export default function AdminApp() {
 
   useEffect(() => {
     return onAuthStateChanged(auth, async fbUser => {
+      if (isDemoMode.current) return   // Demo-tilstand — ignorer Firebase events
       if (!fbUser) {
         setAuthUser(null)
         setUserDoc(null)
@@ -1437,7 +1470,7 @@ export default function AdminApp() {
   }, [])
 
   if (authUser === undefined) return <LoadingScreen />
-  if (!authUser)              return <LoginPage />
+  if (!authUser)              return <LoginPage onDemoLogin={handleDemoLogin} />
   if (!userDoc?.role)         return <UnauthorizedPage user={authUser} />
 
   function renderPage() {
@@ -1457,7 +1490,7 @@ export default function AdminApp() {
 
   return (
     <div className="admin-shell">
-      <Sidebar page={page} setPage={setPage} userDoc={userDoc} user={authUser} />
+      <Sidebar page={page} setPage={setPage} userDoc={userDoc} user={authUser} onLogout={handleLogout} />
       <div className="admin-main">
         <header className="admin-topbar">
           <span className="topbar-title">{PAGE_TITLES[page]}</span>

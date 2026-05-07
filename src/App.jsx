@@ -1184,6 +1184,58 @@ export default function App() {
     try { await signOut(auth) } catch {}
   }
 
+  // ── Conventus: sync holds efter login ────────────────────────────────────
+  useEffect(() => {
+    if (!user?.uid || user.isDemo) return
+
+    // Hent brugerens holds fra Conventus (kun første gang eller ved sync)
+    async function syncConventusHolds() {
+      try {
+        // Kald PHP proxy
+        const res = await fetch('/app/public/api/conventus.php')
+        if (!res.ok) throw new Error('Conventus API proxy failed')
+        
+        const data = await res.json()
+        if (!data.medlemmer || !Array.isArray(data.medlemmer)) {
+          console.warn('Unexpected Conventus response format')
+          return
+        }
+
+        // Find bruger baseret på email
+        const medlem = data.medlemmer.find(m => 
+          m.email && m.email.toLowerCase() === user.email.toLowerCase()
+        )
+
+        if (!medlem) {
+          console.warn('User email not found in Conventus members list')
+          return
+        }
+
+        // Gem holds/relationer i Firestore
+        const holds = medlem.relationer && Array.isArray(medlem.relationer)
+          ? medlem.relationer.map(rel => ({
+              id: rel.id || rel.hold_id,
+              name: rel.name || rel.hold_navn,
+              role: rel.role || rel.stilling || 'Medlem',
+            }))
+          : []
+
+        await updateDoc(doc(db, 'users', user.uid), {
+          conventusId: medlem.id,
+          conventusEmail: medlem.email,
+          holds: holds,
+          conventusLastSync: serverTimestamp(),
+        })
+
+        console.log('Conventus holds synced:', holds.length)
+      } catch (err) {
+        console.error('Failed to sync Conventus holds:', err)
+      }
+    }
+
+    syncConventusHolds()
+  }, [user?.uid])
+
   // ── Render guards ─────────────────────────────────────────────────────────
 
   // Splash while Firebase checks existing session or processes magic link
