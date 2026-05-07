@@ -1,5 +1,5 @@
 const CACHE = 'ssif-v2'
-const PRECACHE = ['/', '/index.html']
+const PRECACHE = ['/app/', '/app/index.html']
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(PRECACHE)))
