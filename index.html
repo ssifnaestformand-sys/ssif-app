@@ -8,8 +8,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="SSIF" />
   <meta name="description" content="Officiel app for Sejs-Svejbæk IF" />
-  <link rel="manifest" href="/app/manifest.json" />
-  <link rel="apple-touch-icon" href="/app/icon-192.png" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/icon-192.png" />
   <title>SSIF App</title>
 </head>
 <body>
@@ -18,7 +18,7 @@
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/app/sw.js', { scope: '/app/' })
+        navigator.serviceWorker.register('/sw.js', { scope: '/' })
       })
     }
   </script>
