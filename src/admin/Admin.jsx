@@ -731,82 +731,229 @@ function NewsPage({ userDoc, authUser }) {
 
 // ─── Teams ────────────────────────────────────────────────────────────────────
 
-const TEAMS_DETAIL = {
-  'u6':       { coach: 'Lars Jensen',          phone: '50 12 34 56', members: 14, record: [5,1,0] },
-  'u8':       { coach: 'Maria Christensen',    phone: '40 23 45 67', members: 16, record: [5,0,1] },
-  'u10':      { coach: 'Søren Andersen',       phone: '30 34 56 78', members: 18, record: [4,2,1] },
-  'u12':      { coach: 'Peter Nielsen',        phone: '20 45 67 89', members: 20, record: [6,1,2] },
-  'u14':      { coach: 'Thomas Hansen',        phone: '61 56 78 90', members: 17, record: [4,3,2] },
-  'u16':      { coach: 'Mette Larsen',         phone: '71 67 89 01', members: 15, record: [7,1,0] },
-  'herrer-a': { coach: 'Ole Svendsen',         phone: '81 78 90 12', members: 22, record: [8,2,2] },
-  'herrer-b': { coach: 'Mikkel Pedersen',      phone: '91 89 01 23', members: 18, record: [5,4,3] },
-  'damer':    { coach: 'Anne-Mette Sørensen',  phone: '42 90 12 34', members: 16, record: [6,2,1] },
-}
+function TeamsPage({ userDoc, authUser }) {
+  const [loading, setLoading]         = useState(true)
+  const [error, setError]             = useState(null)
+  const [groups, setGroups]           = useState([])
+  const [fsData, setFsData]           = useState({})   // groupId → Firestore doc
+  const [saving, setSaving]           = useState(null)
+  const [expandedId, setExpandedId]   = useState(null)
+  const [coachForm, setCoachForm]     = useState({ coach: '', coachPhone: '' })
 
-function TeamsPage({ userDoc }) {
-  const visibleTeams = getVisibleTeams(userDoc)
-  const youth  = visibleTeams.filter(t => t.category === 'Ungdom')
-  const senior = visibleTeams.filter(t => t.category === 'Senior')
-
-  function TeamSection({ title, teams }) {
-    return (
-      <>
-        <h3 style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.5px', color: 'var(--text2)', margin: '20px 0 10px' }}>
-          {title}
-        </h3>
-        <div className="card">
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Hold</th>
-                  <th>Træner</th>
-                  <th>Telefon</th>
-                  <th>Spillere</th>
-                  <th>S</th><th>U</th><th>N</th>
-                  <th>Point</th>
-                </tr>
-              </thead>
-              <tbody>
-                {teams.map(t => {
-                  const d = TEAMS_DETAIL[t.id]
-                  const [w, dr, l] = d?.record ?? [0,0,0]
-                  return (
-                    <tr key={t.id}>
-                      <td><span style={{ fontWeight: 700 }}>{t.name}</span></td>
-                      <td>{d?.coach ?? '–'}</td>
-                      <td style={{ color: 'var(--text2)', fontSize: 12 }}>{d?.phone ?? '–'}</td>
-                      <td>
-                        <span className="badge badge-gray">{d?.members ?? '–'}</span>
-                      </td>
-                      <td style={{ color: '#166534', fontWeight: 600 }}>{w}</td>
-                      <td style={{ color: '#92400e', fontWeight: 600 }}>{dr}</td>
-                      <td style={{ color: '#991b1b', fontWeight: 600 }}>{l}</td>
-                      <td style={{ fontWeight: 700 }}>{w * 3 + dr}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </>
-    )
+  async function loadConventus() {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch('holds.php')
+      if (!res.ok) throw new Error(res.statusText)
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      setGroups(data.groups ?? [])
+    } catch (e) {
+      setError('Kunne ikke hente data fra Conventus: ' + e.message)
+    } finally {
+      setLoading(false)
+    }
   }
+
+  useEffect(() => {
+    loadConventus()
+    // Hent ekstra info gemt i Firestore (træner, vis-i-app)
+    getDocs(collection(db, 'holds')).then(snap => {
+      const map = {}
+      snap.docs.forEach(d => { map[d.id] = d.data() })
+      setFsData(map)
+    })
+  }, [])
+
+  async function toggleShowInApp(group, value) {
+    setSaving(group.id + '-toggle')
+    const ref = doc(db, 'holds', String(group.id))
+    await setDoc(ref, {
+      conventusId:      group.id,
+      name:             group.name,
+      activityTypeId:   group.activityTypeId,
+      activityTypeName: group.activityTypeName,
+      showInApp:        value,
+    }, { merge: true })
+    setFsData(prev => ({ ...prev, [group.id]: { ...prev[group.id], showInApp: value } }))
+    setSaving(null)
+  }
+
+  function openCoachEditor(group) {
+    const fs = fsData[group.id] ?? {}
+    setCoachForm({ coach: fs.coach ?? '', coachPhone: fs.coachPhone ?? '' })
+    setExpandedId(group.id)
+  }
+
+  async function saveCoach(group) {
+    setSaving(group.id + '-coach')
+    const ref = doc(db, 'holds', String(group.id))
+    await setDoc(ref, {
+      conventusId:      group.id,
+      name:             group.name,
+      activityTypeId:   group.activityTypeId,
+      activityTypeName: group.activityTypeName,
+      coach:            coachForm.coach,
+      coachPhone:       coachForm.coachPhone,
+      updatedAt:        serverTimestamp(),
+      updatedBy:        authUser.uid,
+    }, { merge: true })
+    setFsData(prev => ({
+      ...prev,
+      [group.id]: { ...prev[group.id], coach: coachForm.coach, coachPhone: coachForm.coachPhone },
+    }))
+    setSaving(null)
+    setExpandedId(null)
+  }
+
+  // Rollefilter: træner ser kun tildelte hold
+  let visible = groups
+  if (userDoc?.role !== 'admin' && userDoc?.holds?.length) {
+    const mine = new Set(userDoc.holds.map(String))
+    visible = groups.filter(g => mine.has(String(g.id)))
+  }
+
+  // Gruppér efter idrætgren
+  const byType = {}
+  visible.forEach(g => {
+    const t = g.activityTypeName
+    if (!byType[t]) byType[t] = []
+    byType[t].push(g)
+  })
+  const typeNames = Object.keys(byType).sort()
 
   return (
     <>
       <div className="page-header">
         <h1 className="page-title">Hold</h1>
-        <span className="text-muted" style={{ fontSize: 13 }}>
-          {visibleTeams.length} hold vises
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span className="text-muted" style={{ fontSize: 13 }}>
+            {visible.length} hold fra Conventus
+          </span>
+          <button className="btn btn-ghost btn-sm" onClick={loadConventus} disabled={loading}>
+            <Icon name="link" size={13} />
+            {loading ? 'Henter…' : 'Opdatér fra Conventus'}
+          </button>
+        </div>
       </div>
-      {youth.length  > 0 && <TeamSection title="Ungdom" teams={youth} />}
-      {senior.length > 0 && <TeamSection title="Senior" teams={senior} />}
-      {visibleTeams.length === 0 && (
-        <EmptyState icon="users" text="Du er ikke tilknyttet nogen hold endnu" />
+
+      {error && (
+        <div className="alert-warn" style={{ marginBottom: 16 }}>{error}</div>
       )}
+
+      {loading ? (
+        <div className="card"><div className="loading-dots"><span/><span/><span/></div></div>
+      ) : visible.length === 0 ? (
+        <EmptyState icon="users" text="Ingen hold fundet" />
+      ) : (
+        typeNames.map(typeName => (
+          <div key={typeName} style={{ marginBottom: 24 }}>
+            <h3 style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase',
+                         letterSpacing: '.5px', color: 'var(--text2)', margin: '0 0 8px' }}>
+              {typeName} <span style={{ fontWeight: 400 }}>({byType[typeName].length})</span>
+            </h3>
+            <div className="card">
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Holdnavn</th>
+                      <th>Conventus-ID</th>
+                      <th>Træner</th>
+                      <th>Telefon</th>
+                      <th style={{ textAlign: 'center' }}>Vis i app</th>
+                      <th style={{ width: 80 }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {byType[typeName].map(g => {
+                      const fs = fsData[g.id] ?? {}
+                      const isExpanded = expandedId === g.id
+                      return (
+                        <>
+                          <tr key={g.id} style={{ background: isExpanded ? 'var(--bg)' : undefined }}>
+                            <td style={{ fontWeight: 600 }}>{g.name}</td>
+                            <td style={{ color: 'var(--text3)', fontFamily: 'monospace', fontSize: 12 }}>
+                              {g.id}
+                            </td>
+                            <td style={{ color: fs.coach ? 'var(--text)' : 'var(--text3)' }}>
+                              {fs.coach || '–'}
+                            </td>
+                            <td style={{ color: 'var(--text2)', fontSize: 12 }}>
+                              {fs.coachPhone || '–'}
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <input
+                                type="checkbox"
+                                checked={fs.showInApp ?? false}
+                                disabled={saving === g.id + '-toggle'}
+                                onChange={e => toggleShowInApp(g, e.target.checked)}
+                                style={{ accentColor: 'var(--green)', width: 16, height: 16, cursor: 'pointer' }}
+                              />
+                            </td>
+                            <td>
+                              <button
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => isExpanded ? setExpandedId(null) : openCoachEditor(g)}
+                              >
+                                <Icon name="edit" size={12} />
+                                {isExpanded ? 'Luk' : 'Rediger'}
+                              </button>
+                            </td>
+                          </tr>
+                          {isExpanded && (
+                            <tr key={g.id + '-edit'}>
+                              <td colSpan={6} style={{ padding: '14px 16px', background: 'var(--bg)', borderBottom: '2px solid var(--border)' }}>
+                                <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                                  <div className="form-group" style={{ marginBottom: 0, flex: '1 1 200px' }}>
+                                    <label className="form-label">Træner</label>
+                                    <input
+                                      className="form-control"
+                                      value={coachForm.coach}
+                                      onChange={e => setCoachForm(f => ({ ...f, coach: e.target.value }))}
+                                      placeholder="Navn"
+                                    />
+                                  </div>
+                                  <div className="form-group" style={{ marginBottom: 0, flex: '1 1 160px' }}>
+                                    <label className="form-label">Telefon</label>
+                                    <input
+                                      className="form-control"
+                                      value={coachForm.coachPhone}
+                                      onChange={e => setCoachForm(f => ({ ...f, coachPhone: e.target.value }))}
+                                      placeholder="xx xx xx xx"
+                                    />
+                                  </div>
+                                  <div style={{ display: 'flex', gap: 8 }}>
+                                    <button
+                                      className="btn btn-primary btn-sm"
+                                      disabled={saving === g.id + '-coach'}
+                                      onClick={() => saveCoach(g)}
+                                    >
+                                      {saving === g.id + '-coach' ? 'Gemmer…' : 'Gem'}
+                                    </button>
+                                    <button className="btn btn-ghost btn-sm" onClick={() => setExpandedId(null)}>
+                                      Annuller
+                                    </button>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        ))
+      )}
+
+      <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: 8 }}>
+        Data hentes live fra Conventus. "Vis i app" og træneroplysninger gemmes i Firestore.
+      </p>
     </>
   )
 }
@@ -1071,7 +1218,7 @@ export default function AdminApp() {
       case 'dashboard': return <DashboardPage userDoc={userDoc} />
       case 'messages':  return <MessagesPage  userDoc={userDoc} authUser={authUser} />
       case 'news':      return <NewsPage       userDoc={userDoc} authUser={authUser} />
-      case 'teams':     return <TeamsPage      userDoc={userDoc} />
+      case 'teams':     return <TeamsPage      userDoc={userDoc} authUser={authUser} />
       case 'users':
         return userDoc.role === 'admin'
           ? <UsersPage authUser={authUser} />
