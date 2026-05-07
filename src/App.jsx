@@ -45,7 +45,7 @@ function Icon({ name, size = 24, color = 'currentColor', sw = 1.75 }) {
 // ─── Dummy Data (fallback) ────────────────────────────────────────────────────
 
 const DEMO_USER = {
-  name: 'Lars Thomsen',
+  name: 'Lars Thoomsen',
   firstName: 'Lars',
   email: 'lars@demo.dk',
   team: 'Herrer A',
