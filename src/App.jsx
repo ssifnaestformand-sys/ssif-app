@@ -1,10 +1,14 @@
 import { useState, useRef, useEffect } from 'react'
 import './App.css'
 import { auth, db } from './firebase.js'
-import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth'
+import {
+  sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink,
+  signOut, onAuthStateChanged,
+} from 'firebase/auth'
 import {
   collection, query, orderBy, onSnapshot,
   addDoc, serverTimestamp, limit,
+  doc, getDoc, setDoc,
 } from 'firebase/firestore'
 
 // ─── Icons ──────────────────────────────────────────────────────────────────
@@ -155,16 +159,27 @@ const MATCHES = [
   { id: 5, team: 'Damer',    opponent: 'Them IF',      date: 'Ons 14. maj', time: '18:00', isHome: false },
 ]
 
+// ─── Firebase config ──────────────────────────────────────────────────────────
+
+const ACTION_CODE_SETTINGS = {
+  url: 'https://app.sejssvejbaek-if.dk',
+  handleCodeInApp: true,
+}
+
+const LS_EMAIL_KEY = 'ssif_email_for_signin'
+
 // ─── Firebase error codes → Danish messages ──────────────────────────────────
 
 const AUTH_ERRORS = {
-  'auth/user-not-found':     'Ingen bruger med denne email.',
-  'auth/wrong-password':     'Forkert adgangskode.',
-  'auth/invalid-email':      'Ugyldig email-adresse.',
-  'auth/invalid-credential': 'Forkert email eller adgangskode.',
-  'auth/too-many-requests':  'For mange forsøg. Prøv igen om lidt.',
-  'auth/user-disabled':      'Denne konto er deaktiveret.',
-  'auth/network-request-failed': 'Ingen netværksforbindelse.',
+  'auth/user-not-found':           'Ingen bruger med denne email.',
+  'auth/invalid-email':            'Ugyldig email-adresse.',
+  'auth/invalid-credential':       'Forkert email eller adgangskode.',
+  'auth/too-many-requests':        'For mange forsøg. Prøv igen om lidt.',
+  'auth/user-disabled':            'Denne konto er deaktiveret.',
+  'auth/network-request-failed':   'Ingen netværksforbindelse.',
+  'auth/invalid-action-code':      'Linket er ugyldigt. Anmod om et nyt.',
+  'auth/expired-action-code':      'Linket er udløbet. Anmod om et nyt.',
+  'auth/invalid-email-link':       'Ugyldigt login-link.',
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -199,67 +214,104 @@ function FirestoreDot({ live }) {
   return <span className="firestore-dot" title="Live fra Firebase" />
 }
 
-// ─── Splash (auth check) ──────────────────────────────────────────────────────
+// ─── Splash ───────────────────────────────────────────────────────────────────
 
-function SplashScreen() {
+function SplashScreen({ label }) {
   return (
     <div className="splash-screen">
       <div className="splash-logo">SSIF</div>
       <div className="spinner spinner--white" />
+      {label && <p className="splash-label">{label}</p>}
     </div>
   )
 }
 
-// ─── Login ────────────────────────────────────────────────────────────────────
+// ─── Login (Magic Link) ───────────────────────────────────────────────────────
 
-function LoginScreen({ onDemoLogin }) {
-  const [email, setEmail]       = useState('')
-  const [password, setPassword] = useState('')
-  const [loading, setLoading]   = useState(false)
-  const [error, setError]       = useState('')
+function LoginScreen({ onDemoLogin, initialError }) {
+  const [email, setEmail] = useState(localStorage.getItem(LS_EMAIL_KEY) || '')
+  const [phase, setPhase] = useState(initialError ? 'error' : 'idle')
+  // phase: 'idle' | 'sending' | 'sent' | 'error'
+  const [error, setError] = useState(initialError || '')
 
   async function handleSubmit(e) {
     e.preventDefault()
-    if (!email || !password) { setError('Udfyld email og adgangskode'); return }
-    setLoading(true)
+    if (!email) { setError('Indtast din email'); setPhase('error'); return }
+    setPhase('sending')
     setError('')
     try {
-      await signInWithEmailAndPassword(auth, email, password)
-      // onAuthStateChanged i App håndterer bruger-state automatisk
+      await sendSignInLinkToEmail(auth, email, ACTION_CODE_SETTINGS)
+      localStorage.setItem(LS_EMAIL_KEY, email)
+      setPhase('sent')
     } catch (err) {
-      setError(AUTH_ERRORS[err.code] || 'Login fejlede. Prøv igen.')
-    } finally {
-      setLoading(false)
+      setError(AUTH_ERRORS[err.code] || 'Kunne ikke sende link. Prøv igen.')
+      setPhase('error')
     }
   }
 
+  // ── Sent confirmation ────────────────────────────────────────────────────
+  if (phase === 'sent') {
+    return (
+      <div className="login-screen">
+        <div className="magic-sent">
+          <div className="magic-sent-icon">
+            <Icon name="mail" size={40} color="var(--green)" />
+          </div>
+          <h2 className="magic-sent-title">Tjek din email!</h2>
+          <p className="magic-sent-body">
+            Vi har sendt et login-link til
+          </p>
+          <p className="magic-sent-email">{email}</p>
+          <p className="magic-sent-hint">
+            Klik linket i emailen for at logge ind.
+            Linket er gyldigt i 1 time.
+          </p>
+          <a className="btn btn-primary btn-full" href="mailto:">
+            Åbn mail-app
+          </a>
+          <button
+            className="magic-resend"
+            onClick={() => { setPhase('idle'); setError('') }}
+          >
+            Ikke modtaget? Send nyt link
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Email input ──────────────────────────────────────────────────────────
   return (
     <div className="login-screen">
       <div className="login-top">
         <div className="login-logo"><span>SSIF</span></div>
         <h1 className="login-club">Sejs-Svejbæk IF</h1>
-        <p className="login-subtitle">Medlemsapp</p>
+        <p className="login-subtitle">Log ind uden adgangskode</p>
       </div>
 
       <form className="login-form" onSubmit={handleSubmit}>
         <div className="input-group">
           <div className="input-row">
             <span className="input-icon"><Icon name="mail" size={18} color="var(--text3)" /></span>
-            <input className="input-field" type="email" placeholder="Email" autoComplete="email"
-              value={email} onChange={e => setEmail(e.target.value)} />
-          </div>
-          <div className="input-separator" />
-          <div className="input-row">
-            <span className="input-icon"><Icon name="lock" size={18} color="var(--text3)" /></span>
-            <input className="input-field" type="password" placeholder="Adgangskode" autoComplete="current-password"
-              value={password} onChange={e => setPassword(e.target.value)} />
+            <input
+              className="input-field"
+              type="email"
+              placeholder="Din email"
+              autoComplete="email"
+              autoFocus
+              value={email}
+              onChange={e => { setEmail(e.target.value); setPhase('idle'); setError('') }}
+            />
           </div>
         </div>
 
         {error && <p className="login-error">{error}</p>}
 
-        <button className="btn btn-primary btn-full" type="submit" disabled={loading}>
-          {loading ? <span className="spinner" /> : 'Log ind med Firebase'}
+        <button className="btn btn-primary btn-full" type="submit" disabled={phase === 'sending'}>
+          {phase === 'sending'
+            ? <span className="spinner" />
+            : <><Icon name="mail" size={17} color="white" sw={2} />&nbsp; Send magic link</>
+          }
         </button>
 
         <div className="login-divider"><span>eller</span></div>
@@ -269,7 +321,59 @@ function LoginScreen({ onDemoLogin }) {
         </button>
       </form>
 
-      <p className="login-hint">Firebase Authentication · Sejs-Svejbæk IF</p>
+      <p className="login-hint">
+        Vi sender et link til din email – ingen adgangskode nødvendig
+      </p>
+    </div>
+  )
+}
+
+// ─── Needs-email screen (magic link åbnet på anden enhed) ────────────────────
+
+function NeedsEmailScreen({ onSubmit, onCancel }) {
+  const [email, setEmail]   = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError]   = useState('')
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    if (!email) { setError('Indtast din email'); return }
+    setLoading(true)
+    setError('')
+    try {
+      await onSubmit(email)
+    } catch (err) {
+      setError(AUTH_ERRORS[err.code] || 'Ugyldigt link. Anmod om et nyt.')
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="login-screen">
+      <div className="login-top">
+        <div className="login-logo"><span>SSIF</span></div>
+        <h1 className="login-club" style={{ fontSize: 20 }}>Bekræft din email</h1>
+        <p className="login-subtitle">
+          Du åbnede linket på en ny enhed.{'\n'}
+          Bekræft din email for at logge ind.
+        </p>
+      </div>
+      <form className="login-form" onSubmit={handleSubmit}>
+        <div className="input-group">
+          <div className="input-row">
+            <span className="input-icon"><Icon name="mail" size={18} color="var(--text3)" /></span>
+            <input className="input-field" type="email" placeholder="Din email" autoComplete="email" autoFocus
+              value={email} onChange={e => setEmail(e.target.value)} />
+          </div>
+        </div>
+        {error && <p className="login-error">{error}</p>}
+        <button className="btn btn-primary btn-full" type="submit" disabled={loading}>
+          {loading ? <span className="spinner" /> : 'Log ind'}
+        </button>
+        <button className="btn btn-secondary btn-full" type="button" onClick={onCancel}>
+          Annuller
+        </button>
+      </form>
     </div>
   )
 }
@@ -702,57 +806,123 @@ function ChatScreen({ conversation, user }) {
 // ─── Root App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [user, setUser]                         = useState(null)
-  const [authChecked, setAuthChecked]           = useState(false)
-  const [activeTab, setActiveTab]               = useState('dashboard')
-  const [selectedTeam, setSelectedTeam]         = useState(null)
-  const [selectedArticle, setSelectedArticle]   = useState(null)
-  const [selectedConv, setSelectedConv]         = useState(null)
+  const [user, setUser]                           = useState(null)
+  const [authChecked, setAuthChecked]             = useState(false)
+  const [activeTab, setActiveTab]                 = useState('dashboard')
+  const [selectedTeam, setSelectedTeam]           = useState(null)
+  const [selectedArticle, setSelectedArticle]     = useState(null)
+  const [selectedConv, setSelectedConv]           = useState(null)
+  const [news, setNews]                           = useState(NEWS_FALLBACK)
+  const [newsLive, setNewsLive]                   = useState(false)
+  const [convos, setConvos]                       = useState(CONVERSATIONS_FALLBACK)
+  const [convosLive, setConvosLive]               = useState(false)
+  const [needsEmailForLink, setNeedsEmailForLink] = useState(false)
+  const [magicLinkError, setMagicLinkError]       = useState('')
 
-  // Firestore data (lifted for Dashboard access + live indicator)
-  const [news, setNews]               = useState(NEWS_FALLBACK)
-  const [newsLive, setNewsLive]       = useState(false)
-  const [convos, setConvos]           = useState(CONVERSATIONS_FALLBACK)
-  const [convosLive, setConvosLive]   = useState(false)
+  // magicLinkRef: true while sign-in link is being processed → prevents
+  // the onAuthStateChanged null-event from showing the login screen
+  const magicLinkRef     = useRef(false)
+  const magicLinkHrefRef = useRef(null)   // saved for cross-device flow
+  const isDemoRef        = useRef(false)
 
-  // Ref to detect demo mode so Firebase auth listener doesn't clear it
-  const isDemoRef = useRef(false)
+  // ── Load + merge Firestore profile ───────────────────────────────────────
+  async function loadAndSetUser(fbUser) {
+    let profile = {}
+    try {
+      const snap = await getDoc(doc(db, 'users', fbUser.uid))
+      if (snap.exists()) {
+        profile = snap.data()
+      } else {
+        // First login – create a minimal profile document
+        profile = {
+          email:       fbUser.email,
+          displayName: fbUser.displayName || fbUser.email.split('@')[0],
+          role:        'Medlem',
+          createdAt:   serverTimestamp(),
+        }
+        setDoc(doc(db, 'users', fbUser.uid), profile).catch(() => {})
+      }
+    } catch { /* Firestore unavailable – use Auth data only */ }
+
+    const displayName = profile.displayName || fbUser.displayName || fbUser.email.split('@')[0]
+    const parts = displayName.trim().split(' ').filter(Boolean)
+    setUser({
+      name:      displayName,
+      firstName: profile.firstName || parts[0] || fbUser.email.split('@')[0],
+      email:     fbUser.email,
+      uid:       fbUser.uid,
+      initials:  ((parts[0]?.[0] || '') + (parts[parts.length - 1]?.[0] || '')).toUpperCase()
+                 || fbUser.email.slice(0, 2).toUpperCase(),
+      team:      profile.team     || '',
+      role:      profile.role     || 'Medlem',
+      memberId:  profile.memberId || '',
+    })
+  }
 
   // ── Auth state listener ──────────────────────────────────────────────────
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, fbUser => {
+    const unsub = onAuthStateChanged(auth, async fbUser => {
       if (fbUser) {
-        const parts = (fbUser.displayName || '').trim().split(' ').filter(Boolean)
-        setUser({
-          name:      fbUser.displayName || fbUser.email.split('@')[0],
-          firstName: parts[0] || fbUser.email.split('@')[0],
-          email:     fbUser.email,
-          uid:       fbUser.uid,
-          initials:  ((parts[0]?.[0] || '') + (parts[parts.length - 1]?.[0] || '')).toUpperCase()
-                     || fbUser.email.slice(0, 2).toUpperCase(),
-          team: 'Herrer A',
-          role: 'Spiller',
-        })
-      } else if (!isDemoRef.current) {
+        magicLinkRef.current = false
+        await loadAndSetUser(fbUser)
+        setAuthChecked(true)
+      } else if (!magicLinkRef.current && !isDemoRef.current) {
+        // No magic link in flight and no demo session → show login
         setUser(null)
+        setAuthChecked(true)
       }
-      setAuthChecked(true)
+      // If magicLinkRef is true, we stay on the splash screen until
+      // signInWithEmailLink resolves and triggers this listener again
     })
     return unsub
   }, [])
+
+  // ── Magic link handler (runs once on mount) ──────────────────────────────
+  useEffect(() => {
+    const href = window.location.href
+    if (!isSignInWithEmailLink(auth, href)) return
+
+    // Store href before cleaning the URL
+    magicLinkHrefRef.current = href
+    window.history.replaceState(null, '', window.location.pathname)
+    magicLinkRef.current = true
+
+    const savedEmail = localStorage.getItem(LS_EMAIL_KEY)
+    if (!savedEmail) {
+      // Opened on a different device – ask the user to confirm their email
+      setNeedsEmailForLink(true)
+      magicLinkRef.current = false
+      setAuthChecked(true)
+      return
+    }
+
+    signInWithEmailLink(auth, savedEmail, href)
+      .then(() => {
+        localStorage.removeItem(LS_EMAIL_KEY)
+        // onAuthStateChanged fires next and completes the flow
+      })
+      .catch(err => {
+        magicLinkRef.current = false
+        setMagicLinkError(AUTH_ERRORS[err.code] || 'Linket er ugyldigt eller udløbet. Anmod om et nyt.')
+        setAuthChecked(true)
+      })
+  }, [])
+
+  // ── Cross-device: user confirms email to finish sign-in ──────────────────
+  async function handleEmailConfirmForLink(email) {
+    await signInWithEmailLink(auth, email, magicLinkHrefRef.current)
+    localStorage.removeItem(LS_EMAIL_KEY)
+    setNeedsEmailForLink(false)
+    // onAuthStateChanged completes the rest
+  }
 
   // ── Firestore: news ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!user) return
     const q = query(collection(db, 'news'), orderBy('createdAt', 'desc'))
     const unsub = onSnapshot(q,
-      snap => {
-        if (!snap.empty) {
-          setNews(snap.docs.map(d => ({ id: d.id, ...d.data() })))
-          setNewsLive(true)
-        }
-      },
-      () => { setNewsLive(false) }
+      snap => { if (!snap.empty) { setNews(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setNewsLive(true) } },
+      () => setNewsLive(false)
     )
     return unsub
   }, [user?.uid])
@@ -762,23 +932,15 @@ export default function App() {
     if (!user) return
     const q = query(collection(db, 'conversations'), orderBy('updatedAt', 'desc'))
     const unsub = onSnapshot(q,
-      snap => {
-        if (!snap.empty) {
-          setConvos(snap.docs.map(d => ({ id: d.id, ...d.data() })))
-          setConvosLive(true)
-        }
-      },
-      () => { setConvosLive(false) }
+      snap => { if (!snap.empty) { setConvos(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setConvosLive(true) } },
+      () => setConvosLive(false)
     )
     return unsub
   }, [user?.uid])
 
-  // ── Navigation helpers ───────────────────────────────────────────────────
+  // ── Navigation ────────────────────────────────────────────────────────────
   function switchTab(tab) {
-    setActiveTab(tab)
-    setSelectedTeam(null)
-    setSelectedArticle(null)
-    setSelectedConv(null)
+    setActiveTab(tab); setSelectedTeam(null); setSelectedArticle(null); setSelectedConv(null)
   }
 
   function navigateFromDashboard(dest, data) {
@@ -788,28 +950,36 @@ export default function App() {
 
   async function handleLogout() {
     isDemoRef.current = false
-    setUser(null)
-    setActiveTab('dashboard')
-    setSelectedTeam(null)
-    setSelectedArticle(null)
-    setSelectedConv(null)
-    setNewsLive(false)
-    setConvosLive(false)
-    setNews(NEWS_FALLBACK)
-    setConvos(CONVERSATIONS_FALLBACK)
+    setUser(null); setActiveTab('dashboard')
+    setSelectedTeam(null); setSelectedArticle(null); setSelectedConv(null)
+    setNewsLive(false); setConvosLive(false)
+    setNews(NEWS_FALLBACK); setConvos(CONVERSATIONS_FALLBACK)
     try { await signOut(auth) } catch {}
   }
 
-  // ── Render guards ────────────────────────────────────────────────────────
-  if (!authChecked) return <SplashScreen />
+  // ── Render guards ─────────────────────────────────────────────────────────
+
+  // Splash while Firebase checks existing session or processes magic link
+  if (!authChecked) return <SplashScreen label={magicLinkRef.current ? 'Logger ind…' : undefined} />
+
+  // Cross-device: user must confirm email before we can finish sign-in
+  if (needsEmailForLink) {
+    return (
+      <NeedsEmailScreen
+        onSubmit={handleEmailConfirmForLink}
+        onCancel={() => {
+          setNeedsEmailForLink(false)
+          magicLinkRef.current = false
+        }}
+      />
+    )
+  }
 
   if (!user) {
     return (
       <LoginScreen
-        onDemoLogin={() => {
-          isDemoRef.current = true
-          setUser(DEMO_USER)
-        }}
+        initialError={magicLinkError}
+        onDemoLogin={() => { isDemoRef.current = true; setUser(DEMO_USER) }}
       />
     )
   }

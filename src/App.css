@@ -853,7 +853,70 @@ body {
   font-weight: 800;
   letter-spacing: 2px;
 }
+.splash-label {
+  color: rgba(255,255,255,.7);
+  font-size: 14px;
+  margin-top: -8px;
+}
 .spinner--white { border-color: rgba(255,255,255,.3); border-top-color: white; }
+
+/* ─── Magic link sent confirmation ──────────────────────────────────────────── */
+.magic-sent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 360px;
+  text-align: center;
+}
+.magic-sent-icon {
+  width: 80px;
+  height: 80px;
+  border-radius: 24px;
+  background: var(--green-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+.magic-sent-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text);
+}
+.magic-sent-body {
+  font-size: 15px;
+  color: var(--text2);
+  margin-bottom: -6px;
+}
+.magic-sent-email {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--green);
+  word-break: break-all;
+}
+.magic-sent-hint {
+  font-size: 14px;
+  color: var(--text3);
+  line-height: 1.5;
+  margin-bottom: 4px;
+}
+.magic-resend {
+  background: none;
+  border: none;
+  color: var(--green);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 8px;
+  margin-top: 4px;
+  -webkit-tap-highlight-color: transparent;
+}
+.magic-resend:active { opacity: .6; }
+
+/* ─── Login button with icon ────────────────────────────────────────────────── */
+.btn svg { vertical-align: middle; }
 
 /* ─── Logout button ─────────────────────────────────────────────────────────── */
 .header-action {
