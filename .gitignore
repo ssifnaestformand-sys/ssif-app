@@ -1,5 +1,10 @@
 node_modules
 dist
+.DS_Store
+
+# Miljøvariable – commit aldrig disse
 .env
 .env.local
-.DS_Store
+.env.*.local
+.env.production
+.env.development
