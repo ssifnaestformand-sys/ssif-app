@@ -1,0 +1,9 @@
+# CONVENTUS_KEY injiceres af deploy-pipeline (se deploy.yml)
+# Må IKKE committes med en rigtig nøgle
+SetEnv CONVENTUS_KEY CONVENTUS_KEY_PLACEHOLDER
+
+# Beskyt .env og .htaccess mod direkte HTTP-adgang
+<FilesMatch "^\.">
+    Order allow,deny
+    Deny from all
+</FilesMatch>

@@ -30,6 +30,12 @@ jobs:
           VITE_FIREBASE_APP_ID:             ${{ secrets.VITE_FIREBASE_APP_ID }}
           CONVENTUS_KEY:                    ${{ secrets.CONVENTUS_KEY }}
 
+      - name: Injicér Conventus API-nøgle i .htaccess
+        run: |
+          sed -i "s|CONVENTUS_KEY_PLACEHOLDER|${{ secrets.CONVENTUS_KEY }}|g" dist/api/.htaccess
+        env:
+          CONVENTUS_KEY: ${{ secrets.CONVENTUS_KEY }}
+
       - name: Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:

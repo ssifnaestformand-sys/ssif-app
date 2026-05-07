@@ -504,90 +504,188 @@ function DashboardScreen({ user, conversations, news, onNavigate }) {
 
 // ─── Teams ────────────────────────────────────────────────────────────────────
 
-function TeamsScreen({ onSelectTeam }) {
-  const youth  = TEAMS.filter(t => t.category === 'Ungdom')
-  const senior = TEAMS.filter(t => t.category === 'Senior')
-  const renderList = (teams, icon) => (
-    <div className="list-group">
-      {teams.map((team, i) => (
-        <div key={team.id}>
-          {i > 0 && <div className="list-separator" />}
-          <button className="list-item" onClick={() => onSelectTeam(team)}>
-            <div className="list-item-icon" style={{ background: 'var(--green-soft)' }}>
-              <Icon name={icon} size={17} color="var(--green)" />
-            </div>
-            <div className="list-item-body">
-              <span className="list-item-title">{team.name}</span>
-              <span className="list-item-detail">{team.members} spillere · {team.coach}</span>
-            </div>
-            <Chevron />
-          </button>
-        </div>
-      ))}
+function useConventusHolds() {
+  const [groups,  setGroups]  = useState([])
+  const [fsHolds, setFsHolds] = useState({})   // Firestore holds/{id} → extra info
+  const [loading, setLoading] = useState(true)
+  const [error,   setError]   = useState(null)
+
+  useEffect(() => {
+    fetch('api/conventus.php?endpoint=grupper')
+      .then(r => r.json())
+      .then(d => {
+        if (d.error) throw new Error(d.error)
+        setGroups(d.groups ?? [])
+      })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => {
+    getDocs(collection(db, 'holds')).then(snap => {
+      const map = {}
+      snap.docs.forEach(d => { map[String(d.id)] = d.data() })
+      setFsHolds(map)
+    }).catch(() => {})
+  }, [])
+
+  // Berig hvert hold med Firestore-data (træner mv.)
+  const enriched = groups.map(g => ({
+    ...g,
+    ...(fsHolds[String(g.id)] ?? {}),
+    id: g.id,
+    name: g.navn,
+  }))
+
+  return { groups: enriched, loading, error }
+}
+
+function relevantHoldIds(user) {
+  const ids = new Set()
+  ;(user.holds ?? []).forEach(id => ids.add(String(id)))
+  ;(user.familyMembers ?? []).forEach(m => m.holdId && ids.add(String(m.holdId)))
+  return ids
+}
+
+function groupBySport(holds) {
+  const map = {}
+  holds.forEach(h => {
+    // Forsøg at udtrække sportsgren fra activityTypeName eller holdnavn
+    const sport = h.activityTypeName
+      || (h.name?.startsWith('FO ') ? 'Fodbold' : null)
+      || 'Hold'
+    if (!map[sport]) map[sport] = []
+    map[sport].push(h)
+  })
+  return map
+}
+
+function TeamsScreen({ onSelectTeam, user }) {
+  const { groups, loading, error } = useConventusHolds()
+  const userHoldIds = relevantHoldIds(user)
+
+  // Filtrér: vis kun brugerens hold – eller alle, hvis ingen er tildelt
+  const visible = userHoldIds.size > 0
+    ? groups.filter(g => userHoldIds.has(String(g.id)))
+    : groups
+
+  const byType = groupBySport(visible)
+  const types  = Object.keys(byType).sort()
+
+  if (loading) return (
+    <div className="screen" style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text2)' }}>
+      <div style={{ fontSize: 13 }}>Henter hold fra Conventus…</div>
     </div>
   )
+
+  if (error) return (
+    <div className="screen" style={{ padding: '24px 20px' }}>
+      <div style={{ background: '#fff3e0', borderRadius: 12, padding: '14px 16px', fontSize: 14, color: '#92400e' }}>
+        Kunne ikke hente hold: {error}
+      </div>
+    </div>
+  )
+
+  if (visible.length === 0) return (
+    <div className="screen" style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text2)', fontSize: 14 }}>
+      Ingen hold fundet. Tilknyt hold via Familie-fanen.
+    </div>
+  )
+
   return (
     <div className="screen">
-      <SectionHeader title="Ungdom" />
-      {renderList(youth, 'users')}
-      <SectionHeader title="Senior" />
-      {renderList(senior, 'trophy')}
+      {userHoldIds.size === 0 && (
+        <div style={{ margin: '16px 16px 0', background: 'var(--green-soft)', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: 'var(--green)' }}>
+          Alle {groups.length} hold vises · Tilknyt egne hold via Familie-fanen
+        </div>
+      )}
+      {types.map(type => (
+        <div key={type}>
+          <SectionHeader title={type} />
+          <div className="list-group">
+            {byType[type].map((team, i) => (
+              <div key={team.id}>
+                {i > 0 && <div className="list-separator" />}
+                <button className="list-item" onClick={() => onSelectTeam(team)}>
+                  <div className="list-item-icon" style={{ background: 'var(--green-soft)' }}>
+                    <Icon name="users" size={17} color="var(--green)" />
+                  </div>
+                  <div className="list-item-body">
+                    <span className="list-item-title">{team.name}</span>
+                    <span className="list-item-detail">
+                      {[team.coach, team.periode].filter(Boolean).join(' · ') || 'Conventus #' + team.id}
+                    </span>
+                  </div>
+                  <Chevron />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
       <div style={{ height: 8 }} />
     </div>
   )
 }
 
 function TeamDetailScreen({ team }) {
-  const [W, D, L] = team.record
   return (
     <div className="screen">
       <div className="team-hero">
         <div className="team-hero-icon"><Icon name="trophy" size={36} color="white" /></div>
         <h2 className="team-hero-name">{team.name}</h2>
-        <p className="team-hero-category">{team.category}</p>
+        {team.activityTypeName && (
+          <p className="team-hero-category">{team.activityTypeName}</p>
+        )}
       </div>
-      <div className="stat-row" style={{ padding: '0 16px' }}>
-        <div className="stat-card"><p className="stat-value" style={{ color: '#34c759' }}>{W}</p><p className="stat-label">Sejre</p></div>
-        <div className="stat-card"><p className="stat-value" style={{ color: '#ff9500' }}>{D}</p><p className="stat-label">Uafgjort</p></div>
-        <div className="stat-card"><p className="stat-value" style={{ color: '#ff3b30' }}>{L}</p><p className="stat-label">Nederlag</p></div>
-      </div>
-      <SectionHeader title="Næste kamp" />
-      <div className="list-group">
-        <div className="list-item" style={{ cursor: 'default' }}>
-          <div className="list-item-icon" style={{ background: '#fff3e0' }}>
-            <Icon name="calendar" size={17} color="#ff9500" />
+
+      {(team.coach || team.periode) && (
+        <>
+          <SectionHeader title="Oplysninger" />
+          <div className="list-group">
+            {team.coach && (
+              <div className="list-item" style={{ cursor: 'default' }}>
+                <div className="list-item-icon" style={{ background: 'var(--green-soft)' }}>
+                  <Icon name="person" size={17} color="var(--green)" />
+                </div>
+                <div className="list-item-body">
+                  <span className="list-item-title">{team.coach}</span>
+                  {team.coachPhone && <span className="list-item-detail">{team.coachPhone}</span>}
+                </div>
+                {team.coachPhone && <Icon name="phone" size={17} color="var(--green)" />}
+              </div>
+            )}
+            {team.periode && (
+              <>
+                {team.coach && <div className="list-separator" />}
+                <div className="list-item" style={{ cursor: 'default' }}>
+                  <div className="list-item-icon" style={{ background: '#fff3e0' }}>
+                    <Icon name="calendar" size={17} color="#ff9500" />
+                  </div>
+                  <div className="list-item-body">
+                    <span className="list-item-title">Træningstid</span>
+                    <span className="list-item-detail">{team.periode}</span>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
-          <div className="list-item-body"><span className="list-item-title">{team.nextMatch}</span></div>
-        </div>
-      </div>
-      <SectionHeader title="Træner" />
+        </>
+      )}
+
+      <SectionHeader title="Conventus" />
       <div className="list-group">
         <div className="list-item" style={{ cursor: 'default' }}>
-          <div className="list-item-icon" style={{ background: 'var(--green-soft)' }}>
-            <Icon name="person" size={17} color="var(--green)" />
+          <div className="list-item-icon" style={{ background: 'var(--bg)' }}>
+            <Icon name="link" size={17} color="var(--text2)" />
           </div>
           <div className="list-item-body">
-            <span className="list-item-title">{team.coach}</span>
-            <span className="list-item-detail">{team.coachPhone}</span>
+            <span className="list-item-title">Gruppe-ID</span>
+            <span className="list-item-detail">{team.id}</span>
           </div>
-          <Icon name="phone" size={17} color="var(--green)" />
         </div>
       </div>
-      <SectionHeader title={`Spillere (${team.members})`} />
-      <div className="list-group">
-        {team.players.map((p, i) => (
-          <div key={p}>
-            {i > 0 && <div className="list-separator" />}
-            <div className="list-item" style={{ cursor: 'default' }}>
-              <Avatar initials={p.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
-                size={32} color={`hsl(${(i * 47) % 360}, 45%, 40%)`} />
-              <div className="list-item-body" style={{ marginLeft: 12 }}>
-                <span className="list-item-title">{p}</span>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+
       <div style={{ height: 8 }} />
     </div>
   )
@@ -1080,9 +1178,11 @@ export default function App() {
       uid:       fbUser.uid,
       initials:  ((parts[0]?.[0] || '') + (parts[parts.length - 1]?.[0] || '')).toUpperCase()
                  || fbUser.email.slice(0, 2).toUpperCase(),
-      team:      profile.team     || '',
-      role:      profile.role     || 'Medlem',
-      memberId:  profile.memberId || '',
+      team:          profile.team          || '',
+      role:          profile.role          || 'Medlem',
+      memberId:      profile.memberId      || '',
+      holds:         profile.holds         || [],
+      familyMembers: profile.familyMembers || [],
     })
   }
 
@@ -1297,7 +1397,7 @@ export default function App() {
           <FamilieTab user={user} />
         )}
         {activeTab === 'teams' && !selectedTeam && (
-          <TeamsScreen onSelectTeam={setSelectedTeam} />
+          <TeamsScreen onSelectTeam={setSelectedTeam} user={user} />
         )}
         {activeTab === 'teams' && selectedTeam && (
           <TeamDetailScreen team={selectedTeam} />
