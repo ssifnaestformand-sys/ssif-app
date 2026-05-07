@@ -7,7 +7,7 @@ import {
 } from 'firebase/auth'
 import {
   collection, query, orderBy, onSnapshot,
-  addDoc, serverTimestamp, limit,
+  addDoc, updateDoc, serverTimestamp, limit,
   doc, getDoc, setDoc,
 } from 'firebase/firestore'
 
@@ -30,8 +30,11 @@ function Icon({ name, size = 24, color = 'currentColor', sw = 1.75 }) {
     trophy:   <><path d="M6 9H4.5a2.5 2.5 0 010-5H6"/><path d="M18 9h1.5a2.5 2.5 0 000-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0012 0V2z"/></>,
     shirt:    <><path d="M20.38 3.46L16 2a4 4 0 01-8 0L3.62 3.46a2 2 0 00-1.34 2.23l.58 3.57a1 1 0 00.99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 002-2V10h2.15a1 1 0 00.99-.84l.58-3.57a2 2 0 00-1.34-2.23z"/></>,
     phone:    <><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></>,
-    logout:   <><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></>,
-    star:     <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>,
+    logout:    <><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></>,
+    star:      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>,
+    x:         <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>,
+    'user-plus':<><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></>,
+    heart:     <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>,
   }
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -403,9 +406,10 @@ function AppHeader({ title, onBack, backLabel, right }) {
 function BottomNav({ activeTab, onChange, unreadCount }) {
   const tabs = [
     { id: 'dashboard', label: 'Hjem',     icon: 'home'    },
-    { id: 'teams',     label: 'Hold',     icon: 'users'   },
+    { id: 'familie',   label: 'Familie',  icon: 'heart'   },
     { id: 'news',      label: 'Nyheder',  icon: 'news'    },
     { id: 'messages',  label: 'Beskeder', icon: 'message' },
+    { id: 'teams',     label: 'Hold',     icon: 'users'   },
   ]
   return (
     <nav className="tab-bar">
@@ -414,7 +418,7 @@ function BottomNav({ activeTab, onChange, unreadCount }) {
           className={`tab-item ${activeTab === tab.id ? 'active' : ''}`}
           onClick={() => onChange(tab.id)}>
           <span className="tab-icon-wrap">
-            <Icon name={tab.icon} size={24}
+            <Icon name={tab.icon} size={22}
               color={activeTab === tab.id ? 'var(--green)' : 'var(--text3)'}
               sw={activeTab === tab.id ? 2 : 1.75} />
             {tab.id === 'messages' && unreadCount > 0 && <Badge count={unreadCount} />}
@@ -803,6 +807,229 @@ function ChatScreen({ conversation, user }) {
   )
 }
 
+// ─── Familie ──────────────────────────────────────────────────────────────────
+
+const FAM_COLORS = ['#5856d6','#ff9500','#ff3b30','#34c759','#007aff','#af52de','#ff6b35']
+
+function fmtEventDate(dateStr) {
+  if (!dateStr) return '–'
+  const d = new Date(dateStr + 'T12:00:00')
+  return d.toLocaleDateString('da-DK', { weekday: 'short', day: 'numeric', month: 'short' })
+}
+
+function FamilieTab({ user }) {
+  const [holds,   setHolds]   = useState([])
+  const [members, setMembers] = useState(null)
+  const [events,  setEvents]  = useState([])
+  const [showAdd, setShowAdd] = useState(false)
+  const [form,    setForm]    = useState({ name: '', holdId: '' })
+  const [saving,  setSaving]  = useState(false)
+
+  // Hent hold fra Conventus
+  useEffect(() => {
+    fetch('holds.php').then(r => r.json())
+      .then(d => setHolds(d.groups || []))
+      .catch(() => {})
+  }, [])
+
+  // Hent familiemedlemmer fra Firestore
+  useEffect(() => {
+    if (!user?.uid) return
+    getDoc(doc(db, 'users', user.uid)).then(snap => {
+      setMembers(snap.exists() ? (snap.data().familyMembers || []) : [])
+    })
+  }, [user?.uid])
+
+  // Hent kommende begivenheder fra Firestore
+  useEffect(() => {
+    return onSnapshot(
+      query(collection(db, 'events'), orderBy('date'), limit(40)),
+      snap => setEvents(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    )
+  }, [])
+
+  async function persistMembers(updated) {
+    setMembers(updated)
+    await updateDoc(doc(db, 'users', user.uid), { familyMembers: updated })
+  }
+
+  async function addMember() {
+    if (!form.name.trim() || !form.holdId) return
+    setSaving(true)
+    const hold = holds.find(h => String(h.id) === form.holdId) ?? {}
+    const m = {
+      id:               Date.now().toString(),
+      name:             form.name.trim(),
+      holdId:           form.holdId,
+      holdName:         hold.name ?? '',
+      activityTypeName: hold.activityTypeName ?? '',
+      periode:          hold.periode ?? '',
+      color:            FAM_COLORS[(members?.length ?? 0) % FAM_COLORS.length],
+    }
+    await persistMembers([...(members || []), m])
+    setForm({ name: '', holdId: '' })
+    setShowAdd(false)
+    setSaving(false)
+  }
+
+  const holdIds   = new Set((members || []).map(m => String(m.holdId)))
+  const today     = new Date().toISOString().slice(0, 10)
+  const upcoming  = events
+    .filter(e => e.date >= today && holdIds.has(String(e.holdId)))
+    .slice(0, 15)
+
+  const typeColor = { kamp: '#1a5c2a', træning: '#5856d6', stævne: '#ff9500', arrangement: '#ff3b30' }
+
+  return (
+    <div className="screen">
+
+      {/* ── Egen profil ─────────────────────────────────── */}
+      <SectionHeader title="Min profil" />
+      <div className="list-group">
+        <div className="list-item" style={{ cursor: 'default' }}>
+          <Avatar initials={user.initials} size={40} />
+          <div className="list-item-body" style={{ marginLeft: 12 }}>
+            <span className="list-item-title">{user.name}</span>
+            <span className="list-item-detail">{user.email}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Familiemedlemmer ────────────────────────────── */}
+      <SectionHeader title="Familiemedlemmer" />
+
+      {members === null
+        ? <div style={{ padding: '12px 20px', color: 'var(--text2)', fontSize: 14 }}>Henter…</div>
+        : (
+          <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {members.length === 0 && !showAdd && (
+              <p style={{ fontSize: 14, color: 'var(--text2)', paddingTop: 4 }}>
+                Tilføj børn eller andre familiemedlemmer for at se fælles kalender.
+              </p>
+            )}
+
+            {members.map(m => {
+              const liveHold = holds.find(h => String(h.id) === m.holdId)
+              const periode  = liveHold?.periode || m.periode
+              return (
+                <div key={m.id} className="fam-card">
+                  <div className="fam-dot" style={{ background: m.color }} />
+                  <div className="fam-info">
+                    <span className="fam-name">{m.name}</span>
+                    <span className="fam-hold">{liveHold?.name || m.holdName || '–'}</span>
+                    {liveHold?.activityTypeName && (
+                      <span className="fam-sport">{liveHold.activityTypeName}</span>
+                    )}
+                    {periode && <span className="fam-tid">{periode}</span>}
+                  </div>
+                  <button className="fam-remove" onClick={() => persistMembers(members.filter(x => x.id !== m.id))}>
+                    <Icon name="x" size={16} color="var(--text3)" />
+                  </button>
+                </div>
+              )
+            })}
+
+            {showAdd ? (
+              <div className="fam-add-form">
+                <div className="form-group-inline">
+                  <label className="fam-label">Navn</label>
+                  <input
+                    className="fam-input"
+                    value={form.name}
+                    onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                    placeholder="Barnets navn"
+                    autoFocus
+                  />
+                </div>
+                <div className="form-group-inline">
+                  <label className="fam-label">Hold</label>
+                  <select
+                    className="fam-input"
+                    value={form.holdId}
+                    onChange={e => setForm(f => ({ ...f, holdId: e.target.value }))}
+                  >
+                    <option value="">Vælg hold fra Conventus…</option>
+                    {Object.entries(
+                      holds.reduce((acc, h) => {
+                        ;(acc[h.activityTypeName] = acc[h.activityTypeName] || []).push(h)
+                        return acc
+                      }, {})
+                    ).map(([type, hs]) => (
+                      <optgroup key={type} label={type}>
+                        {hs.map(h => (
+                          <option key={h.id} value={h.id}>{h.name}</option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn btn-primary" style={{ flex: 1 }}
+                    disabled={!form.name.trim() || !form.holdId || saving}
+                    onClick={addMember}>
+                    {saving ? 'Gemmer…' : 'Tilføj'}
+                  </button>
+                  <button className="btn btn-secondary" onClick={() => { setShowAdd(false); setForm({ name: '', holdId: '' }) }}>
+                    Annuller
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button className="fam-add-btn" onClick={() => setShowAdd(true)}>
+                <Icon name="user-plus" size={17} color="var(--green)" />
+                Tilføj familiemedlem
+              </button>
+            )}
+          </div>
+        )
+      }
+
+      {/* ── Samlet kalender ─────────────────────────────── */}
+      <SectionHeader title="Kommende begivenheder" />
+      {upcoming.length === 0 ? (
+        <div style={{ padding: '12px 20px', color: 'var(--text2)', fontSize: 14 }}>
+          {members?.length === 0
+            ? 'Tilføj familiemedlemmer ovenfor for at se kalender.'
+            : 'Ingen kommende begivenheder registreret endnu.'}
+        </div>
+      ) : (
+        <div className="card-list">
+          {upcoming.map(ev => {
+            const mem  = members?.find(m => String(m.holdId) === String(ev.holdId))
+            const tc   = typeColor[ev.type] || 'var(--text2)'
+            return (
+              <div key={ev.id} className="event-card">
+                <div className="event-date-col">
+                  <span className="event-day">{fmtEventDate(ev.date)}</span>
+                  {ev.time && <span className="event-time">{ev.time}</span>}
+                </div>
+                <div className="event-body">
+                  <div className="event-meta-row">
+                    {ev.type && (
+                      <span className="category-pill" style={{ background: tc + '20', color: tc }}>
+                        {ev.type}
+                      </span>
+                    )}
+                    {mem && (
+                      <span style={{ fontSize: 11, color: mem.color, fontWeight: 600 }}>
+                        {mem.name}
+                      </span>
+                    )}
+                  </div>
+                  <span className="event-title">{ev.title}</span>
+                  {ev.location && <span className="event-loc">{ev.location}</span>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <div style={{ height: 8 }} />
+    </div>
+  )
+}
+
 // ─── Root App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -985,7 +1212,7 @@ export default function App() {
   }
 
   // ── Header state ─────────────────────────────────────────────────────────
-  const TAB_TITLES = { dashboard: 'Hjem', teams: 'Hold', news: 'Nyheder', messages: 'Beskeder' }
+  const TAB_TITLES = { dashboard: 'Hjem', familie: 'Familie', teams: 'Hold', news: 'Nyheder', messages: 'Beskeder' }
   let headerTitle = TAB_TITLES[activeTab]
   let onBack = null
   let backLabel = null
@@ -1013,6 +1240,9 @@ export default function App() {
       <main className="app-content">
         {activeTab === 'dashboard' && (
           <DashboardScreen user={user} conversations={convos} news={news} onNavigate={navigateFromDashboard} />
+        )}
+        {activeTab === 'familie' && (
+          <FamilieTab user={user} />
         )}
         {activeTab === 'teams' && !selectedTeam && (
           <TeamsScreen onSelectTeam={setSelectedTeam} />

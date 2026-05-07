@@ -30,32 +30,52 @@ if (preg_match(
     }
 }
 
-// ── Udtruk hvert hold: activityType + gruppe-id + navn ───────────────────────
+// ── Udtruk hvert hold som selvstændige blokke ────────────────────────────────
 $groups = [];
 $seen   = [];
 
-preg_match_all(
-    '/class="con_activity"[^>]*data-activity_type="(\d+)"[^>]*>.*?url_(\d+)\s*=.*?<h2>(.*?)<\/h2>/s',
-    $html, $matches, PREG_SET_ORDER
-);
+// Opdel HTML i individuelle con_activity blokke
+preg_match_all('/<div class="con_activity"[^>]*>(.*?)(?=<div class="con_activity"|$)/s', $html, $rawBlocks);
 
-foreach ($matches as $m) {
-    $gid = (int)$m[2];
+foreach ($rawBlocks[0] as $block) {
+    // Idrætgrens-ID
+    if (!preg_match('/data-activity_type="(\d+)"/', $block, $mType)) continue;
+    $typeId = $mType[1];
+
+    // Gruppe-ID
+    if (!preg_match('/url_(\d+)\s*=/', $block, $mId)) continue;
+    $gid = (int)$mId[1];
     if (isset($seen[$gid])) continue;
     $seen[$gid] = true;
 
-    $name     = html_entity_decode(strip_tags($m[3]), ENT_HTML5 | ENT_QUOTES, 'UTF-8');
-    $typeId   = $m[1];
-    $typeName = $activityTypes[$typeId] ?? null;
+    // Holdnavn fra første <h2>
+    if (!preg_match('/<h2>(.*?)<\/h2>/', $block, $mName)) continue;
+    $name = html_entity_decode(strip_tags($mName[1]), ENT_HTML5 | ENT_QUOTES, 'UTF-8');
 
-    // Spring aktiviteter uden idrætgrens-navn over (typisk "ikke-idræt")
+    // Idrætsgren – spring over hvis ukendt (typisk "ikke-idræt")
+    $typeName = $activityTypes[$typeId] ?? null;
     if ($typeName === null) continue;
+
+    // Trænings­tid, f.eks. "D. 01.08 - 31.07 - kl. 16:30 - 18:00"
+    $periode = null;
+    if (preg_match('/class="periode">([^<]+)<\/span>/', $block, $mPer)) {
+        $raw = html_entity_decode(trim($mPer[1]), ENT_HTML5 | ENT_QUOTES, 'UTF-8');
+        // Uddrag kun klokkeslet: "kl. 16:30 - 18:00"
+        if (preg_match('/(kl\.\s*\d{2}:\d{2}(?:\s*-\s*\d{2}:\d{2})?)/', $raw, $mTime)) {
+            $periode = trim($mTime[1]);
+        }
+        // Uddrag periode: "01.08 - 31.07"
+        if (preg_match('/(\d{2}\.\d{2})\s*-\s*(\d{2}\.\d{2})/', $raw, $mDates)) {
+            $periode = ($periode ? $periode . '  ·  ' : '') . $mDates[1] . ' – ' . $mDates[2];
+        }
+    }
 
     $groups[] = [
         'id'               => $gid,
         'name'             => $name,
         'activityTypeId'   => $typeId,
         'activityTypeName' => $typeName,
+        'periode'          => $periode,
     ];
 }
 

@@ -69,6 +69,7 @@ function Icon({ name, size = 18, color = 'currentColor', sw = 1.75 }) {
     check:    <polyline points="20 6 9 17 4 12"/>,
     x:        <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>,
     link:     <><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></>,
+    calendar: <><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></>,
   }
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -224,6 +225,7 @@ function Sidebar({ page, setPage, userDoc, user }) {
     { id: 'messages',  label: 'Beskeder',   icon: 'message' },
     { id: 'news',      label: 'Nyheder',    icon: 'news'    },
     { id: 'teams',     label: 'Hold',       icon: 'users'   },
+    { id: 'events', label: 'Begivenheder', icon: 'calendar' },
     ...(userDoc?.role === 'admin' ? [{ id: 'users', label: 'Brugere', icon: 'shield' }] : []),
   ]
   return (
@@ -958,6 +960,230 @@ function TeamsPage({ userDoc, authUser }) {
   )
 }
 
+// ─── Events (Begivenheder) ────────────────────────────────────────────────────
+
+const EVENT_TYPES = ['kamp', 'træning', 'stævne', 'arrangement']
+const EMPTY_EVENT = { title: '', date: '', time: '', type: 'kamp', holdId: '', location: '', notes: '' }
+
+function EventsPage({ userDoc, authUser }) {
+  const [events,  setEvents]  = useState([])
+  const [loading, setLoading] = useState(true)
+  const [holds,   setHolds]   = useState([])
+  const [editing, setEditing] = useState(null)   // null | 'new' | event obj
+  const [form,    setForm]    = useState(EMPTY_EVENT)
+  const [saving,  setSaving]  = useState(false)
+  const [toDelete,setToDelete]= useState(null)
+
+  useEffect(() => {
+    fetch('holds.php').then(r => r.json()).then(d => setHolds(d.groups || [])).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    return onSnapshot(
+      query(collection(db, 'events'), orderBy('date'), limit(200)),
+      snap => { setEvents(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setLoading(false) }
+    )
+  }, [])
+
+  const visibleHolds = userDoc?.role === 'admin'
+    ? holds
+    : holds.filter(h => (userDoc?.holds ?? []).includes(String(h.id)))
+
+  function startNew()       { setForm(EMPTY_EVENT); setEditing('new') }
+  function startEdit(ev)    { setForm({ title: ev.title ?? '', date: ev.date ?? '', time: ev.time ?? '', type: ev.type ?? 'kamp', holdId: String(ev.holdId ?? ''), location: ev.location ?? '', notes: ev.notes ?? '' }); setEditing(ev) }
+  function setF(k, v)       { setForm(f => ({ ...f, [k]: v })) }
+
+  async function save(e) {
+    e.preventDefault()
+    if (!form.title || !form.date) return
+    setSaving(true)
+    const hold = holds.find(h => String(h.id) === form.holdId) ?? {}
+    const payload = {
+      ...form,
+      holdId:           form.holdId || null,
+      holdName:         hold.name ?? '',
+      activityTypeName: hold.activityTypeName ?? '',
+      authorUid:        authUser.uid,
+      authorName:       userDoc?.displayName || authUser.email,
+      updatedAt:        serverTimestamp(),
+    }
+    try {
+      if (editing === 'new') {
+        await addDoc(collection(db, 'events'), { ...payload, createdAt: serverTimestamp() })
+      } else {
+        await updateDoc(doc(db, 'events', editing.id), payload)
+      }
+      setEditing(null)
+    } finally { setSaving(false) }
+  }
+
+  async function confirmDelete() {
+    if (!toDelete) return
+    await deleteDoc(doc(db, 'events', toDelete.id))
+    setToDelete(null)
+  }
+
+  const typeColor = { kamp: '#1a5c2a', træning: '#5856d6', stævne: '#ff9500', arrangement: '#ff3b30' }
+  const today = new Date().toISOString().slice(0, 10)
+
+  if (editing) return (
+    <>
+      <div className="page-header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button className="btn btn-ghost btn-sm" onClick={() => setEditing(null)}>← Tilbage</button>
+          <h1 className="page-title">{editing === 'new' ? 'Ny begivenhed' : 'Rediger begivenhed'}</h1>
+        </div>
+      </div>
+      <form onSubmit={save}>
+        <div className="card card-pad" style={{ maxWidth: 560 }}>
+          <div className="form-group">
+            <label className="form-label">Titel *</label>
+            <input className="form-control" value={form.title} onChange={e => setF('title', e.target.value)} placeholder="fx Kamp mod Ans IF" required autoFocus />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="form-group">
+              <label className="form-label">Dato *</label>
+              <input className="form-control" type="date" value={form.date} onChange={e => setF('date', e.target.value)} required />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Tidspunkt</label>
+              <input className="form-control" type="time" value={form.time} onChange={e => setF('time', e.target.value)} />
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="form-group">
+              <label className="form-label">Type</label>
+              <select className="form-control" value={form.type} onChange={e => setF('type', e.target.value)}>
+                {EVENT_TYPES.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Hold</label>
+              <select className="form-control" value={form.holdId} onChange={e => setF('holdId', e.target.value)}>
+                <option value="">Alle / ikke angivet</option>
+                {visibleHolds.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Sted</label>
+            <input className="form-control" value={form.location} onChange={e => setF('location', e.target.value)} placeholder="fx SSIF Anlæget" />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">Noter</label>
+            <textarea className="form-control" rows={2} value={form.notes} onChange={e => setF('notes', e.target.value)} placeholder="Valgfri ekstra info…" />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+            <button type="button" className="btn btn-ghost" onClick={() => setEditing(null)}>Annuller</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? 'Gemmer…' : editing === 'new' ? 'Opret' : 'Gem ændringer'}
+            </button>
+          </div>
+        </div>
+      </form>
+    </>
+  )
+
+  const upcoming = events.filter(e => e.date >= today)
+  const past     = events.filter(e => e.date <  today).reverse()
+
+  return (
+    <>
+      <div className="page-header">
+        <h1 className="page-title">Begivenheder</h1>
+        <button className="btn btn-primary" onClick={startNew}>
+          <Icon name="plus" size={15} color="white" /> Ny begivenhed
+        </button>
+      </div>
+      <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 16 }}>
+        Begivenheder vises i membres apps kalender under "Familie"-fanen, filtreret på holdtilknytning.
+      </p>
+
+      {loading ? (
+        <div className="card"><div className="loading-dots"><span/><span/><span/></div></div>
+      ) : (
+        <>
+          {upcoming.length > 0 && (
+            <div className="card" style={{ marginBottom: 20 }}>
+              <div className="card-header">
+                <span className="card-header-title">Kommende ({upcoming.length})</span>
+              </div>
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>Dato</th><th>Tid</th><th>Type</th><th>Titel</th><th>Hold</th><th style={{width:90}}></th></tr></thead>
+                  <tbody>
+                    {upcoming.map(ev => (
+                      <tr key={ev.id}>
+                        <td style={{ whiteSpace: 'nowrap', fontWeight: 600 }}>
+                          {new Date(ev.date + 'T12:00:00').toLocaleDateString('da-DK', { weekday: 'short', day: 'numeric', month: 'short' })}
+                        </td>
+                        <td style={{ color: 'var(--text2)', fontSize: 12 }}>{ev.time || '–'}</td>
+                        <td>
+                          <span className="badge" style={{ background: (typeColor[ev.type] || '#666') + '20', color: typeColor[ev.type] || '#666' }}>
+                            {ev.type || '–'}
+                          </span>
+                        </td>
+                        <td style={{ fontWeight: 500 }}>{ev.title}</td>
+                        <td style={{ fontSize: 12, color: 'var(--text2)' }}>{ev.holdName || '–'}</td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <button className="btn btn-ghost btn-sm" onClick={() => startEdit(ev)}><Icon name="edit" size={12}/></button>
+                            <button className="btn btn-ghost btn-sm" style={{ color: '#dc3545' }} onClick={() => setToDelete(ev)}><Icon name="trash" size={12} color="#dc3545"/></button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {past.length > 0 && (
+            <div className="card">
+              <div className="card-header">
+                <span className="card-header-title" style={{ color: 'var(--text2)' }}>Afholdte ({past.length})</span>
+              </div>
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>Dato</th><th>Type</th><th>Titel</th><th>Hold</th><th style={{width:90}}></th></tr></thead>
+                  <tbody>
+                    {past.slice(0, 20).map(ev => (
+                      <tr key={ev.id} style={{ opacity: .65 }}>
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          {new Date(ev.date + 'T12:00:00').toLocaleDateString('da-DK', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </td>
+                        <td><span className="badge badge-gray">{ev.type || '–'}</span></td>
+                        <td>{ev.title}</td>
+                        <td style={{ fontSize: 12, color: 'var(--text2)' }}>{ev.holdName || '–'}</td>
+                        <td>
+                          <button className="btn btn-ghost btn-sm" style={{ color: '#dc3545' }} onClick={() => setToDelete(ev)}><Icon name="trash" size={12} color="#dc3545"/></button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {upcoming.length === 0 && past.length === 0 && (
+            <EmptyState icon="calendar" text="Ingen begivenheder endnu – klik 'Ny begivenhed' for at starte" />
+          )}
+        </>
+      )}
+
+      {toDelete && (
+        <ConfirmDialog
+          title="Slet begivenhed"
+          body={`Slet "${toDelete.title}"? Handlingen kan ikke fortrydes.`}
+          danger onConfirm={confirmDelete} onCancel={() => setToDelete(null)}
+        />
+      )}
+    </>
+  )
+}
+
 // ─── Users ────────────────────────────────────────────────────────────────────
 
 function UsersPage({ authUser }) {
@@ -1158,6 +1384,7 @@ const PAGE_TITLES = {
   messages:  'Beskeder',
   news:      'Nyheder',
   teams:     'Hold',
+  events:    'Begivenheder',
   users:     'Brugere',
 }
 
@@ -1219,6 +1446,7 @@ export default function AdminApp() {
       case 'messages':  return <MessagesPage  userDoc={userDoc} authUser={authUser} />
       case 'news':      return <NewsPage       userDoc={userDoc} authUser={authUser} />
       case 'teams':     return <TeamsPage      userDoc={userDoc} authUser={authUser} />
+      case 'events':    return <EventsPage     userDoc={userDoc} authUser={authUser} />
       case 'users':
         return userDoc.role === 'admin'
           ? <UsersPage authUser={authUser} />
