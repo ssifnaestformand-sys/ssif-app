@@ -794,8 +794,11 @@ function TeamsPage({ userDoc, authUser }) {
     setSyncResult(null)
     try {
       const res = await fetch(`${BASE}api/conventus.php?endpoint=sync`)
-      if (!res.ok) throw new Error(res.statusText)
-      const data = await res.json()
+      // HTTP/2 sender altid tom statusText – brug status-koden i stedet
+      if (!res.ok) throw new Error(`Serverfejl HTTP ${res.status} – tjek PHP-loggen`)
+      let data
+      try { data = await res.json() }
+      catch { throw new Error('Ugyldig JSON fra serveren – PHP-fejl i loggen') }
       if (data.error) throw new Error(data.error)
       const conventusHolds = data.holds ?? []
       if (conventusHolds.length === 0) throw new Error('Conventus returnerede 0 hold – tjek API-nøglen')
@@ -834,7 +837,7 @@ function TeamsPage({ userDoc, authUser }) {
       setSyncResult({ added, updated, total: conventusHolds.length, errors: data.errors ?? [] })
       loadHolds()
     } catch (e) {
-      setSyncResult({ error: e.message })
+      setSyncResult({ error: e.message || 'Ukendt fejl – prøv igen eller tjek PHP-loggen' })
     } finally {
       setSyncing(false)
     }

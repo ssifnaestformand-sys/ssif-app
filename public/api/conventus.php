@@ -127,10 +127,11 @@ echo $resp;
 // ── Hjælpefunktioner ─────────────────────────────────────────────────────────
 
 /**
- * SimpleXML → PHP-array.
+ * SimpleXML → PHP-array (kompatibel med PHP 7.4+).
  * Attributter gemmes under '@attributes'.
+ * Leaf-noder returneres som string.
  */
-function xmlToArray(SimpleXMLElement $node): array {
+function xmlToArray(SimpleXMLElement $node) {
     $result = [];
     $attrs  = (array)$node->attributes();
     if (!empty($attrs['@attributes'])) $result['@attributes'] = $attrs['@attributes'];
@@ -143,28 +144,29 @@ function xmlToArray(SimpleXMLElement $node): array {
             $result[$tag] = $val;
         }
     }
-    return $result ?: trim((string)$node);
+    // Tom array = leaf-node: returnér tekstindhold som string
+    return empty($result) ? trim((string)$node) : $result;
 }
 
 /**
- * Udtruk feltværdi fra både attributter og child-elementer.
- * Prøver danske og engelske varianter af feltnavnet.
+ * Udtruk feltværdi fra attributter eller child-elementer.
+ * PHP 7.4+: ingen union-type-hint.
  */
-function getField(array|string $node, string ...$keys): string {
-    if (is_string($node)) return '';
+function getField($node, string ...$keys): string {
+    if (!is_array($node)) return '';
     foreach ($keys as $key) {
-        if (isset($node['@attributes'][$key]) && $node['@attributes'][$key] !== '') return (string)$node['@attributes'][$key];
-        if (isset($node[$key]) && is_string($node[$key]) && $node[$key] !== '')       return $node[$key];
+        if (isset($node['@attributes'][$key]) && (string)$node['@attributes'][$key] !== '') return (string)$node['@attributes'][$key];
+        if (isset($node[$key]) && is_string($node[$key]) && $node[$key] !== '')              return $node[$key];
     }
     return '';
 }
 
 /**
  * Rekursivt udtruk alle gruppe-noder og normaliser til hold-objekter.
- * $aktivitetFilter: hvis sat, beholdes kun hold med matchende aktivitet_titel.
+ * PHP 7.4+: ingen union-type-hint.
  */
-function extractHolds(array|string $node, ?string $aktivitetFilter, array &$seen = []): array {
-    if (is_string($node)) return [];
+function extractHolds($node, ?string $aktivitetFilter, array &$seen = []): array {
+    if (!is_array($node)) return [];
     $result = [];
 
     // Er dette node selv et hold?
