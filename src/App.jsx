@@ -434,12 +434,12 @@ function BottomNav({ activeTab, onChange, unreadCount }) {
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
-function DashboardScreen({ user, conversations, news, onNavigate, pushStatus, onEnableNotifications }) {
+function DashboardScreen({ user, conversations, news, onNavigate, showPushBanner, onEnableNotifications }) {
   const totalUnread = conversations.reduce((s, c) => s + (c.unread || 0), 0)
 
   return (
     <div className="screen">
-      {pushStatus === 'available' && (
+      {showPushBanner && (
         <button className="push-banner" onClick={onEnableNotifications}>
           <div className="push-banner-icon">
             <Icon name="bell" size={20} color="var(--green)" />
@@ -1119,7 +1119,7 @@ export default function App() {
   const [convosLive, setConvosLive]               = useState(false)
   const [needsEmailForLink, setNeedsEmailForLink] = useState(false)
   const [magicLinkError, setMagicLinkError]       = useState('')
-  const [pushStatus, setPushStatus]               = useState('checking') // 'checking'|'available'|'granted'|'denied'|'unsupported'
+  const [pushGranted, setPushGranted]             = useState(false) // tvinger re-render efter bruger giver tilladelse
 
   // magicLinkRef: true while sign-in link is being processed → prevents
   // the onAuthStateChanged null-event from showing the login screen
@@ -1242,37 +1242,35 @@ export default function App() {
     return unsub
   }, [user?.uid])
 
-  // ── FCM: tjek nuværende tilladelse (uden at bede om det) ────────────────
-  useEffect(() => {
-    if (!user?.uid || user.isDemo) return
-    if (!('Notification' in window) || !('serviceWorker' in navigator)) {
-      setPushStatus('unsupported')
-      return
-    }
-    const p = Notification.permission
-    setPushStatus(p === 'granted' ? 'granted' : p === 'denied' ? 'denied' : 'available')
-  }, [user?.uid])
-
-  // ── Brugerstyret: gemmer FCM-token efter brugeren har givet tilladelse ───
+  // ── FCM: knappen vises/skjules via synkron check (ingen useEffect-timing) ─
   async function handleEnableNotifications() {
     try {
       const permission = await Notification.requestPermission()
-      setPushStatus(permission === 'granted' ? 'granted' : 'denied')
-      if (permission !== 'granted') return
+      if (permission === 'granted') {
+        setPushGranted(true) // skjuler banneret ved at tvinge re-render
 
-      const messaging = getAppMessaging()
-      if (!messaging) return
-      const swReg = await navigator.serviceWorker.ready
-      const token = await getToken(messaging, {
-        vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY,
-        serviceWorkerRegistration: swReg,
-      })
-      if (token && user?.uid) {
-        await updateDoc(doc(db, 'users', user.uid), { fcmToken: token })
+        const messaging = getAppMessaging()
+        if (!messaging) return
+        const swReg = await navigator.serviceWorker.ready
+        const token = await getToken(messaging, {
+          vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY,
+          serviceWorkerRegistration: swReg,
+        })
+        if (token && user?.uid) {
+          await updateDoc(doc(db, 'users', user.uid), { fcmToken: token })
+        }
       }
     } catch (err) {
       console.warn('[FCM]', err.message)
     }
+  }
+
+  // Synkron check – evalueres på hvert render, ingen asynkron forsinkelse
+  function canRequestPush() {
+    if (!user?.uid || user.isDemo || pushGranted) return false
+    if (!('serviceWorker' in navigator) || !('Notification' in window)) return false
+    try { return Notification.permission !== 'granted' && Notification.permission !== 'denied' }
+    catch { return false }
   }
 
   // ── FCM forgrunds-beskeder (app åben) ────────────────────────────────────
@@ -1417,7 +1415,7 @@ export default function App() {
 
       <main className="app-content">
         {activeTab === 'dashboard' && (
-          <DashboardScreen user={user} conversations={convos} news={news} onNavigate={navigateFromDashboard} pushStatus={pushStatus} onEnableNotifications={handleEnableNotifications} />
+          <DashboardScreen user={user} conversations={convos} news={news} onNavigate={navigateFromDashboard} showPushBanner={canRequestPush()} onEnableNotifications={handleEnableNotifications} />
         )}
         {activeTab === 'familie' && (
           <FamilieTab user={user} />
