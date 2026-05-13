@@ -721,7 +721,25 @@ function NewsDetailScreen({ article }) {
 
 // ─── Messages (Firestore + fallback) ─────────────────────────────────────────
 
-function MessagesScreen({ onSelectConversation, conversations, isLive }) {
+function MessagesScreen({ onSelectConversation, conversations, isLive, onEnableNotifications }) {
+  const [, rerender] = useState(0)
+
+  function getPermission() {
+    try { return 'Notification' in window ? Notification.permission : null }
+    catch { return null }
+  }
+
+  async function handleNotifToggle() {
+    const perm = getPermission()
+    if (perm === 'granted' || perm === null) return
+    await onEnableNotifications()
+    rerender(n => n + 1)
+  }
+
+  const permission = getPermission()
+  const isGranted  = permission === 'granted'
+  const isDenied   = permission === 'denied'
+
   return (
     <div className="screen">
       <div className="section-header-row">
@@ -755,6 +773,34 @@ function MessagesScreen({ onSelectConversation, conversations, isLive }) {
           </div>
         ))}
       </div>
+
+      <SectionHeader title="Indstillinger" />
+      <div className="list-group">
+        <button
+          className="list-item"
+          onClick={handleNotifToggle}
+          disabled={isGranted || isDenied}
+          style={{ cursor: isGranted || isDenied ? 'default' : 'pointer' }}
+        >
+          <div className="list-item-icon" style={{ background: isGranted ? 'var(--green-soft)' : 'var(--bg)' }}>
+            <Icon name="bell" size={17} color={isGranted ? 'var(--green)' : 'var(--text3)'} />
+          </div>
+          <div className="list-item-body">
+            <span className="list-item-title">Notifikationer</span>
+            <span className="list-item-detail">
+              {isGranted  ? 'Aktiveret – du modtager beskeder'
+             : isDenied   ? 'Blokeret – tillad i telefonens indstillinger'
+             : permission === null ? 'Ikke understøttet i denne browser'
+             : 'Tryk for at modtage notifikationer'}
+            </span>
+          </div>
+          <div className={`notif-checkbox ${isGranted ? 'notif-checkbox--checked' : ''}`}>
+            {isGranted && <Icon name="check" size={12} color="white" sw={3} />}
+          </div>
+        </button>
+      </div>
+
+      <div style={{ height: 8 }} />
     </div>
   )
 }
@@ -1433,7 +1479,7 @@ export default function App() {
           <NewsDetailScreen article={selectedArticle} />
         )}
         {activeTab === 'messages' && !selectedConv && (
-          <MessagesScreen conversations={convos} isLive={convosLive} onSelectConversation={setSelectedConv} />
+          <MessagesScreen conversations={convos} isLive={convosLive} onSelectConversation={setSelectedConv} onEnableNotifications={handleEnableNotifications} />
         )}
         {activeTab === 'messages' && selectedConv && (
           <ChatScreen conversation={selectedConv} user={user} />

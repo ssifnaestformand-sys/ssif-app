@@ -1132,3 +1132,20 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ─── Notifikations-checkbox ─────────────────────────────────────────────────── */
+.notif-checkbox {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  border: 2px solid var(--sep);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background .15s, border-color .15s;
+}
+.notif-checkbox--checked {
+  background: var(--green);
+  border-color: var(--green);
+}
