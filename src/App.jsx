@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import './App.css'
-import { auth, db } from './firebase.js'
+import { auth, db, getAppMessaging } from './firebase.js'
+import { getToken, onMessage } from 'firebase/messaging'
 import {
   sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink,
   signOut, onAuthStateChanged,
@@ -1225,6 +1226,51 @@ export default function App() {
     )
     return unsub
   }, [user?.uid])
+
+  // ── FCM push permission + token ──────────────────────────────────────────
+  useEffect(() => {
+    if (!user?.uid || user.isDemo) return
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) return
+
+    async function registerPush() {
+      try {
+        const permission = await Notification.requestPermission()
+        if (permission !== 'granted') return
+
+        const messaging = getAppMessaging()
+        if (!messaging) return
+
+        const swReg = await navigator.serviceWorker.ready
+        const token = await getToken(messaging, {
+          vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY,
+          serviceWorkerRegistration: swReg,
+        })
+        if (token) {
+          await updateDoc(doc(db, 'users', user.uid), { fcmToken: token })
+        }
+      } catch (err) {
+        console.warn('[FCM]', err.message)
+      }
+    }
+
+    registerPush()
+  }, [user?.uid])
+
+  // ── FCM forgrunds-beskeder (app åben) ────────────────────────────────────
+  useEffect(() => {
+    if (!user) return
+    const messaging = getAppMessaging()
+    if (!messaging) return
+    return onMessage(messaging, payload => {
+      const n = payload.notification ?? {}
+      if (Notification.permission === 'granted' && n.title) {
+        new Notification(n.title, {
+          body: n.body || '',
+          icon: `${import.meta.env.BASE_URL}icon-192.png`,
+        })
+      }
+    })
+  }, [!!user])
 
   // ── Navigation ────────────────────────────────────────────────────────────
   function switchTab(tab) {

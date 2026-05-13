@@ -427,13 +427,26 @@ function MessagesPage({ userDoc, authUser }) {
     if (!text.trim() || holds.length === 0) return
     setSending(true)
     try {
+      const authorName = userDoc?.displayName || authUser.email
+
+      // Gem besked i Firestore
       await addDoc(collection(db, 'messages'), {
-        text: text.trim(),
-        authorUid: authUser.uid,
-        authorName: userDoc?.displayName || authUser.email,
+        text:        text.trim(),
+        authorUid:   authUser.uid,
+        authorName,
         targetHolds: holds,
-        createdAt: serverTimestamp(),
+        createdAt:   serverTimestamp(),
       })
+
+      // Send push-notifikation til berørte brugere (fejler lydløst)
+      try {
+        const fd = new FormData()
+        fd.append('holdIds', JSON.stringify(holds))
+        fd.append('text',    text.trim())
+        fd.append('title',   `Besked fra ${authorName}`)
+        await fetch(`${BASE}api/send-push.php`, { method: 'POST', body: fd })
+      } catch {}
+
       setText('')
       setHolds([])
     } finally {

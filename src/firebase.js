@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
+import { getMessaging } from 'firebase/messaging'
 
 const firebaseConfig = {
   apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
@@ -13,4 +14,12 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
-export const db = getFirestore(app)
+export const db   = getFirestore(app)
+
+// FCM – lazy init, da getMessaging() kan kaste i ikke-understøttede miljøer
+let _messaging = null
+export function getAppMessaging() {
+  if (_messaging) return _messaging
+  try { _messaging = getMessaging(app) } catch {}
+  return _messaging
+}
