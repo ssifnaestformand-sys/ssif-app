@@ -5,7 +5,7 @@ import {
   signOut, onAuthStateChanged,
 } from 'firebase/auth'
 import {
-  collection, query, orderBy, limit, onSnapshot,
+  collection, query, where, orderBy, limit, onSnapshot,
   addDoc, updateDoc, deleteDoc, serverTimestamp,
   doc, getDoc, setDoc, getDocs,
 } from 'firebase/firestore'
@@ -131,9 +131,13 @@ function CategoryPill({ label, color }) {
 }
 
 function HoldPill({ holdId }) {
+  // holdId kan være et gammelt string-ID eller et nyt {conventus_id, titel}-objekt
+  const name = holdId && typeof holdId === 'object'
+    ? (holdId.titel || `Hold #${holdId.conventus_id}`)
+    : (teamName(holdId) || String(holdId))
   return (
     <span className="badge badge-green" style={{ marginRight: 3, marginBottom: 3 }}>
-      {teamName(holdId)}
+      {name}
     </span>
   )
 }
@@ -400,48 +404,70 @@ function DashboardPage({ userDoc }) {
 // ─── Messages ─────────────────────────────────────────────────────────────────
 
 function MessagesPage({ userDoc, authUser }) {
-  const [text, setText]         = useState('')
-  const [holds, setHolds]       = useState([])
-  const [sending, setSending]   = useState(false)
-  const [messages, setMessages] = useState([])
-  const [loading, setLoading]   = useState(true)
+  const [text, setText]                     = useState('')
+  const [selectedIds, setSelectedIds]       = useState([])   // conventus_id som strings
+  const [sending, setSending]               = useState(false)
+  const [messages, setMessages]             = useState([])
+  const [msgLoading, setMsgLoading]         = useState(true)
+  const [availableHolds, setAvailableHolds] = useState([])
+  const [holdsLoading, setHoldsLoading]     = useState(true)
 
-  const visibleTeams = getVisibleTeams(userDoc)
+  // Hent aktive hold fra Firestore
+  useEffect(() => {
+    getDocs(query(collection(db, 'holds'), where('aktiv', '==', true)))
+      .then(snap => {
+        let all = snap.docs.map(d => ({ _id: d.id, ...d.data() }))
+        // Trænere ser kun tildelte hold
+        if (userDoc?.role !== 'admin' && userDoc?.holds?.length) {
+          const mine = new Set(userDoc.holds.map(String))
+          all = all.filter(h => mine.has(String(h.conventus_id)))
+        }
+        all.sort((a, b) =>
+          (a.aktivitet_titel || '').localeCompare(b.aktivitet_titel || '', 'da') ||
+          (a.titel || '').localeCompare(b.titel || '', 'da')
+        )
+        setAvailableHolds(all)
+      })
+      .finally(() => setHoldsLoading(false))
+  }, [])
 
+  // Lyt på beskeder i real-time
   useEffect(() => {
     return onSnapshot(
       query(collection(db, 'messages'), orderBy('createdAt', 'desc'), limit(100)),
-      snap => {
-        setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() })))
-        setLoading(false)
-      }
+      snap => { setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setMsgLoading(false) }
     )
   }, [])
 
-  function toggleHold(id) {
-    setHolds(prev => prev.includes(id) ? prev.filter(h => h !== id) : [...prev, id])
+  function toggleId(conventusId) {
+    const s = String(conventusId)
+    setSelectedIds(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])
   }
 
   async function send(e) {
     e.preventDefault()
-    if (!text.trim() || holds.length === 0) return
+    if (!text.trim() || selectedIds.length === 0) return
     setSending(true)
     try {
       const authorName = userDoc?.displayName || authUser.email
 
-      // Gem besked i Firestore
+      // targetHolds gemmes som array af {conventus_id, titel}
+      const targetHolds = availableHolds
+        .filter(h => selectedIds.includes(String(h.conventus_id)))
+        .map(h => ({ conventus_id: h.conventus_id, titel: h.titel }))
+
       await addDoc(collection(db, 'messages'), {
         text:        text.trim(),
         authorUid:   authUser.uid,
         authorName,
-        targetHolds: holds,
+        targetHolds,
         createdAt:   serverTimestamp(),
       })
 
-      // Send push-notifikation til berørte brugere (fejler lydløst)
+      // Push-notifikation (fejler lydløst)
       try {
         const fd = new FormData()
-        fd.append('holdIds', JSON.stringify(holds))
+        fd.append('holdIds', JSON.stringify(selectedIds))
         fd.append('text',    text.trim())
         fd.append('title',   `Besked fra ${authorName}`)
         await fetch(`${BASE}api/send-push.php`, {
@@ -452,11 +478,19 @@ function MessagesPage({ userDoc, authUser }) {
       } catch {}
 
       setText('')
-      setHolds([])
+      setSelectedIds([])
     } finally {
       setSending(false)
     }
   }
+
+  // Gruppér hold efter idrætgren til visning
+  const byType = availableHolds.reduce((acc, h) => {
+    const t = h.aktivitet_titel || 'Hold'
+    if (!acc[t]) acc[t] = []
+    acc[t].push(h)
+    return acc
+  }, {})
 
   return (
     <>
@@ -464,28 +498,48 @@ function MessagesPage({ userDoc, authUser }) {
         <h1 className="page-title">Beskeder</h1>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '400px 1fr', gap: 20, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '420px 1fr', gap: 20, alignItems: 'start' }}>
         <div className="card card-pad">
           <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 14 }}>Send ny besked</h3>
           <form onSubmit={send}>
             <div className="form-group">
               <label className="form-label">Modtagere (hold)</label>
-              <div className="hold-checks">
-                {visibleTeams.map(t => (
-                  <label key={t.id} className={`hold-check-label ${holds.includes(t.id) ? 'selected' : ''}`}>
-                    <input
-                      type="checkbox"
-                      checked={holds.includes(t.id)}
-                      onChange={() => toggleHold(t.id)}
-                    />
-                    {t.name}
-                  </label>
-                ))}
-              </div>
-              {holds.length === 0 && (
+
+              {holdsLoading ? (
+                <p className="form-hint">Henter aktive hold…</p>
+              ) : availableHolds.length === 0 ? (
+                <p className="form-hint" style={{ color: '#92400e' }}>
+                  Ingen aktive hold — aktivér hold under Hold-siden først.
+                </p>
+              ) : (
+                Object.entries(byType).map(([type, typeHolds]) => (
+                  <div key={type} style={{ marginBottom: 10 }}>
+                    <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
+                                letterSpacing: '.4px', color: 'var(--text2)', marginBottom: 5 }}>
+                      {type}
+                    </p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {typeHolds.map(h => {
+                        const id = String(h.conventus_id)
+                        const checked = selectedIds.includes(id)
+                        return (
+                          <label key={id} className={`hold-check-label ${checked ? 'selected' : ''}`}
+                                 style={{ gridColumn: 'unset' }}>
+                            <input type="checkbox" checked={checked} onChange={() => toggleId(h.conventus_id)} />
+                            {h.titel}
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))
+              )}
+
+              {!holdsLoading && selectedIds.length === 0 && availableHolds.length > 0 && (
                 <p className="form-hint">Vælg mindst ét hold</p>
               )}
             </div>
+
             <div className="form-group">
               <label className="form-label">Besked</label>
               <textarea
@@ -500,7 +554,7 @@ function MessagesPage({ userDoc, authUser }) {
             <button
               className="btn btn-primary"
               style={{ width: '100%', height: 40 }}
-              disabled={sending || !text.trim() || holds.length === 0}
+              disabled={sending || !text.trim() || selectedIds.length === 0}
             >
               <Icon name="send" size={15} color="white" />
               {sending ? 'Sender…' : 'Send besked'}
@@ -513,7 +567,7 @@ function MessagesPage({ userDoc, authUser }) {
             <span className="card-header-title">Sendte beskeder</span>
             <span className="text-muted" style={{ fontSize: 12 }}>{messages.length} i alt</span>
           </div>
-          {loading ? (
+          {msgLoading ? (
             <div className="loading-dots"><span/><span/><span/></div>
           ) : messages.length === 0 ? (
             <EmptyState icon="message" text="Ingen beskeder sendt endnu" />
@@ -527,7 +581,12 @@ function MessagesPage({ userDoc, authUser }) {
                   </div>
                   <p className="msg-text">{m.text}</p>
                   <div className="msg-holds">
-                    {(m.targetHolds ?? []).map(h => <HoldPill key={h} holdId={h} />)}
+                    {(m.targetHolds ?? []).map((h, i) => (
+                      <HoldPill
+                        key={typeof h === 'object' ? (h.conventus_id ?? i) : h}
+                        holdId={h}
+                      />
+                    ))}
                   </div>
                 </div>
               ))}
