@@ -1,5 +1,5 @@
 const CACHE = 'ssif-v3'
-const PRECACHE = ['/app/', '/app/index.html']
+const PRECACHE = ['/', '/index.html']
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(PRECACHE)))
@@ -38,7 +38,6 @@ self.addEventListener('push', e => {
   let payload = {}
   try { payload = e.data.json() } catch { return }
 
-  // FCM kan sende under notification eller data
   const n     = payload.notification ?? payload.data ?? {}
   const title = n.title || payload.title || 'SSIF'
   const body  = n.body  || payload.body  || ''
@@ -46,21 +45,21 @@ self.addEventListener('push', e => {
   e.waitUntil(
     self.registration.showNotification(title, {
       body,
-      icon:  '/app/icon-192.png',
-      badge: '/app/icon-192.png',
-      tag:   'ssif-push',
+      icon:     '/icon-192.png',
+      badge:    '/icon-192.png',
+      tag:      'ssif-push',
       renotify: true,
-      data: { url: '/app/' },
+      data:     { url: '/' },
     })
   )
 })
 
 self.addEventListener('notificationclick', e => {
   e.notification.close()
-  const target = e.notification.data?.url || '/app/'
+  const target = e.notification.data?.url || '/'
   e.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(all => {
-      const existing = all.find(c => c.url.startsWith(self.location.origin + '/app/'))
+      const existing = all.find(c => c.url.startsWith(self.location.origin + '/'))
       if (existing) { existing.focus(); return }
       clients.openWindow(target)
     })

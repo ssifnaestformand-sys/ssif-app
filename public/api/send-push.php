@@ -191,10 +191,10 @@ function sendFcmMessage(string $projectId, string $accessToken, string $token, s
             'apns'    => ['payload' => ['aps' => ['sound' => 'default', 'badge' => 1]]],
             'webpush' => [
                 'notification' => [
-                    'icon'  => '/app/icon-192.png',
-                    'badge' => '/app/icon-192.png',
+                    'icon'  => '/icon-192.png',
+                    'badge' => '/icon-192.png',
                 ],
-                'fcm_options' => ['link' => '/app/'],
+                'fcm_options' => ['link' => '/'],
             ],
         ],
     ]);

@@ -1299,7 +1299,7 @@ export default function App() {
     async function syncConventusHolds() {
       try {
         // Kald PHP proxy
-        const res = await fetch('/app/public/api/conventus.php')
+        const res = await fetch(`${import.meta.env.BASE_URL}api/conventus.php`)
         if (!res.ok) throw new Error('Conventus API proxy failed')
         
         const data = await res.json()

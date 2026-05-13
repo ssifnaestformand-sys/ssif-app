@@ -11,8 +11,8 @@ import {
 } from 'firebase/firestore'
 import './admin.css'
 
-// Admin serveres fra /app/admin/ — brug BASE_URL for at ramme PHP-filer i /app/
-const BASE = import.meta.env.BASE_URL  // '/app/'
+// BASE_URL er '/' når appen kører på subdomain (app.sejssvejbaek-if.dk)
+const BASE = import.meta.env.BASE_URL
 
 // ─── Static Data ──────────────────────────────────────────────────────────────
 
