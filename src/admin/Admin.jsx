@@ -11,8 +11,8 @@ import {
 } from 'firebase/firestore'
 import './admin.css'
 
-// BASE_URL er '/' når appen kører på subdomain (app.sejssvejbaek-if.dk)
-const BASE = import.meta.env.BASE_URL
+// Admin bor i /admin/ – '../' går op til roden uanset domæne/sti
+const BASE = '../'
 
 // ─── Static Data ──────────────────────────────────────────────────────────────
 
