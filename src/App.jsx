@@ -36,6 +36,7 @@ function Icon({ name, size = 24, color = 'currentColor', sw = 1.75 }) {
     x:         <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>,
     'user-plus':<><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></>,
     heart:     <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>,
+    bell:      <><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></>,
   }
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -433,11 +434,24 @@ function BottomNav({ activeTab, onChange, unreadCount }) {
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
-function DashboardScreen({ user, conversations, news, onNavigate }) {
+function DashboardScreen({ user, conversations, news, onNavigate, pushStatus, onEnableNotifications }) {
   const totalUnread = conversations.reduce((s, c) => s + (c.unread || 0), 0)
 
   return (
     <div className="screen">
+      {pushStatus === 'available' && (
+        <button className="push-banner" onClick={onEnableNotifications}>
+          <div className="push-banner-icon">
+            <Icon name="bell" size={20} color="var(--green)" />
+          </div>
+          <div className="push-banner-text">
+            <span className="push-banner-title">Aktivér notifikationer</span>
+            <span className="push-banner-body">Få besked om kampe og vigtige meddelelser</span>
+          </div>
+          <Icon name="chevron" size={18} color="var(--green)" sw={2.5} />
+        </button>
+      )}
+
       <div className="dashboard-greeting">
         <div>
           <p className="greeting-sub">God dag</p>
@@ -1105,6 +1119,7 @@ export default function App() {
   const [convosLive, setConvosLive]               = useState(false)
   const [needsEmailForLink, setNeedsEmailForLink] = useState(false)
   const [magicLinkError, setMagicLinkError]       = useState('')
+  const [pushStatus, setPushStatus]               = useState('checking') // 'checking'|'available'|'granted'|'denied'|'unsupported'
 
   // magicLinkRef: true while sign-in link is being processed → prevents
   // the onAuthStateChanged null-event from showing the login screen
@@ -1227,34 +1242,38 @@ export default function App() {
     return unsub
   }, [user?.uid])
 
-  // ── FCM push permission + token ──────────────────────────────────────────
+  // ── FCM: tjek nuværende tilladelse (uden at bede om det) ────────────────
   useEffect(() => {
     if (!user?.uid || user.isDemo) return
-    if (!('Notification' in window) || !('serviceWorker' in navigator)) return
-
-    async function registerPush() {
-      try {
-        const permission = await Notification.requestPermission()
-        if (permission !== 'granted') return
-
-        const messaging = getAppMessaging()
-        if (!messaging) return
-
-        const swReg = await navigator.serviceWorker.ready
-        const token = await getToken(messaging, {
-          vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY,
-          serviceWorkerRegistration: swReg,
-        })
-        if (token) {
-          await updateDoc(doc(db, 'users', user.uid), { fcmToken: token })
-        }
-      } catch (err) {
-        console.warn('[FCM]', err.message)
-      }
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+      setPushStatus('unsupported')
+      return
     }
-
-    registerPush()
+    const p = Notification.permission
+    setPushStatus(p === 'granted' ? 'granted' : p === 'denied' ? 'denied' : 'available')
   }, [user?.uid])
+
+  // ── Brugerstyret: gemmer FCM-token efter brugeren har givet tilladelse ───
+  async function handleEnableNotifications() {
+    try {
+      const permission = await Notification.requestPermission()
+      setPushStatus(permission === 'granted' ? 'granted' : 'denied')
+      if (permission !== 'granted') return
+
+      const messaging = getAppMessaging()
+      if (!messaging) return
+      const swReg = await navigator.serviceWorker.ready
+      const token = await getToken(messaging, {
+        vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY,
+        serviceWorkerRegistration: swReg,
+      })
+      if (token && user?.uid) {
+        await updateDoc(doc(db, 'users', user.uid), { fcmToken: token })
+      }
+    } catch (err) {
+      console.warn('[FCM]', err.message)
+    }
+  }
 
   // ── FCM forgrunds-beskeder (app åben) ────────────────────────────────────
   useEffect(() => {
@@ -1398,7 +1417,7 @@ export default function App() {
 
       <main className="app-content">
         {activeTab === 'dashboard' && (
-          <DashboardScreen user={user} conversations={convos} news={news} onNavigate={navigateFromDashboard} />
+          <DashboardScreen user={user} conversations={convos} news={news} onNavigate={navigateFromDashboard} pushStatus={pushStatus} onEnableNotifications={handleEnableNotifications} />
         )}
         {activeTab === 'familie' && (
           <FamilieTab user={user} />
