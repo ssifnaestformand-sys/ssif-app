@@ -11,6 +11,9 @@ import {
 } from 'firebase/firestore'
 import './admin.css'
 
+// Admin serveres fra /app/admin/ — brug BASE_URL for at ramme PHP-filer i /app/
+const BASE = import.meta.env.BASE_URL  // '/app/'
+
 // ─── Static Data ──────────────────────────────────────────────────────────────
 
 const TEAMS_STATIC = [
@@ -748,95 +751,136 @@ function NewsPage({ userDoc, authUser }) {
 
 // ─── Teams ────────────────────────────────────────────────────────────────────
 
+/**
+ * Firestore-struktur for holds/{conventus_id}:
+ *   conventus_id, titel, aktivitet_titel, periode_fra, periode_til,
+ *   aktiv (bool), traener_uid, traeningstider, beskrivelse, sidst_synkroniseret
+ */
 function TeamsPage({ userDoc, authUser }) {
-  const [loading, setLoading]         = useState(true)
-  const [error, setError]             = useState(null)
-  const [groups, setGroups]           = useState([])
-  const [fsData, setFsData]           = useState({})   // groupId → Firestore doc
-  const [saving, setSaving]           = useState(null)
-  const [expandedId, setExpandedId]   = useState(null)
-  const [coachForm, setCoachForm]     = useState({ coach: '', coachPhone: '' })
+  const [holds,      setHolds]      = useState([])
+  const [users,      setUsers]      = useState([])
+  const [loading,    setLoading]    = useState(true)
+  const [syncing,    setSyncing]    = useState(false)
+  const [syncResult, setSyncResult] = useState(null)
+  const [saving,     setSaving]     = useState(null)
+  const [expanded,   setExpanded]   = useState(null)
+  const [editForm,   setEditForm]   = useState({ traeningstider: '', traener_uid: '' })
 
-  async function loadConventus() {
+  function loadHolds() {
     setLoading(true)
-    setError(null)
-    try {
-      const res = await fetch('holds.php')
-      if (!res.ok) throw new Error(res.statusText)
-      const data = await res.json()
-      if (data.error) throw new Error(data.error)
-      setGroups(data.groups ?? [])
-    } catch (e) {
-      setError('Kunne ikke hente data fra Conventus: ' + e.message)
-    } finally {
-      setLoading(false)
-    }
+    getDocs(collection(db, 'holds'))
+      .then(snap => {
+        const all = snap.docs.map(d => ({ _docId: d.id, ...d.data() }))
+        // Rollefilter: trænere ser kun egne hold
+        if (userDoc?.role !== 'admin' && userDoc?.holds?.length) {
+          const mine = new Set(userDoc.holds.map(String))
+          setHolds(all.filter(h => mine.has(String(h.conventus_id))))
+        } else {
+          setHolds(all)
+        }
+      })
+      .finally(() => setLoading(false))
   }
 
   useEffect(() => {
-    loadConventus()
-    // Hent ekstra info gemt i Firestore (træner, vis-i-app)
-    getDocs(collection(db, 'holds')).then(snap => {
-      const map = {}
-      snap.docs.forEach(d => { map[d.id] = d.data() })
-      setFsData(map)
-    })
+    loadHolds()
+    getDocs(collection(db, 'users')).then(snap =>
+      setUsers(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    )
   }, [])
 
-  async function toggleShowInApp(group, value) {
-    setSaving(group.id + '-toggle')
-    const ref = doc(db, 'holds', String(group.id))
-    await setDoc(ref, {
-      conventusId:      group.id,
-      name:             group.name,
-      activityTypeId:   group.activityTypeId,
-      activityTypeName: group.activityTypeName,
-      showInApp:        value,
-    }, { merge: true })
-    setFsData(prev => ({ ...prev, [group.id]: { ...prev[group.id], showInApp: value } }))
+  async function syncFromConventus() {
+    setSyncing(true)
+    setSyncResult(null)
+    try {
+      const res = await fetch(`${BASE}api/conventus.php?endpoint=sync`)
+      if (!res.ok) throw new Error(res.statusText)
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      const conventusHolds = data.holds ?? []
+      if (conventusHolds.length === 0) throw new Error('Conventus returnerede 0 hold – tjek API-nøglen')
+
+      // Hent eksisterende Firestore-hold til merge-logik
+      const existingSnap = await getDocs(collection(db, 'holds'))
+      const existingMap = {}
+      existingSnap.docs.forEach(d => { existingMap[String(d.data().conventus_id)] = d.ref })
+
+      let added = 0, updated = 0
+      for (const ch of conventusHolds) {
+        const id  = String(ch.conventus_id)
+        const conventusFields = {
+          conventus_id:       ch.conventus_id,
+          titel:              ch.titel,
+          aktivitet_titel:    ch.aktivitet_titel || '',
+          periode_fra:        ch.periode_fra     || '',
+          periode_til:        ch.periode_til     || '',
+          beskrivelse:        ch.beskrivelse     || '',
+          sidst_synkroniseret: serverTimestamp(),
+        }
+        if (existingMap[id]) {
+          // Bevar admin-felter (aktiv, traener_uid, traeningstider) — opdatér kun Conventus-data
+          await updateDoc(existingMap[id], conventusFields)
+          updated++
+        } else {
+          await setDoc(doc(db, 'holds', id), {
+            ...conventusFields,
+            aktiv:          false,
+            traener_uid:    '',
+            traeningstider: '',
+          })
+          added++
+        }
+      }
+      setSyncResult({ added, updated, total: conventusHolds.length, errors: data.errors ?? [] })
+      loadHolds()
+    } catch (e) {
+      setSyncResult({ error: e.message })
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  async function toggleAktiv(hold) {
+    const next = !hold.aktiv
+    setSaving(hold.conventus_id + '-aktiv')
+    await updateDoc(doc(db, 'holds', String(hold.conventus_id)), { aktiv: next })
+    setHolds(prev => prev.map(h => h.conventus_id === hold.conventus_id ? { ...h, aktiv: next } : h))
     setSaving(null)
   }
 
-  function openCoachEditor(group) {
-    const fs = fsData[group.id] ?? {}
-    setCoachForm({ coach: fs.coach ?? '', coachPhone: fs.coachPhone ?? '' })
-    setExpandedId(group.id)
+  function openEdit(hold) {
+    setEditForm({ traeningstider: hold.traeningstider ?? '', traener_uid: hold.traener_uid ?? '' })
+    setExpanded(hold.conventus_id)
   }
 
-  async function saveCoach(group) {
-    setSaving(group.id + '-coach')
-    const ref = doc(db, 'holds', String(group.id))
-    await setDoc(ref, {
-      conventusId:      group.id,
-      name:             group.name,
-      activityTypeId:   group.activityTypeId,
-      activityTypeName: group.activityTypeName,
-      coach:            coachForm.coach,
-      coachPhone:       coachForm.coachPhone,
-      updatedAt:        serverTimestamp(),
-      updatedBy:        authUser.uid,
-    }, { merge: true })
-    setFsData(prev => ({
-      ...prev,
-      [group.id]: { ...prev[group.id], coach: coachForm.coach, coachPhone: coachForm.coachPhone },
-    }))
+  async function saveEdit(hold) {
+    const key = hold.conventus_id + '-edit'
+    setSaving(key)
+    await updateDoc(doc(db, 'holds', String(hold.conventus_id)), {
+      traeningstider: editForm.traeningstider,
+      traener_uid:    editForm.traener_uid,
+      updatedAt:      serverTimestamp(),
+      updatedBy:      authUser.uid,
+    })
+    setHolds(prev => prev.map(h =>
+      h.conventus_id === hold.conventus_id
+        ? { ...h, traeningstider: editForm.traeningstider, traener_uid: editForm.traener_uid }
+        : h
+    ))
     setSaving(null)
-    setExpandedId(null)
+    setExpanded(null)
   }
 
-  // Rollefilter: træner ser kun tildelte hold
-  let visible = groups
-  if (userDoc?.role !== 'admin' && userDoc?.holds?.length) {
-    const mine = new Set(userDoc.holds.map(String))
-    visible = groups.filter(g => mine.has(String(g.id)))
+  const trainerLabel = uid => {
+    const u = users.find(u => u.id === uid)
+    return u ? (u.displayName || u.email) : uid
   }
 
-  // Gruppér efter idrætgren
   const byType = {}
-  visible.forEach(g => {
-    const t = g.activityTypeName
+  holds.forEach(h => {
+    const t = h.aktivitet_titel || 'Ukendt'
     if (!byType[t]) byType[t] = []
-    byType[t].push(g)
+    byType[t].push(h)
   })
   const typeNames = Object.keys(byType).sort()
 
@@ -844,31 +888,31 @@ function TeamsPage({ userDoc, authUser }) {
     <>
       <div className="page-header">
         <h1 className="page-title">Hold</h1>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span className="text-muted" style={{ fontSize: 13 }}>
-            {visible.length} hold fra Conventus
-          </span>
-          <button className="btn btn-ghost btn-sm" onClick={loadConventus} disabled={loading}>
-            <Icon name="link" size={13} />
-            {loading ? 'Henter…' : 'Opdatér fra Conventus'}
-          </button>
-        </div>
+        <button className="btn btn-primary" onClick={syncFromConventus} disabled={syncing}>
+          <Icon name="link" size={15} color="white" />
+          {syncing ? 'Synkroniserer…' : 'Synkroniser hold fra Conventus'}
+        </button>
       </div>
 
-      {error && (
-        <div className="alert-warn" style={{ marginBottom: 16 }}>{error}</div>
+      {syncResult && !syncResult.error && (
+        <div className="alert-info" style={{ marginBottom: 16 }}>
+          <strong>Synkronisering gennemført:</strong> {syncResult.added} nye · {syncResult.updated} opdaterede · {syncResult.total} i alt
+          {syncResult.errors?.length > 0 && <div style={{ marginTop: 4, fontSize: 12 }}>Advarsler: {syncResult.errors.join('; ')}</div>}
+        </div>
+      )}
+      {syncResult?.error && (
+        <div className="alert-warn" style={{ marginBottom: 16 }}>Fejl: {syncResult.error}</div>
       )}
 
       {loading ? (
         <div className="card"><div className="loading-dots"><span/><span/><span/></div></div>
-      ) : visible.length === 0 ? (
-        <EmptyState icon="users" text="Ingen hold fundet" />
+      ) : holds.length === 0 ? (
+        <EmptyState icon="users" text="Ingen hold importeret endnu – klik 'Synkroniser hold fra Conventus'" />
       ) : (
         typeNames.map(typeName => (
           <div key={typeName} style={{ marginBottom: 24 }}>
-            <h3 style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase',
-                         letterSpacing: '.5px', color: 'var(--text2)', margin: '0 0 8px' }}>
-              {typeName} <span style={{ fontWeight: 400 }}>({byType[typeName].length})</span>
+            <h3 style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: 'var(--text2)', margin: '0 0 8px' }}>
+              {typeName} ({byType[typeName].length})
             </h3>
             <div className="card">
               <div className="table-wrap">
@@ -876,84 +920,86 @@ function TeamsPage({ userDoc, authUser }) {
                   <thead>
                     <tr>
                       <th>Holdnavn</th>
-                      <th>Conventus-ID</th>
+                      <th>Periode</th>
                       <th>Træner</th>
-                      <th>Telefon</th>
-                      <th style={{ textAlign: 'center' }}>Vis i app</th>
-                      <th style={{ width: 80 }}></th>
+                      <th>Træningstider</th>
+                      <th style={{ textAlign: 'center' }}>Aktiv</th>
+                      <th style={{ width: 90 }}></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {byType[typeName].map(g => {
-                      const fs = fsData[g.id] ?? {}
-                      const isExpanded = expandedId === g.id
+                    {byType[typeName].map(hold => {
+                      const isExp = expanded === hold.conventus_id
                       return (
                         <>
-                          <tr key={g.id} style={{ background: isExpanded ? 'var(--bg)' : undefined }}>
-                            <td style={{ fontWeight: 600 }}>{g.name}</td>
-                            <td style={{ color: 'var(--text3)', fontFamily: 'monospace', fontSize: 12 }}>
-                              {g.id}
+                          <tr key={hold.conventus_id} style={{ background: isExp ? 'var(--bg)' : undefined }}>
+                            <td>
+                              <span style={{ fontWeight: 600 }}>{hold.titel}</span>
+                              <span style={{ display: 'block', fontSize: 11, color: 'var(--text3)', fontFamily: 'monospace' }}>#{hold.conventus_id}</span>
                             </td>
-                            <td style={{ color: fs.coach ? 'var(--text)' : 'var(--text3)' }}>
-                              {fs.coach || '–'}
+                            <td style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+                              {hold.periode_fra && hold.periode_til ? `${hold.periode_fra} – ${hold.periode_til}` : '–'}
                             </td>
-                            <td style={{ color: 'var(--text2)', fontSize: 12 }}>
-                              {fs.coachPhone || '–'}
+                            <td style={{ fontSize: 13, color: hold.traener_uid ? 'var(--text)' : 'var(--text3)' }}>
+                              {hold.traener_uid ? trainerLabel(hold.traener_uid) : '–'}
+                            </td>
+                            <td style={{ fontSize: 12, color: hold.traeningstider ? 'var(--text)' : 'var(--text3)' }}>
+                              {hold.traeningstider || '–'}
                             </td>
                             <td style={{ textAlign: 'center' }}>
                               <input
                                 type="checkbox"
-                                checked={fs.showInApp ?? false}
-                                disabled={saving === g.id + '-toggle'}
-                                onChange={e => toggleShowInApp(g, e.target.checked)}
+                                checked={hold.aktiv ?? false}
+                                disabled={saving === hold.conventus_id + '-aktiv'}
+                                onChange={() => toggleAktiv(hold)}
                                 style={{ accentColor: 'var(--green)', width: 16, height: 16, cursor: 'pointer' }}
                               />
                             </td>
                             <td>
-                              <button
-                                className="btn btn-ghost btn-sm"
-                                onClick={() => isExpanded ? setExpandedId(null) : openCoachEditor(g)}
-                              >
+                              <button className="btn btn-ghost btn-sm" onClick={() => isExp ? setExpanded(null) : openEdit(hold)}>
                                 <Icon name="edit" size={12} />
-                                {isExpanded ? 'Luk' : 'Rediger'}
+                                {isExp ? 'Luk' : 'Redigér'}
                               </button>
                             </td>
                           </tr>
-                          {isExpanded && (
-                            <tr key={g.id + '-edit'}>
-                              <td colSpan={6} style={{ padding: '14px 16px', background: 'var(--bg)', borderBottom: '2px solid var(--border)' }}>
+                          {isExp && (
+                            <tr key={hold.conventus_id + '-edit'}>
+                              <td colSpan={6} style={{ padding: '14px 16px', background: 'var(--bg)', borderBottom: '2px solid var(--green)' }}>
                                 <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                                  <div className="form-group" style={{ marginBottom: 0, flex: '1 1 200px' }}>
-                                    <label className="form-label">Træner</label>
+                                  <div className="form-group" style={{ marginBottom: 0, flex: '1 1 220px' }}>
+                                    <label className="form-label">Træningstider</label>
                                     <input
                                       className="form-control"
-                                      value={coachForm.coach}
-                                      onChange={e => setCoachForm(f => ({ ...f, coach: e.target.value }))}
-                                      placeholder="Navn"
+                                      value={editForm.traeningstider}
+                                      onChange={e => setEditForm(f => ({ ...f, traeningstider: e.target.value }))}
+                                      placeholder="fx Mandag 16:00–17:30, Torsdag 17:00–18:30"
                                     />
                                   </div>
-                                  <div className="form-group" style={{ marginBottom: 0, flex: '1 1 160px' }}>
-                                    <label className="form-label">Telefon</label>
-                                    <input
+                                  <div className="form-group" style={{ marginBottom: 0, flex: '1 1 180px' }}>
+                                    <label className="form-label">Tilknyt træner</label>
+                                    <select
                                       className="form-control"
-                                      value={coachForm.coachPhone}
-                                      onChange={e => setCoachForm(f => ({ ...f, coachPhone: e.target.value }))}
-                                      placeholder="xx xx xx xx"
-                                    />
+                                      value={editForm.traener_uid}
+                                      onChange={e => setEditForm(f => ({ ...f, traener_uid: e.target.value }))}
+                                    >
+                                      <option value="">– ingen –</option>
+                                      {users.map(u => (
+                                        <option key={u.id} value={u.id}>{u.displayName || u.email}</option>
+                                      ))}
+                                    </select>
                                   </div>
                                   <div style={{ display: 'flex', gap: 8 }}>
-                                    <button
-                                      className="btn btn-primary btn-sm"
-                                      disabled={saving === g.id + '-coach'}
-                                      onClick={() => saveCoach(g)}
-                                    >
-                                      {saving === g.id + '-coach' ? 'Gemmer…' : 'Gem'}
+                                    <button className="btn btn-primary btn-sm" disabled={saving === hold.conventus_id + '-edit'} onClick={() => saveEdit(hold)}>
+                                      {saving === hold.conventus_id + '-edit' ? 'Gemmer…' : 'Gem'}
                                     </button>
-                                    <button className="btn btn-ghost btn-sm" onClick={() => setExpandedId(null)}>
-                                      Annuller
-                                    </button>
+                                    <button className="btn btn-ghost btn-sm" onClick={() => setExpanded(null)}>Annuller</button>
                                   </div>
                                 </div>
+                                {hold.beskrivelse && (
+                                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--text2)' }}>
+                                    <strong>Fra Conventus:</strong> {hold.beskrivelse}
+                                  </div>
+                                )}
                               </td>
                             </tr>
                           )}
@@ -967,10 +1013,6 @@ function TeamsPage({ userDoc, authUser }) {
           </div>
         ))
       )}
-
-      <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: 8 }}>
-        Data hentes live fra Conventus. "Vis i app" og træneroplysninger gemmes i Firestore.
-      </p>
     </>
   )
 }
@@ -990,7 +1032,7 @@ function EventsPage({ userDoc, authUser }) {
   const [toDelete,setToDelete]= useState(null)
 
   useEffect(() => {
-    fetch('holds.php').then(r => r.json()).then(d => setHolds(d.groups || [])).catch(() => {})
+    fetch(`${BASE}holds.php`).then(r => r.json()).then(d => setHolds(d.groups || [])).catch(() => {})
   }, [])
 
   useEffect(() => {

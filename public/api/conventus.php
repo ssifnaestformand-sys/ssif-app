@@ -2,205 +2,214 @@
 /**
  * Conventus API Proxy
  *
- * Endpoints (via ?endpoint=...):
- *   grupper   → get_grupper.php  – aktive hold
+ * Endpoints (?endpoint=...):
+ *   sync     → Henter aktive hold fra ALLE afdelinger, returnerer normaliseret JSON
+ *   grupper  → Rå hold-liste (brugt til dropdown i admin)
  *   (default) → get_medlemmer.php
  *
- * CONVENTUS_KEY læses fra:
- *   1. Apache SetEnv (sat af deploy-pipeline via .htaccess)
- *   2. .env-fil ved siden af denne fil (fallback)
+ * CONVENTUS_KEY læses fra Apache SetEnv (injiceret via deploy.yml) eller .env-fil.
  */
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, OPTIONS');
-header('Cache-Control: public, max-age=1800');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(200); exit; }
 
-// ── Hent API-nøgle ────────────────────────────────────────────────────────────
+// ── API-nøgle ────────────────────────────────────────────────────────────────
 $apiKey = getenv('CONVENTUS_KEY');
-
 if (!$apiKey) {
-    foreach ([__DIR__ . '/.env', __DIR__ . '/../../.env'] as $envPath) {
-        if (file_exists($envPath)) {
-            $env = parse_ini_file($envPath);
-            if (!empty($env['CONVENTUS_KEY'])) {
-                $apiKey = $env['CONVENTUS_KEY'];
-                break;
-            }
+    foreach ([__DIR__ . '/.env', __DIR__ . '/../../.env'] as $path) {
+        if (file_exists($path)) {
+            $env = parse_ini_file($path);
+            if (!empty($env['CONVENTUS_KEY'])) { $apiKey = $env['CONVENTUS_KEY']; break; }
         }
     }
 }
-
 if (!$apiKey) {
     http_response_code(500);
     echo json_encode(['error' => 'CONVENTUS_KEY ikke konfigureret på serveren']);
     exit;
 }
 
-// ── Routing ───────────────────────────────────────────────────────────────────
 $endpoint = strtolower(trim($_GET['endpoint'] ?? ''));
-$ctx      = stream_context_create(['http' => ['timeout' => 10]]);
+$ctx      = stream_context_create(['http' => ['timeout' => 15]]);
 
-if ($endpoint === 'grupper') {
-    $url = 'https://www.conventus.dk/dataudv/api/adressebog/get_grupper.php?' . http_build_query([
-        'forening'           => '1031',
-        'key'                => $apiKey,
-        'type'               => 'hold',
-        'aktiv'              => 'true',
-        'online_tilmelding'  => 'true',
-    ]);
+const BASE_URL  = 'https://www.conventus.dk/dataudv/api/adressebog/get_grupper.php';
+const FORENING  = '1031';
 
-    $raw = @file_get_contents($url, false, $ctx);
+// ── SYNC: hent alle aktive hold fra alle afdelinger ───────────────────────────
+if ($endpoint === 'sync') {
+    header('Cache-Control: no-cache');
 
-    if ($raw === false) {
-        http_response_code(503);
-        echo json_encode(['error' => 'Ingen forbindelse til Conventus']);
-        exit;
+    // Definér hvilke Conventus-kald der skal laves og hvilke filtre der anvendes
+    $sources = [
+        // Alle aktive fodboldhold (ingen afdelingsfilter – online_tilmelding allerede i URL)
+        [
+            'params'           => ['type' => 'hold', 'aktiv' => 'true', 'online_tilmelding' => 'true'],
+            'aktivitet_filter' => null,   // ingen ekstra filtrering
+        ],
+        // Gymnastikafdeling
+        [
+            'params'           => ['type' => 'hold', 'aktiv' => 'true', 'afdeling' => '4001'],
+            'aktivitet_filter' => 'Gymnastik',  // kun hold med aktivitet_titel = "Gymnastik"
+        ],
+    ];
+
+    $allHolds = [];
+    $seen     = [];
+    $errors   = [];
+
+    foreach ($sources as $source) {
+        $url = BASE_URL . '?' . http_build_query(array_merge(
+            ['forening' => FORENING, 'key' => $apiKey],
+            $source['params']
+        ));
+
+        $raw = @file_get_contents($url, false, $ctx);
+        if ($raw === false) { $errors[] = "Timeout/fejl: {$url}"; continue; }
+
+        $xml = @simplexml_load_string($raw);
+        if ($xml === false)           { $errors[] = 'XML parse-fejl'; continue; }
+        if (!empty((string)$xml->error)) { $errors[] = (string)$xml->error; continue; }
+
+        $arr   = xmlToArray($xml);
+        $holds = extractHolds($arr, $source['aktivitet_filter']);
+
+        foreach ($holds as $h) {
+            $id = (string)$h['conventus_id'];
+            if (!isset($seen[$id])) {
+                $seen[$id] = true;
+                $allHolds[] = $h;
+            }
+        }
     }
 
-    $xml = @simplexml_load_string($raw);
-
-    if ($xml === false) {
-        // Svaret er ikke XML (uventet format)
-        http_response_code(502);
-        echo json_encode(['error' => 'Uventet svar fra Conventus', 'raw' => substr($raw, 0, 500)]);
-        exit;
-    }
-
-    // Tjek for fejl fra Conventus
-    if (!empty((string)$xml->error)) {
-        http_response_code(401);
-        echo json_encode(['error' => (string)$xml->error]);
-        exit;
-    }
-
-    // Konvertér XML → PHP-array og udtruk grupper
-    $arr    = xmlToArray($xml);
-    $groups = extractGroups($arr);
+    usort($allHolds, fn($a,$b) => strcmp($a['aktivitet_titel'], $b['aktivitet_titel']) ?: strcmp($a['titel'], $b['titel']));
 
     echo json_encode([
-        'groups'  => $groups,
-        'count'   => count($groups),
+        'holds'   => $allHolds,
+        'count'   => count($allHolds),
         'fetched' => date('c'),
+        'errors'  => $errors,
     ], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
-// ── Standard: get_medlemmer ───────────────────────────────────────────────────
-$url = 'https://www.conventus.dk/dataudv/api/adressebog/get_medlemmer.php?' . http_build_query([
-    'forening'   => '1031',
-    'key'        => $apiKey,
-    'relationer' => 'true',
-]);
-
-$response = @file_get_contents($url, false, $ctx);
-if ($response === false) {
-    http_response_code(503);
-    echo json_encode(['error' => 'Ingen forbindelse til Conventus']);
+// ── GRUPPER: simpel hold-liste til dropdown ───────────────────────────────────
+if ($endpoint === 'grupper') {
+    header('Cache-Control: public, max-age=1800');
+    $url = BASE_URL . '?' . http_build_query([
+        'forening'          => FORENING,
+        'key'               => $apiKey,
+        'type'              => 'hold',
+        'aktiv'             => 'true',
+        'online_tilmelding' => 'true',
+    ]);
+    $raw = @file_get_contents($url, false, $ctx);
+    if ($raw === false) { http_response_code(503); echo json_encode(['error' => 'Ingen svar fra Conventus']); exit; }
+    $xml = @simplexml_load_string($raw);
+    if ($xml === false || !empty((string)$xml->error)) { http_response_code(502); echo json_encode(['error' => $xml ? (string)$xml->error : 'XML-fejl']); exit; }
+    $arr    = xmlToArray($xml);
+    $groups = extractHolds($arr, null);
+    echo json_encode(['groups' => $groups, 'count' => count($groups), 'fetched' => date('c')], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
-echo $response;
+// ── STANDARD: get_medlemmer ───────────────────────────────────────────────────
+$url = 'https://www.conventus.dk/dataudv/api/adressebog/get_medlemmer.php?' . http_build_query([
+    'forening' => FORENING, 'key' => $apiKey, 'relationer' => 'true',
+]);
+$resp = @file_get_contents($url, false, $ctx);
+if ($resp === false) { http_response_code(503); echo json_encode(['error' => 'Ingen svar fra Conventus']); exit; }
+echo $resp;
 
 // ── Hjælpefunktioner ─────────────────────────────────────────────────────────
 
 /**
- * SimpleXML → ren PHP-array.
+ * SimpleXML → PHP-array.
  * Attributter gemmes under '@attributes'.
  */
 function xmlToArray(SimpleXMLElement $node): array {
     $result = [];
-
-    // Attributter
-    $attrs = (array) $node->attributes();
-    if (!empty($attrs['@attributes'])) {
-        $result['@attributes'] = $attrs['@attributes'];
-    }
-
-    // Child-elementer
+    $attrs  = (array)$node->attributes();
+    if (!empty($attrs['@attributes'])) $result['@attributes'] = $attrs['@attributes'];
     foreach ($node->children() as $tag => $child) {
-        $childArr = xmlToArray($child);
+        $val = xmlToArray($child);
         if (isset($result[$tag])) {
-            if (!is_array($result[$tag]) || !isset($result[$tag][0])) {
-                $result[$tag] = [$result[$tag]];
-            }
-            $result[$tag][] = $childArr;
+            if (!is_array($result[$tag]) || !array_key_exists(0, $result[$tag])) $result[$tag] = [$result[$tag]];
+            $result[$tag][] = $val;
         } else {
-            $result[$tag] = $childArr;
+            $result[$tag] = $val;
         }
     }
-
-    // Tekstindhold (leaf-node)
-    if (empty($result)) {
-        return trim((string) $node);
-    }
-
-    return $result;
+    return $result ?: trim((string)$node);
 }
 
 /**
- * Rekursivt udtruk alle <gruppe>-elementer fra det konverterede array.
- * Understøtter både attribut-baseret og element-baseret XML.
- * Deduplicerer på gruppe-ID.
+ * Udtruk feltværdi fra både attributter og child-elementer.
+ * Prøver danske og engelske varianter af feltnavnet.
  */
-function extractGroups(array|string $node, array &$seen = []): array {
-    if (is_string($node)) return [];
+function getField(array|string $node, string ...$keys): string {
+    if (is_string($node)) return '';
+    foreach ($keys as $key) {
+        if (isset($node['@attributes'][$key]) && $node['@attributes'][$key] !== '') return (string)$node['@attributes'][$key];
+        if (isset($node[$key]) && is_string($node[$key]) && $node[$key] !== '')       return $node[$key];
+    }
+    return '';
+}
 
+/**
+ * Rekursivt udtruk alle gruppe-noder og normaliser til hold-objekter.
+ * $aktivitetFilter: hvis sat, beholdes kun hold med matchende aktivitet_titel.
+ */
+function extractHolds(array|string $node, ?string $aktivitetFilter, array &$seen = []): array {
+    if (is_string($node)) return [];
     $result = [];
 
-    // Hvis dette node ER en gruppe (har id + navn)
-    if (isGruppeNode($node)) {
-        $id   = getField($node, 'id');
-        $navn = getField($node, 'navn');
-        if ($id && $navn && !isset($seen[$id])) {
+    // Er dette node selv et hold?
+    $id = getField($node, 'id');
+    if ($id && !isset($seen[$id])) {
+        $titel           = getField($node, 'titel', 'navn', 'name');
+        $aktivitetTitel  = getField($node, 'aktivitet_titel', 'aktivitet');
+        $periodeFra      = getField($node, 'periode_fra', 'periodeStart', 'start');
+        $periodeTil      = getField($node, 'periode_til', 'periodesSlut', 'slut');
+        $onlineTilm      = strtolower(getField($node, 'online_tilmelding', 'onlinetilmelding'));
+        $beskrivelse     = getField($node, 'om_holdet', 'beskrivelse', 'omholdet');
+
+        $onlineOk  = in_array($onlineTilm, ['1', 'true', 'yes', ''], true); // tom = ukendt, tillad
+
+        // Anvend filter kun når vi kender aktiviteten
+        $aktivitetOk = $aktivitetFilter === null
+            || $aktivitetTitel === ''
+            || stripos($aktivitetTitel, $aktivitetFilter) !== false;
+
+        $periodeOk = $aktivitetFilter === null || $periodeFra !== '';
+
+        if ($titel && $aktivitetOk && $onlineOk && $periodeOk) {
             $seen[$id] = true;
-            $result[]  = [
-                'id'   => (int) $id,
-                'navn' => html_entity_decode($navn, ENT_HTML5 | ENT_QUOTES, 'UTF-8'),
+            $result[] = [
+                'conventus_id'    => (int)$id,
+                'titel'           => html_entity_decode($titel,        ENT_HTML5 | ENT_QUOTES, 'UTF-8'),
+                'aktivitet_titel' => html_entity_decode($aktivitetTitel, ENT_HTML5 | ENT_QUOTES, 'UTF-8'),
+                'periode_fra'     => $periodeFra,
+                'periode_til'     => $periodeTil,
+                'beskrivelse'     => html_entity_decode($beskrivelse,  ENT_HTML5 | ENT_QUOTES, 'UTF-8'),
             ];
         }
     }
 
-    // Rekursivt ned i child-elementer
+    // Rekursivt ned
     foreach ($node as $key => $child) {
         if ($key === '@attributes') continue;
-        if (is_array($child)) {
-            // Kan være en liste eller et enkelt sub-element
-            if (isset($child[0])) {
-                // Numerisk array – liste af elementer
-                foreach ($child as $item) {
-                    foreach (extractGroups($item, $seen) as $g) {
-                        $result[] = $g;
-                    }
-                }
-            } else {
-                foreach (extractGroups($child, $seen) as $g) {
-                    $result[] = $g;
+        $items = (is_array($child) && isset($child[0])) ? $child : [$child];
+        foreach ($items as $item) {
+            if (is_array($item) || $item instanceof SimpleXMLElement) {
+                foreach (extractHolds($item, $aktivitetFilter, $seen) as $h) {
+                    $result[] = $h;
                 }
             }
         }
     }
-
     return $result;
-}
-
-/** Tjekker om et array-node repræsenterer en gruppe med id+navn */
-function isGruppeNode(array $node): bool {
-    return !empty(getField($node, 'id')) && !empty(getField($node, 'navn'));
-}
-
-/** Henter en feltværdi fra enten @attributes eller direkte nøgle */
-function getField(array $node, string $key): string {
-    if (isset($node['@attributes'][$key])) {
-        return (string) $node['@attributes'][$key];
-    }
-    if (isset($node[$key]) && is_string($node[$key])) {
-        return $node[$key];
-    }
-    if (isset($node[$key]['@attributes'])) {
-        return (string) ($node[$key] ?? '');
-    }
-    return '';
 }

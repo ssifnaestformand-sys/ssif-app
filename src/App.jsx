@@ -6,9 +6,9 @@ import {
   signOut, onAuthStateChanged,
 } from 'firebase/auth'
 import {
-  collection, query, orderBy, onSnapshot,
+  collection, query, where, orderBy, onSnapshot,
   addDoc, updateDoc, serverTimestamp, limit,
-  doc, getDoc, setDoc,
+  doc, getDoc, setDoc, getDocs,
 } from 'firebase/firestore'
 
 // ─── Icons ──────────────────────────────────────────────────────────────────
@@ -504,116 +504,77 @@ function DashboardScreen({ user, conversations, news, onNavigate }) {
 
 // ─── Teams ────────────────────────────────────────────────────────────────────
 
-function useConventusHolds() {
-  const [groups,  setGroups]  = useState([])
-  const [fsHolds, setFsHolds] = useState({})   // Firestore holds/{id} → extra info
-  const [loading, setLoading] = useState(true)
-  const [error,   setError]   = useState(null)
-
-  useEffect(() => {
-    fetch('api/conventus.php?endpoint=grupper')
-      .then(r => r.json())
-      .then(d => {
-        if (d.error) throw new Error(d.error)
-        setGroups(d.groups ?? [])
-      })
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false))
-  }, [])
-
-  useEffect(() => {
-    getDocs(collection(db, 'holds')).then(snap => {
-      const map = {}
-      snap.docs.forEach(d => { map[String(d.id)] = d.data() })
-      setFsHolds(map)
-    }).catch(() => {})
-  }, [])
-
-  // Berig hvert hold med Firestore-data (træner mv.)
-  const enriched = groups.map(g => ({
-    ...g,
-    ...(fsHolds[String(g.id)] ?? {}),
-    id: g.id,
-    name: g.navn,
-  }))
-
-  return { groups: enriched, loading, error }
-}
-
 function relevantHoldIds(user) {
   const ids = new Set()
-  ;(user.holds ?? []).forEach(id => ids.add(String(id)))
+  ;(user.holds         ?? []).forEach(id => ids.add(String(id)))
   ;(user.familyMembers ?? []).forEach(m => m.holdId && ids.add(String(m.holdId)))
   return ids
 }
 
-function groupBySport(holds) {
-  const map = {}
-  holds.forEach(h => {
-    // Forsøg at udtrække sportsgren fra activityTypeName eller holdnavn
-    const sport = h.activityTypeName
-      || (h.name?.startsWith('FO ') ? 'Fodbold' : null)
-      || 'Hold'
-    if (!map[sport]) map[sport] = []
-    map[sport].push(h)
-  })
-  return map
-}
-
 function TeamsScreen({ onSelectTeam, user }) {
-  const { groups, loading, error } = useConventusHolds()
-  const userHoldIds = relevantHoldIds(user)
+  const [holds,   setHolds]   = useState([])
+  const [loading, setLoading] = useState(true)
 
-  // Filtrér: vis kun brugerens hold – eller alle, hvis ingen er tildelt
-  const visible = userHoldIds.size > 0
-    ? groups.filter(g => userHoldIds.has(String(g.id)))
-    : groups
+  useEffect(() => {
+    // Hent kun aktive hold fra Firestore
+    getDocs(query(collection(db, 'holds'), where('aktiv', '==', true)))
+      .then(snap => setHolds(snap.docs.map(d => ({ _id: d.id, ...d.data() }))))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
 
-  const byType = groupBySport(visible)
-  const types  = Object.keys(byType).sort()
+  const userIds = relevantHoldIds(user)
+
+  // Vis kun brugerens hold — eller alle aktive, hvis ingen er tildelt
+  const visible = userIds.size > 0
+    ? holds.filter(h => userIds.has(String(h.conventus_id)))
+    : holds
+
+  // Gruppér efter aktivitet_titel
+  const byType = {}
+  visible.forEach(h => {
+    const t = h.aktivitet_titel || 'Hold'
+    if (!byType[t]) byType[t] = []
+    byType[t].push(h)
+  })
+  const types = Object.keys(byType).sort()
 
   if (loading) return (
-    <div className="screen" style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text2)' }}>
-      <div style={{ fontSize: 13 }}>Henter hold fra Conventus…</div>
-    </div>
-  )
-
-  if (error) return (
-    <div className="screen" style={{ padding: '24px 20px' }}>
-      <div style={{ background: '#fff3e0', borderRadius: 12, padding: '14px 16px', fontSize: 14, color: '#92400e' }}>
-        Kunne ikke hente hold: {error}
-      </div>
+    <div className="screen" style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text2)', fontSize: 13 }}>
+      Henter hold…
     </div>
   )
 
   if (visible.length === 0) return (
     <div className="screen" style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text2)', fontSize: 14 }}>
-      Ingen hold fundet. Tilknyt hold via Familie-fanen.
+      {holds.length === 0
+        ? 'Ingen hold er aktiveret endnu. Kontakt en administrator.'
+        : 'Du er ikke tilknyttet nogen aktive hold. Tilføj via Familie-fanen.'}
     </div>
   )
 
   return (
     <div className="screen">
-      {userHoldIds.size === 0 && (
+      {userIds.size === 0 && holds.length > 0 && (
         <div style={{ margin: '16px 16px 0', background: 'var(--green-soft)', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: 'var(--green)' }}>
-          Alle {groups.length} hold vises · Tilknyt egne hold via Familie-fanen
+          Alle {holds.length} aktive hold vises · Tilknyt egne hold via Familie-fanen
         </div>
       )}
       {types.map(type => (
         <div key={type}>
           <SectionHeader title={type} />
           <div className="list-group">
-            {byType[type].map((team, i) => (
-              <div key={team.id}>
+            {byType[type].map((hold, i) => (
+              <div key={hold.conventus_id ?? hold._id}>
                 {i > 0 && <div className="list-separator" />}
-                <button className="list-item" onClick={() => onSelectTeam(team)}>
+                <button className="list-item" onClick={() => onSelectTeam(hold)}>
                   <div className="list-item-icon" style={{ background: 'var(--green-soft)' }}>
                     <Icon name="users" size={17} color="var(--green)" />
                   </div>
                   <div className="list-item-body">
-                    <span className="list-item-title">{team.name}</span>
+                    <span className="list-item-title">{hold.titel}</span>
                     <span className="list-item-detail">
-                      {[team.coach, team.periode].filter(Boolean).join(' · ') || 'Conventus #' + team.id}
+                      {hold.traeningstider || (hold.periode_fra ? `${hold.periode_fra} – ${hold.periode_til}` : '–')}
                     </span>
                   </div>
                   <Chevron />
@@ -628,63 +589,63 @@ function TeamsScreen({ onSelectTeam, user }) {
   )
 }
 
-function TeamDetailScreen({ team }) {
+function TeamDetailScreen({ team: hold }) {
   return (
     <div className="screen">
       <div className="team-hero">
         <div className="team-hero-icon"><Icon name="trophy" size={36} color="white" /></div>
-        <h2 className="team-hero-name">{team.name}</h2>
-        {team.activityTypeName && (
-          <p className="team-hero-category">{team.activityTypeName}</p>
+        <h2 className="team-hero-name">{hold.titel}</h2>
+        {hold.aktivitet_titel && <p className="team-hero-category">{hold.aktivitet_titel}</p>}
+      </div>
+
+      <SectionHeader title="Oplysninger" />
+      <div className="list-group">
+        {hold.traeningstider && (
+          <div className="list-item" style={{ cursor: 'default' }}>
+            <div className="list-item-icon" style={{ background: 'var(--green-soft)' }}>
+              <Icon name="calendar" size={17} color="var(--green)" />
+            </div>
+            <div className="list-item-body">
+              <span className="list-item-title">Træningstider</span>
+              <span className="list-item-detail">{hold.traeningstider}</span>
+            </div>
+          </div>
+        )}
+        {hold.periode_fra && (
+          <>
+            {hold.traeningstider && <div className="list-separator" />}
+            <div className="list-item" style={{ cursor: 'default' }}>
+              <div className="list-item-icon" style={{ background: '#fff3e0' }}>
+                <Icon name="calendar" size={17} color="#ff9500" />
+              </div>
+              <div className="list-item-body">
+                <span className="list-item-title">Sæson</span>
+                <span className="list-item-detail">{hold.periode_fra} – {hold.periode_til}</span>
+              </div>
+            </div>
+          </>
+        )}
+        {!hold.traeningstider && !hold.periode_fra && (
+          <div className="list-item" style={{ cursor: 'default' }}>
+            <div className="list-item-body">
+              <span className="list-item-detail" style={{ color: 'var(--text3)' }}>Ingen oplysninger tilgængelige endnu</span>
+            </div>
+          </div>
         )}
       </div>
 
-      {(team.coach || team.periode) && (
+      {hold.beskrivelse ? (
         <>
-          <SectionHeader title="Oplysninger" />
+          <SectionHeader title="Om holdet" />
           <div className="list-group">
-            {team.coach && (
-              <div className="list-item" style={{ cursor: 'default' }}>
-                <div className="list-item-icon" style={{ background: 'var(--green-soft)' }}>
-                  <Icon name="person" size={17} color="var(--green)" />
-                </div>
-                <div className="list-item-body">
-                  <span className="list-item-title">{team.coach}</span>
-                  {team.coachPhone && <span className="list-item-detail">{team.coachPhone}</span>}
-                </div>
-                {team.coachPhone && <Icon name="phone" size={17} color="var(--green)" />}
+            <div className="list-item" style={{ cursor: 'default' }}>
+              <div className="list-item-body">
+                <span className="list-item-detail">{hold.beskrivelse}</span>
               </div>
-            )}
-            {team.periode && (
-              <>
-                {team.coach && <div className="list-separator" />}
-                <div className="list-item" style={{ cursor: 'default' }}>
-                  <div className="list-item-icon" style={{ background: '#fff3e0' }}>
-                    <Icon name="calendar" size={17} color="#ff9500" />
-                  </div>
-                  <div className="list-item-body">
-                    <span className="list-item-title">Træningstid</span>
-                    <span className="list-item-detail">{team.periode}</span>
-                  </div>
-                </div>
-              </>
-            )}
+            </div>
           </div>
         </>
-      )}
-
-      <SectionHeader title="Conventus" />
-      <div className="list-group">
-        <div className="list-item" style={{ cursor: 'default' }}>
-          <div className="list-item-icon" style={{ background: 'var(--bg)' }}>
-            <Icon name="link" size={17} color="var(--text2)" />
-          </div>
-          <div className="list-item-body">
-            <span className="list-item-title">Gruppe-ID</span>
-            <span className="list-item-detail">{team.id}</span>
-          </div>
-        </div>
-      </div>
+      ) : null}
 
       <div style={{ height: 8 }} />
     </div>
