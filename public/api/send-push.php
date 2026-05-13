@@ -11,9 +11,32 @@
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, X-Sync-Secret');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(200); exit; }
 if ($_SERVER['REQUEST_METHOD'] !== 'POST')    { http_response_code(405); echo json_encode(['error' => 'Kun POST']); exit; }
+
+// ── Autentificering via SYNC_SECRET header ────────────────────────────────────
+$syncSecret = getenv('SYNC_SECRET');
+if (!$syncSecret) {
+    foreach ([__DIR__ . '/.env', __DIR__ . '/../../.env'] as $path) {
+        if (file_exists($path)) {
+            $env = parse_ini_file($path);
+            if (!empty($env['SYNC_SECRET'])) { $syncSecret = $env['SYNC_SECRET']; break; }
+        }
+    }
+}
+if (!$syncSecret) {
+    http_response_code(500);
+    echo json_encode(['error' => 'SYNC_SECRET ikke konfigureret på serveren']);
+    exit;
+}
+$provided = $_SERVER['HTTP_X_SYNC_SECRET'] ?? '';
+if (!hash_equals($syncSecret, $provided)) {
+    http_response_code(401);
+    echo json_encode(['error' => 'Uautoriseret']);
+    exit;
+}
 
 $holdIds = json_decode($_POST['holdIds'] ?? '[]', true) ?: [];
 $text    = trim($_POST['text']  ?? '');

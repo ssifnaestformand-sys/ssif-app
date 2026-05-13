@@ -1,0 +1,3 @@
+# CONVENTUS_KEY injiceres af deploy-pipeline (se deploy.yml)
+# Må IKKE committes med en rigtig nøgle
+SetEnv CONVENTUS_KEY CONVENTUS_KEY_PLACEHOLDER

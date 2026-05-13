@@ -19,6 +19,11 @@ jobs:
       - name: Installer dependencies
         run: npm install
 
+      - name: Skriv Firebase service account fra secret
+        run: echo "$FIREBASE_SERVICE_ACCOUNT" > public/api/firebase-service-account.json
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
       - name: Byg app
         run: npm run build
         env:
@@ -30,12 +35,16 @@ jobs:
           VITE_FIREBASE_APP_ID:             ${{ secrets.VITE_FIREBASE_APP_ID }}
           CONVENTUS_KEY:                    ${{ secrets.CONVENTUS_KEY }}
           VITE_FIREBASE_VAPID_KEY:          ${{ secrets.VITE_FIREBASE_VAPID_KEY }}
+          VITE_SYNC_SECRET:                 ${{ secrets.SYNC_SECRET }}
 
-      - name: Injicér Conventus API-nøgle i .htaccess
+      - name: Injicér hemmeligheder i .htaccess
         run: |
           sed -i "s|CONVENTUS_KEY_PLACEHOLDER|${{ secrets.CONVENTUS_KEY }}|g" dist/api/.htaccess
+          sed -i "s|SYNC_SECRET_PLACEHOLDER|${{ secrets.SYNC_SECRET }}|g"     dist/api/.htaccess
+          sed -i "s|CONVENTUS_KEY_PLACEHOLDER|${{ secrets.CONVENTUS_KEY }}|g" dist/.htaccess
         env:
           CONVENTUS_KEY: ${{ secrets.CONVENTUS_KEY }}
+          SYNC_SECRET:   ${{ secrets.SYNC_SECRET }}
 
       - name: Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4

@@ -1,6 +1,7 @@
-# CONVENTUS_KEY injiceres af deploy-pipeline (se deploy.yml)
-# Må IKKE committes med en rigtig nøgle
+# Nøgler injiceres af deploy-pipeline (se deploy.yml)
+# Må IKKE committes med rigtige værdier
 SetEnv CONVENTUS_KEY CONVENTUS_KEY_PLACEHOLDER
+SetEnv SYNC_SECRET   SYNC_SECRET_PLACEHOLDER
 
 # Beskyt følsomme filer mod direkte HTTP-adgang
 <FilesMatch "(^\.|\.(json|key|pem)$)">

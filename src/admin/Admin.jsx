@@ -444,7 +444,11 @@ function MessagesPage({ userDoc, authUser }) {
         fd.append('holdIds', JSON.stringify(holds))
         fd.append('text',    text.trim())
         fd.append('title',   `Besked fra ${authorName}`)
-        await fetch(`${BASE}api/send-push.php`, { method: 'POST', body: fd })
+        await fetch(`${BASE}api/send-push.php`, {
+          method: 'POST',
+          headers: { 'X-Sync-Secret': import.meta.env.VITE_SYNC_SECRET ?? '' },
+          body: fd,
+        })
       } catch {}
 
       setText('')

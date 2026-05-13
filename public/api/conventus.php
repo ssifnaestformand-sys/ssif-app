@@ -67,7 +67,7 @@ if ($endpoint === 'sync') {
         ));
 
         $raw = @file_get_contents($url, false, $ctx);
-        if ($raw === false) { $errors[] = "Timeout/fejl: {$url}"; continue; }
+        if ($raw === false) { $errors[] = 'Conventus svarede ikke (timeout)'; continue; }
 
         $xml = @simplexml_load_string($raw);
         if ($xml === false)           { $errors[] = 'XML parse-fejl'; continue; }
