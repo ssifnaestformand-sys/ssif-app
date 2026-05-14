@@ -721,7 +721,17 @@ function NewsDetailScreen({ article }) {
 
 // ─── Messages (Firestore + fallback) ─────────────────────────────────────────
 
-function MessagesScreen({ onSelectConversation, conversations, isLive, onEnableNotifications }) {
+function fmtMsgDate(ts) {
+  if (!ts) return ''
+  const d = ts?.toDate ? ts.toDate() : new Date(ts)
+  const diff = Date.now() - d.getTime()
+  if (diff < 3600000)   return `${Math.floor(diff / 60000)} min`
+  if (diff < 86400000)  return d.toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' })
+  if (diff < 604800000) return d.toLocaleDateString('da-DK', { weekday: 'short' })
+  return d.toLocaleDateString('da-DK', { day: 'numeric', month: 'short' })
+}
+
+function MessagesScreen({ onSelectConversation, conversations, isLive, adminMessages, readMsgIds, onSelectAdminMsg, onEnableNotifications }) {
   const [, rerender] = useState(0)
 
   function getPermission() {
@@ -742,6 +752,42 @@ function MessagesScreen({ onSelectConversation, conversations, isLive, onEnableN
 
   return (
     <div className="screen">
+      {/* Klub-beskeder fra admin */}
+      {(adminMessages ?? []).length > 0 && (
+        <>
+          <SectionHeader title="Klubbeskeder" />
+          <div className="list-group" style={{ marginTop: 0 }}>
+            {(adminMessages ?? []).map((msg, i) => {
+              const unread = !readMsgIds?.has(msg.id)
+              const preview = msg.text?.slice(0, 55) + (msg.text?.length > 55 ? '…' : '')
+              return (
+                <div key={msg.id}>
+                  {i > 0 && <div className="list-separator list-separator--indent" />}
+                  <button className="conv-item" onClick={() => onSelectAdminMsg(msg)}>
+                    <Avatar initials="SS" color="var(--green)" size={48} />
+                    <div className="conv-body">
+                      <div className="conv-top">
+                        <span className="conv-name" style={{ fontWeight: unread ? 700 : 500 }}>
+                          {msg.authorName || 'SSIF'}
+                        </span>
+                        <span className={`conv-time ${unread ? 'conv-time--unread' : ''}`}>
+                          {fmtMsgDate(msg.createdAt)}
+                        </span>
+                      </div>
+                      <div className="conv-bottom">
+                        <span className="conv-last">{preview}</span>
+                        {unread && <Badge count={1} />}
+                      </div>
+                    </div>
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </>
+      )}
+
+      {/* Direkte samtaler */}
       <div className="section-header-row">
         <span className="section-header-text">Samtaler</span>
         <FirestoreDot live={isLive} />
@@ -801,6 +847,43 @@ function MessagesScreen({ onSelectConversation, conversations, isLive, onEnableN
       </div>
 
       <div style={{ height: 8 }} />
+    </div>
+  )
+}
+
+// ─── Broadcast (admin-besked, read-only) ─────────────────────────────────────
+
+function BroadcastScreen({ message }) {
+  const holds = (message.targetHolds ?? []).map(h =>
+    typeof h === 'object' ? h.titel : h
+  )
+  return (
+    <div className="screen">
+      <div className="article">
+        <div className="article-meta">
+          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
+            {message.authorName || 'SSIF'}
+          </span>
+          <span style={{ fontSize: 12, color: 'var(--text3)' }}>
+            {fmtMsgDate(message.createdAt)}
+          </span>
+        </div>
+        <div className="article-divider" />
+        {message.text?.split('\n').filter(Boolean).map((line, i) => (
+          <p key={i} className="article-para">{line}</p>
+        ))}
+        {holds.length > 0 && (
+          <div style={{ marginTop: 20, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+            <span style={{ fontSize: 12, color: 'var(--text2)' }}>Sendt til:</span>
+            {holds.map((name, i) => (
+              <span key={i} className="category-pill"
+                    style={{ background: 'var(--green-soft)', color: 'var(--green)' }}>
+                {name}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -1159,10 +1242,16 @@ export default function App() {
   const [selectedTeam, setSelectedTeam]           = useState(null)
   const [selectedArticle, setSelectedArticle]     = useState(null)
   const [selectedConv, setSelectedConv]           = useState(null)
+  const [selectedAdminMsg, setSelectedAdminMsg]   = useState(null)
   const [news, setNews]                           = useState(NEWS_FALLBACK)
   const [newsLive, setNewsLive]                   = useState(false)
   const [convos, setConvos]                       = useState(CONVERSATIONS_FALLBACK)
   const [convosLive, setConvosLive]               = useState(false)
+  const [adminMsgs, setAdminMsgs]                 = useState([])
+  const [readMsgIds, setReadMsgIds]               = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('ssif-read') || '[]')) }
+    catch { return new Set() }
+  })
   const [needsEmailForLink, setNeedsEmailForLink] = useState(false)
   const [magicLinkError, setMagicLinkError]       = useState('')
   const [pushGranted, setPushGranted]             = useState(false) // tvinger re-render efter bruger giver tilladelse
@@ -1288,6 +1377,16 @@ export default function App() {
     return unsub
   }, [user?.uid])
 
+  // ── Firestore: admin-beskeder (messages-collection) ─────────────────────
+  useEffect(() => {
+    if (!user) return
+    return onSnapshot(
+      query(collection(db, 'messages'), orderBy('createdAt', 'desc'), limit(50)),
+      snap => setAdminMsgs(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+      () => {}
+    )
+  }, [user?.uid])
+
   // ── FCM: knappen vises/skjules via synkron check (ingen useEffect-timing) ─
   async function handleEnableNotifications() {
     try {
@@ -1337,7 +1436,24 @@ export default function App() {
 
   // ── Navigation ────────────────────────────────────────────────────────────
   function switchTab(tab) {
-    setActiveTab(tab); setSelectedTeam(null); setSelectedArticle(null); setSelectedConv(null)
+    setActiveTab(tab); setSelectedTeam(null); setSelectedArticle(null); setSelectedConv(null); setSelectedAdminMsg(null)
+  }
+
+  // Åbn samtale og nulstil ulæst-tæller lokalt
+  function handleSelectConversation(conv) {
+    setSelectedConv(conv)
+    if (conv.unread) setConvos(prev => prev.map(c => c.id === conv.id ? { ...c, unread: 0 } : c))
+  }
+
+  // Åbn admin-besked og marker som læst
+  function handleSelectAdminMsg(msg) {
+    setSelectedAdminMsg(msg)
+    setReadMsgIds(prev => {
+      const next = new Set(prev)
+      next.add(msg.id)
+      localStorage.setItem('ssif-read', JSON.stringify([...next]))
+      return next
+    })
   }
 
   function navigateFromDashboard(dest, data) {
@@ -1445,9 +1561,25 @@ export default function App() {
     headerTitle = 'Nyhed'; onBack = () => setSelectedArticle(null); backLabel = 'Nyheder'
   } else if (activeTab === 'messages' && selectedConv) {
     headerTitle = selectedConv.name; onBack = () => setSelectedConv(null); backLabel = 'Beskeder'
+  } else if (activeTab === 'messages' && selectedAdminMsg) {
+    headerTitle = 'Besked'; onBack = () => setSelectedAdminMsg(null); backLabel = 'Beskeder'
   }
 
-  const totalUnread = convos.reduce((s, c) => s + (c.unread || 0), 0)
+  // Filtrer admin-beskeder til brugerens hold (holds + familyMembers)
+  const _userHoldIds = new Set([
+    ...(user.holds ?? []).map(String),
+    ...(user.familyMembers ?? []).map(m => String(m.holdId)).filter(Boolean),
+  ])
+  const relevantAdminMsgs = _userHoldIds.size > 0
+    ? adminMsgs.filter(m => (m.targetHolds ?? []).some(h => {
+        const id = typeof h === 'object' ? String(h.conventus_id) : String(h)
+        return _userHoldIds.has(id)
+      }))
+    : []
+
+  const unreadConvos  = convos.reduce((s, c) => s + (c.unread || 0), 0)
+  const unreadAdmin   = relevantAdminMsgs.filter(m => !readMsgIds.has(m.id)).length
+  const totalUnread   = unreadConvos + unreadAdmin
 
   const logoutBtn = !onBack && (
     <button className="header-action" onClick={handleLogout} title="Log ud">
@@ -1478,11 +1610,22 @@ export default function App() {
         {activeTab === 'news' && selectedArticle && (
           <NewsDetailScreen article={selectedArticle} />
         )}
-        {activeTab === 'messages' && !selectedConv && (
-          <MessagesScreen conversations={convos} isLive={convosLive} onSelectConversation={setSelectedConv} onEnableNotifications={handleEnableNotifications} />
+        {activeTab === 'messages' && !selectedConv && !selectedAdminMsg && (
+          <MessagesScreen
+            conversations={convos}
+            isLive={convosLive}
+            adminMessages={relevantAdminMsgs}
+            readMsgIds={readMsgIds}
+            onSelectConversation={handleSelectConversation}
+            onSelectAdminMsg={handleSelectAdminMsg}
+            onEnableNotifications={handleEnableNotifications}
+          />
         )}
         {activeTab === 'messages' && selectedConv && (
           <ChatScreen conversation={selectedConv} user={user} />
+        )}
+        {activeTab === 'messages' && selectedAdminMsg && (
+          <BroadcastScreen message={selectedAdminMsg} />
         )}
       </main>
 
