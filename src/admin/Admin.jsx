@@ -130,14 +130,15 @@ function CategoryPill({ label, color }) {
   )
 }
 
-function HoldPill({ holdId }) {
-  // holdId kan være et gammelt string-ID eller et nyt {conventus_id, titel}-objekt
-  const name = holdId && typeof holdId === 'object'
-    ? (holdId.titel || `Hold #${holdId.conventus_id}`)
-    : (teamName(holdId) || String(holdId))
+function HoldPill({ holdId, name }) {
+  // holdId kan være: gammelt slug ('u6'), conventus_id-string ('999018') eller objekt {conventus_id, titel}
+  const display = name
+    || (holdId && typeof holdId === 'object' ? (holdId.titel || `Hold #${holdId.conventus_id}`) : null)
+    || teamName(holdId)
+    || String(holdId)
   return (
     <span className="badge badge-green" style={{ marginRight: 3, marginBottom: 3 }}>
-      {name}
+      {display}
     </span>
   )
 }
@@ -578,6 +579,17 @@ function MessagesPage({ userDoc, authUser }) {
                   <div className="msg-meta">
                     <span className="msg-author">{m.authorName}</span>
                     <span className="msg-time">{formatDate(m.createdAt)}</span>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ marginLeft: 'auto', color: '#dc3545', padding: '2px 6px' }}
+                      onClick={async () => {
+                        if (window.confirm('Slet denne besked?')) {
+                          await deleteDoc(doc(db, 'messages', m.id))
+                        }
+                      }}
+                    >
+                      <Icon name="trash" size={13} color="#dc3545" />
+                    </button>
                   </div>
                   <p className="msg-text">{m.text}</p>
                   <div className="msg-holds">
@@ -1323,13 +1335,21 @@ function EventsPage({ userDoc, authUser }) {
 // ─── Users ────────────────────────────────────────────────────────────────────
 
 function UsersPage({ authUser }) {
-  const [users, setUsers]       = useState([])
-  const [loading, setLoading]   = useState(true)
-  const [inviteEmail, setInviteEmail] = useState('')
-  const [inviting, setInviting] = useState(false)
-  const [inviteSent, setInviteSent] = useState(false)
-  const [expandedId, setExpandedId] = useState(null)
-  const [saving, setSaving]     = useState(null)
+  const [users, setUsers]               = useState([])
+  const [loading, setLoading]           = useState(true)
+  const [availableHolds, setAvailableHolds] = useState([])
+  const [inviteEmail, setInviteEmail]   = useState('')
+  const [inviting, setInviting]         = useState(false)
+  const [inviteSent, setInviteSent]     = useState(false)
+  const [expandedId, setExpandedId]     = useState(null)
+  const [saving, setSaving]             = useState(null)
+
+  useEffect(() => {
+    // Hent aktive hold fra Firestore til brug i hold-tildeling
+    getDocs(query(collection(db, 'holds'), where('aktiv', '==', true)))
+      .then(snap => setAvailableHolds(snap.docs.map(d => ({ _id: d.id, ...d.data() }))))
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     getDocs(collection(db, 'users')).then(snap => {
@@ -1371,23 +1391,47 @@ function UsersPage({ authUser }) {
   }
 
   function HoldsEditor({ user }) {
-    const [selected, setSelected] = useState(user.holds ?? [])
+    // selected = array af conventus_id-strings
+    const [selected, setSelected] = useState((user.holds ?? []).map(String))
     function toggle(id) {
-      setSelected(prev => prev.includes(id) ? prev.filter(h => h !== id) : [...prev, id])
+      const s = String(id)
+      setSelected(prev => prev.includes(s) ? prev.filter(h => h !== s) : [...prev, s])
     }
+    const byType = availableHolds.reduce((acc, h) => {
+      const t = h.aktivitet_titel || 'Hold'
+      if (!acc[t]) acc[t] = []
+      acc[t].push(h)
+      return acc
+    }, {})
     return (
-      <td colSpan={5} style={{ padding: '12px 16px', background: 'var(--bg)' }}>
-        <div style={{ marginBottom: 10, fontWeight: 600, fontSize: 13 }}>Tildelte hold for {user.displayName}</div>
-        <div className="hold-checks" style={{ gridTemplateColumns: 'repeat(5, 1fr)', marginBottom: 12 }}>
-          {TEAMS_STATIC.map(t => (
-            <label key={t.id} className={`hold-check-label ${selected.includes(t.id) ? 'selected' : ''}`}>
-              <input type="checkbox" checked={selected.includes(t.id)} onChange={() => toggle(t.id)} />
-              {t.name}
-            </label>
-          ))}
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-primary btn-sm" disabled={saving === user.id + '-holds'} onClick={() => saveHolds(user.id, selected)}>
+      <td colSpan={5} style={{ padding: '14px 16px', background: 'var(--bg)' }}>
+        <div style={{ marginBottom: 10, fontWeight: 600, fontSize: 13 }}>Hold for {user.displayName}</div>
+        {availableHolds.length === 0 ? (
+          <p style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 10 }}>
+            Ingen aktive hold — synkronisér hold under Hold-siden.
+          </p>
+        ) : (
+          Object.entries(byType).map(([type, typeHolds]) => (
+            <div key={type} style={{ marginBottom: 10 }}>
+              <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
+                           color: 'var(--text2)', marginBottom: 5 }}>{type}</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 4 }}>
+                {typeHolds.map(h => {
+                  const id = String(h.conventus_id)
+                  return (
+                    <label key={id} className={`hold-check-label ${selected.includes(id) ? 'selected' : ''}`}>
+                      <input type="checkbox" checked={selected.includes(id)} onChange={() => toggle(h.conventus_id)} />
+                      {h.titel}
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
+          ))
+        )}
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <button className="btn btn-primary btn-sm" disabled={saving === user.id + '-holds'}
+                  onClick={() => saveHolds(user.id, selected)}>
             {saving === user.id + '-holds' ? 'Gemmer…' : 'Gem hold'}
           </button>
           <button className="btn btn-ghost btn-sm" onClick={() => setExpandedId(null)}>Annuller</button>
@@ -1447,7 +1491,10 @@ function UsersPage({ authUser }) {
                             <span className="badge badge-green">Alle hold</span>
                           ) : (u.holds ?? []).length > 0 ? (
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-                              {(u.holds ?? []).map(h => <HoldPill key={h} holdId={h} />)}
+                              {(u.holds ?? []).map(h => {
+                                const found = availableHolds.find(ah => String(ah.conventus_id) === String(h))
+                                return <HoldPill key={h} holdId={h} name={found?.titel} />
+                              })}
                             </div>
                           ) : (
                             <span style={{ fontSize: 12, color: 'var(--text3)' }}>Ingen tildelt</span>

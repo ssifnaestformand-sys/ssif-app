@@ -4,7 +4,7 @@ import { auth, db, getAppMessaging } from './firebase.js'
 import { getToken, onMessage } from 'firebase/messaging'
 import {
   sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink,
-  signOut, onAuthStateChanged,
+  signInWithCustomToken, signOut, onAuthStateChanged,
 } from 'firebase/auth'
 import {
   collection, query, where, orderBy, onSnapshot,
@@ -1262,6 +1262,22 @@ export default function App() {
   const magicLinkHrefRef = useRef(null)   // saved for cross-device flow
   const isDemoRef        = useRef(false)
 
+  // ── Cookie-bro: genoptag session fra Safari i den installerede PWA ────────
+  // iOS deler cookies (men ikke IndexedDB) mellem Safari og standalone PWA.
+  // session.php sætter en kortlivet cookie efter magic-link-login i Safari.
+  useEffect(() => {
+    const match = document.cookie.match(/firebase-custom-token=([^;]+)/)
+    if (!match) return
+    // Slet cookien straks (single-use)
+    document.cookie = 'firebase-custom-token=; Path=/; Max-Age=0; SameSite=Lax; Secure'
+    const token = decodeURIComponent(match[1])
+    magicLinkRef.current = true   // forhindrer login-flash mens sign-in er i gang
+    signInWithCustomToken(auth, token).catch(() => {
+      magicLinkRef.current = false
+      setAuthChecked(true)        // vis login hvis cookien var ugyldig/udløbet
+    })
+  }, [])
+
   // ── Load + merge Firestore profile ───────────────────────────────────────
   async function loadAndSetUser(fbUser) {
     let profile = {}
@@ -1336,8 +1352,9 @@ export default function App() {
     }
 
     signInWithEmailLink(auth, savedEmail, href)
-      .then(() => {
+      .then(async () => {
         localStorage.removeItem(LS_EMAIL_KEY)
+        await bridgeSessionToCookie()   // sæt cookie til PWA-brug
         // onAuthStateChanged fires next and completes the flow
       })
       .catch(err => {
@@ -1351,8 +1368,23 @@ export default function App() {
   async function handleEmailConfirmForLink(email) {
     await signInWithEmailLink(auth, email, magicLinkHrefRef.current)
     localStorage.removeItem(LS_EMAIL_KEY)
+    await bridgeSessionToCookie()     // sæt cookie til PWA-brug
     setNeedsEmailForLink(false)
     // onAuthStateChanged completes the rest
+  }
+
+  // Kalder session.php som sætter en kortlivet cookie så den installerede
+  // PWA kan genoptage sessionen uden at brugeren skal logge ind igen
+  async function bridgeSessionToCookie() {
+    try {
+      const idToken = await auth.currentUser?.getIdToken()
+      if (!idToken) return
+      const fd = new FormData()
+      fd.append('idToken', idToken)
+      await fetch(`${import.meta.env.BASE_URL}api/session.php`, { method: 'POST', body: fd })
+    } catch {
+      // Fejler lydløst — PWA kan stadig bede brugeren logge ind manuelt
+    }
   }
 
   // ── Firestore: news ──────────────────────────────────────────────────────
@@ -1570,12 +1602,14 @@ export default function App() {
     ...(user.holds ?? []).map(String),
     ...(user.familyMembers ?? []).map(m => String(m.holdId)).filter(Boolean),
   ])
-  const relevantAdminMsgs = _userHoldIds.size > 0
-    ? adminMsgs.filter(m => (m.targetHolds ?? []).some(h => {
-        const id = typeof h === 'object' ? String(h.conventus_id) : String(h)
-        return _userHoldIds.has(id)
-      }))
-    : []
+  const relevantAdminMsgs = user.isDemo
+    ? adminMsgs  // demo-bruger ser alle beskeder for at lette test
+    : _userHoldIds.size > 0
+      ? adminMsgs.filter(m => (m.targetHolds ?? []).some(h => {
+          const id = typeof h === 'object' ? String(h.conventus_id) : String(h)
+          return _userHoldIds.has(id)
+        }))
+      : []
 
   const unreadConvos  = convos.reduce((s, c) => s + (c.unread || 0), 0)
   const unreadAdmin   = relevantAdminMsgs.filter(m => !readMsgIds.has(m.id)).length
