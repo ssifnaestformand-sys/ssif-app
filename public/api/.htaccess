@@ -1,5 +1,11 @@
 # Nøgler injiceres af deploy-pipeline (se deploy.yml)
 # Må IKKE committes med rigtige værdier
+
+# Apache stripper Authorization-headeren som standard på shared hosting.
+# Denne regel videresender den til PHP via $_SERVER['HTTP_AUTHORIZATION'].
+RewriteEngine On
+RewriteCond %{HTTP:Authorization} .
+RewriteRule ^ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 SetEnv CONVENTUS_KEY  CONVENTUS_KEY_PLACEHOLDER
 SetEnv SYNC_SECRET    SYNC_SECRET_PLACEHOLDER
 SetEnv SMTP_PASSWORD  SMTP_PASSWORD_PLACEHOLDER

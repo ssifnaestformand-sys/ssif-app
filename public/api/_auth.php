@@ -11,9 +11,23 @@
 
 /**
  * Returnerer Bearer-token fra Authorization-headeren, eller tom streng.
+ *
+ * Apache på shared hosting (fx one.com) stripper Authorization-headeren.
+ * .htaccess-reglen `RewriteRule ^ - [E=HTTP_AUTHORIZATION:...]` sætter
+ * den tilbage i $_SERVER. Vi prøver alle kendte varianter som fallback.
  */
 function bearer_token(): string {
-    $h = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+    // Forsøg alle kendte steder Apache/PHP kan placere headeren
+    $h = $_SERVER['HTTP_AUTHORIZATION']
+      ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION']
+      ?? '';
+
+    // Sidst udvej: getallheaders() virker på nogle Apache-konfigurationer
+    if (!$h && function_exists('getallheaders')) {
+        $all = getallheaders();
+        $h   = $all['Authorization'] ?? $all['authorization'] ?? '';
+    }
+
     return (strpos($h, 'Bearer ') === 0) ? trim(substr($h, 7)) : '';
 }
 
