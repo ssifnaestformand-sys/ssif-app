@@ -8,19 +8,22 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Synkronisér
+      - name: Trigger synkronisering
         run: |
-          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+          # --max-time 30: vi venter kun på at serveren bekræfter modtagelse.
+          # PHP kører videre med ignore_user_abort(true) selv om curl afbryder.
+          # Exit code 28 (timeout) er forventet og acceptabelt.
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
             https://app.sejssvejbaek-if.dk/api/sync-members.php \
             -H "X-Sync-Secret: ${{ secrets.SYNC_SECRET }}" \
-            --max-time 300)
+            --max-time 30 || echo "timeout")
 
-          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
-          BODY=$(echo "$RESPONSE" | head -1)
+          echo "HTTP: $HTTP_CODE"
 
-          echo "HTTP: $HTTP_CODE  |  $BODY"
-
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "Fejl: uventet HTTP-statuskode $HTTP_CODE"
+          # Fejl kun hvis serveren svarer med en reel HTTP-fejl (4xx/5xx)
+          if [[ "$HTTP_CODE" =~ ^[45] ]]; then
+            echo "Serverfejl: HTTP $HTTP_CODE"
             exit 1
           fi
+
+          echo "Synkronisering igangsat (PHP kører videre på serveren)"

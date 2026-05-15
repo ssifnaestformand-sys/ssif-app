@@ -27,7 +27,8 @@
  *                -H "X-Sync-Secret: DIN_SYNC_SECRET"
  */
 
-set_time_limit(300);
+set_time_limit(600);
+ignore_user_abort(true);         // Fortsæt selv om curl/HTTP-forbindelsen afbrydes
 ini_set('memory_limit', '256M'); // Stor XML-fil fra Conventus kræver mere hukommelse
 
 header('Content-Type: application/json; charset=utf-8');
