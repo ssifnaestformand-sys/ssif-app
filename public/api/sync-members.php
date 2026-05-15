@@ -85,7 +85,7 @@ $aktivHolds = fetch_aktiv_holds($projectId, $accessToken);
 
 // ── Hent medlemmer fra Conventus ──────────────────────────────────────────────
 $ctx = stream_context_create(['http' => ['timeout' => 60, 'ignore_errors' => true]]);
-$membresUrl = 'https://www.conventus.dk/dataudv/api/adressebog/get_membres.php?' . http_build_query([
+$membresUrl = 'https://www.conventus.dk/dataudv/api/adressebog/get_medlemmer.php?' . http_build_query([
     'forening'   => '1031',
     'key'        => $apiKey,
     'relationer' => 'true',
