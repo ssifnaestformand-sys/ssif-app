@@ -154,13 +154,11 @@ if ($endpoint === 'grupper') {
     exit;
 }
 
-// ── STANDARD: get_medlemmer ───────────────────────────────────────────────────
-$url = 'https://www.conventus.dk/dataudv/api/adressebog/get_medlemmer.php?' . http_build_query([
-    'forening' => FORENING, 'key' => $apiKey, 'relationer' => 'true',
-]);
-$resp = @file_get_contents($url, false, $ctx);
-if ($resp === false) { http_response_code(503); echo json_encode(['error' => 'Ingen svar fra Conventus']); exit; }
-echo $resp;
+// ── Ukendt endpoint ───────────────────────────────────────────────────────────
+// Rå get_membres-data eksponeres ikke via denne proxy.
+// Brug sync-members.php (kræver Firebase-auth) til at synkronisere memberdata.
+http_response_code(400);
+echo json_encode(['error' => 'Ukendt endpoint']);
 
 // ── Hjælpefunktioner ─────────────────────────────────────────────────────────
 

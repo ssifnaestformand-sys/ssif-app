@@ -1310,10 +1310,11 @@ function FamilieTab({ user }) {
 // ─── Profil ───────────────────────────────────────────────────────────────────
 
 function ProfileScreen({ user, onLogout, onUserUpdate, verifyMsg }) {
-  const [newEmail, setNewEmail] = useState('')
-  const [saving, setSaving]     = useState(false)
-  const [info, setInfo]         = useState('')
-  const [resent, setResent]     = useState(false)
+  const [newEmail, setNewEmail]     = useState('')
+  const [saving, setSaving]         = useState(false)
+  const [info, setInfo]             = useState('')
+  const [resent, setResent]         = useState(false)
+  const [linkedMembers, setLinkedMembers] = useState(null) // null=loading, []=empty
 
   // Vis bekræftelsesbesked når en email er verificeret via link
   useEffect(() => {
@@ -1323,8 +1324,7 @@ function ProfileScreen({ user, onLogout, onUserUpdate, verifyMsg }) {
     return () => clearTimeout(t)
   }, [verifyMsg])
 
-  // Genindlæs extraEmails fra Firestore ved hver profilvisning,
-  // så ændringer fra andre enheder (fx verificering) vises straks
+  // Genindlæs extraEmails fra Firestore ved hver profilvisning
   useEffect(() => {
     if (!user?.uid) return
     getDoc(doc(db, 'users', user.uid)).then(snap => {
@@ -1333,6 +1333,23 @@ function ProfileScreen({ user, onLogout, onUserUpdate, verifyMsg }) {
       onUserUpdate(prev => ({ ...prev, extraEmails: fresh }))
     }).catch(() => {})
   }, [])
+
+  // Hent Conventus-members tilknyttet brugerens verificerede emails
+  useEffect(() => {
+    const extraEmails = (user.extraEmails || []).map(e =>
+      typeof e === 'string' ? { email: e, verified: false } : e
+    )
+    const verifiedExtras = extraEmails.filter(e => e.verified).map(e => e.email)
+    const allEmails = [user.email, ...verifiedExtras].filter(Boolean)
+    if (!allEmails.length) { setLinkedMembers([]); return }
+
+    getDocs(query(
+      collection(db, 'members'),
+      where('allEmails', 'array-contains-any', allEmails.slice(0, 30))
+    )).then(snap => {
+      setLinkedMembers(snap.docs.map(d => d.data()))
+    }).catch(() => setLinkedMembers([]))
+  }, [user.email, JSON.stringify(user.extraEmails)])
 
   // Normalisér: extraEmails kan være strenge (ældre format) eller objekter
   const extraEmails = (user.extraEmails || []).map(e =>
@@ -1491,6 +1508,49 @@ function ProfileScreen({ user, onLogout, onUserUpdate, verifyMsg }) {
                       <Icon name="x" size={16} color="var(--text3)" />
                     </button>
                   </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* ── Conventus-tilknyttede members ── */}
+      {linkedMembers !== null && linkedMembers.length > 0 && (
+        <>
+          <SectionHeader title="Tilmeldte i Conventus" />
+          <div className="list-group">
+            {linkedMembers.map((m, mi) => (
+              <div key={m.conventus_id ?? mi}>
+                {mi > 0 && <div className="list-separator" />}
+                <div style={{ padding: '12px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: m.holds?.length ? 8 : 0 }}>
+                    <div className="list-item-icon" style={{ background: 'var(--green-soft)', flexShrink: 0 }}>
+                      <Icon name="person-circle" size={17} color="var(--green)" />
+                    </div>
+                    <span style={{ fontWeight: 600, fontSize: 15 }}>{m.name}</span>
+                  </div>
+                  {m.holds?.length > 0 && (
+                    <div style={{ paddingLeft: 46, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {m.holds.map((h, hi) => (
+                        <div key={h.conventus_id ?? hi}
+                             style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{
+                            width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                            background: h.aktiv_i_app ? 'var(--green)' : 'var(--text3)',
+                          }} />
+                          <span style={{ fontSize: 14, color: 'var(--text)' }}>{h.titel}</span>
+                          {h.aktiv_i_app && (
+                            <span style={{
+                              fontSize: 11, fontWeight: 600, color: 'var(--green)',
+                              background: 'var(--green-soft)', borderRadius: 4,
+                              padding: '2px 6px', flexShrink: 0,
+                            }}>Aktiv i appen</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -1809,58 +1869,6 @@ export default function App() {
     setNews([]); setConvos([])
     try { await signOut(auth) } catch {}
   }
-
-  // ── Conventus: sync holds efter login ────────────────────────────────────
-  useEffect(() => {
-    if (!user?.uid || user.isDemo) return
-
-    // Hent brugerens holds fra Conventus (kun første gang eller ved sync)
-    async function syncConventusHolds() {
-      try {
-        // Kald PHP proxy
-        const res = await fetch(`${import.meta.env.BASE_URL}api/conventus.php`)
-        if (!res.ok) throw new Error('Conventus API proxy failed')
-        
-        const data = await res.json()
-        if (!data.medlemmer || !Array.isArray(data.medlemmer)) {
-          console.warn('Unexpected Conventus response format')
-          return
-        }
-
-        // Find bruger baseret på email
-        const medlem = data.medlemmer.find(m => 
-          m.email && m.email.toLowerCase() === user.email.toLowerCase()
-        )
-
-        if (!medlem) {
-          console.warn('User email not found in Conventus members list')
-          return
-        }
-
-        // Gem holds/relationer i Firestore
-        const holds = medlem.relationer && Array.isArray(medlem.relationer)
-          ? medlem.relationer.map(rel => ({
-              id: rel.id || rel.hold_id,
-              name: rel.name || rel.hold_navn,
-              role: rel.role || rel.stilling || 'Medlem',
-            }))
-          : []
-
-        await updateDoc(doc(db, 'users', user.uid), {
-          conventusId: medlem.id,
-          conventusEmail: medlem.email,
-          holds: holds,
-          conventusLastSync: serverTimestamp(),
-        })
-
-        console.log('Conventus holds synced:', holds.length)
-      } catch (err) {
-        console.error('Failed to sync Conventus holds:', err)
-      }
-    }
-
-    syncConventusHolds()
-  }, [user?.uid])
 
   // ── Render guards ─────────────────────────────────────────────────────────
 

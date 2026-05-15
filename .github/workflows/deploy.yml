@@ -35,7 +35,6 @@ jobs:
           VITE_FIREBASE_APP_ID:             ${{ secrets.VITE_FIREBASE_APP_ID }}
           CONVENTUS_KEY:                    ${{ secrets.CONVENTUS_KEY }}
           VITE_FIREBASE_VAPID_KEY:          ${{ secrets.VITE_FIREBASE_VAPID_KEY }}
-          VITE_SYNC_SECRET:                 ${{ secrets.SYNC_SECRET }}
 
       - name: Injicér hemmeligheder i .htaccess
         run: |
