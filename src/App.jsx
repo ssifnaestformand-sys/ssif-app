@@ -6,6 +6,7 @@ import {
   GoogleAuthProvider,
   FacebookAuthProvider,
   signInWithRedirect,
+  signInWithPopup,
   getRedirectResult,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -259,9 +260,19 @@ function LoginScreen({ onDemoLogin, initialError }) {
   async function social(ProviderClass) {
     const key = ProviderClass === GoogleAuthProvider ? 'google' : 'facebook'
     setLoading(key); setError('')
+    // signInWithRedirect er upålidelig i browser-kontekster med tredjepartscookie-
+    // begrænsninger (Chrome, Safari desktop). Brug kun redirect i iOS PWA standalone,
+    // hvor popup ikke er tilgængeligt.
+    const isIOSPWA = window.matchMedia('(display-mode: standalone)').matches
+                     && /iPhone|iPad/i.test(navigator.userAgent)
     try {
-      await signInWithRedirect(auth, new ProviderClass())
-      // onAuthStateChanged håndterer resten efter redirect
+      if (isIOSPWA) {
+        await signInWithRedirect(auth, new ProviderClass())
+        // Siden loader om — onAuthStateChanged + getRedirectResult håndterer resten
+      } else {
+        await signInWithPopup(auth, new ProviderClass())
+        // onAuthStateChanged fyrer med brugeren direkte
+      }
     } catch (e) {
       const msg = AUTH_ERRORS[e.code]
       if (msg) setError(msg)
