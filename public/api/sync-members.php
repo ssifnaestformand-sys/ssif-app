@@ -111,6 +111,23 @@ if (strpos(ltrim($raw), '<') !== 0) {
     exit;
 }
 
+// ── DEBUG: find ud af hvorfor XMLReader ikke finder elementer ─────────────────
+$dbg = [];
+$dbg['raw_bytes']    = strlen($raw);
+$dbg['hex_start']    = bin2hex(substr($raw, 0, 20)); // afslører BOM eller skjulte bytes
+$dbg['text_start']   = substr($raw, 0, 120);         // første 120 tegn som tekst
+
+$tr  = new XMLReader();
+$dbg['xml_open_ok']  = $tr->XML($raw, 'UTF-8', LIBXML_NOERROR | LIBXML_NOWARNING);
+$found = [];
+while ($tr->read() && count($found) < 8) {
+    if ($tr->nodeType !== XMLReader::ELEMENT) continue;
+    $found[] = 'depth=' . $tr->depth . ' <' . $tr->localName . '>';
+}
+$tr->close();
+$dbg['first_elements_no_filter'] = $found;
+// ── SLUT DEBUG ────────────────────────────────────────────────────────────────
+
 // ── Parse og skriv til Firestore (streaming for store filer) ──────────────────
 $members  = parse_members_stream($raw, $aktivHolds);
 $written  = 0;
@@ -137,6 +154,7 @@ echo json_encode([
     'errors'       => $errCount,
     'total'        => count($members),
     'synced'       => $syncedAt,
+    'debug'        => $dbg,                   // TODO: fjern når parsing virker
     'debug_first'  => $g_debug_first_member,  // TODO: fjern når parsing virker
 ], JSON_UNESCAPED_UNICODE);
 
