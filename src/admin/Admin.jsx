@@ -942,6 +942,7 @@ function TeamsPage({ userDoc, authUser }) {
   const [saving,        setSaving]         = useState(null)
   const [expanded,      setExpanded]       = useState(null)
   const [editForm,      setEditForm]       = useState({ traeningstider: '', traener_uid: '' })
+  const [openGroups,    setOpenGroups]     = useState(new Set()) // åbne gruppe-navne i Øvrige hold
 
   function loadHolds() {
     setLoading(true)
@@ -1250,16 +1251,64 @@ function TeamsPage({ userDoc, authUser }) {
             )
           })}
 
-          {/* Hold importeret uden afdelings-ID (ældre data) */}
-          {orphanHolds.length > 0 && (
-            <div style={{ marginBottom: 24 }}>
-              <h3 style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase',
-                           letterSpacing: '.5px', color: 'var(--text2)', margin: '0 0 8px' }}>
-                Øvrige hold ({orphanHolds.length})
-              </h3>
-              <HoldTable holdList={orphanHolds} />
-            </div>
-          )}
+          {/* Hold importeret uden afdelings-ID — grupperet efter aktivitet_titel */}
+          {orphanHolds.length > 0 && (() => {
+            const byAktivitet = {}
+            orphanHolds.forEach(h => {
+              const key = h.aktivitet_titel || 'Uden aktivitet'
+              if (!byAktivitet[key]) byAktivitet[key] = []
+              byAktivitet[key].push(h)
+            })
+            const groupNames = Object.keys(byAktivitet).sort((a, b) => a.localeCompare(b, 'da'))
+            const toggleGroup = name => setOpenGroups(prev => {
+              const next = new Set(prev)
+              next.has(name) ? next.delete(name) : next.add(name)
+              return next
+            })
+            return (
+              <div style={{ marginBottom: 24 }}>
+                <h3 style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase',
+                             letterSpacing: '.5px', color: 'var(--text2)', margin: '0 0 10px' }}>
+                  Øvrige hold ({orphanHolds.length}) — ikke tilknyttet en afdeling
+                </h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {groupNames.map(name => {
+                    const groupHolds = byAktivitet[name]
+                    const isOpen     = openGroups.has(name)
+                    const activeCount = groupHolds.filter(h => h.aktiv).length
+                    return (
+                      <div key={name} className="card">
+                        <button
+                          onClick={() => toggleGroup(name)}
+                          style={{
+                            width: '100%', display: 'flex', alignItems: 'center',
+                            justifyContent: 'space-between', padding: '12px 16px',
+                            background: 'none', border: 'none', cursor: 'pointer',
+                            textAlign: 'left',
+                          }}
+                        >
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <span style={{ fontWeight: 600, fontSize: 14 }}>{name}</span>
+                            <span style={{ fontSize: 12, color: 'var(--text3)' }}>
+                              {activeCount}/{groupHolds.length} aktive
+                            </span>
+                          </span>
+                          <span style={{ fontSize: 13, color: 'var(--text2)', flexShrink: 0 }}>
+                            {isOpen ? '▲' : '▼'}
+                          </span>
+                        </button>
+                        {isOpen && (
+                          <div style={{ borderTop: '1px solid var(--border)' }}>
+                            <HoldTable holdList={groupHolds} />
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })()}
         </>
       )}
     </>
