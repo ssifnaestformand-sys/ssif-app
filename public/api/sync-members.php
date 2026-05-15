@@ -142,15 +142,28 @@ echo json_encode([
 
 // ── Streaming XML-parser (XMLReader) ─────────────────────────────────────────
 //
-// simplexml_load_string() loader hele dokumentet til hukommelsen på én gang.
-// For store Conventus-filer (mange hundrede membres) kan det overskride PHP's
-// memory_limit på shared hosting.
+// Conventus XML-struktur:
+//   <conventus>
+//     <medlemmer>
+//       <medlem>
+//         <id>12345</id>
+//         <navn>Lars Nielsen</navn>
+//         <email>lars@example.com</email>
+//         <relationer>
+//           <medlem>
+//             <gruppe>999024</gruppe>   ← hold-ID (kun tal, ingen titel)
+//             <gruppe>1012456</gruppe>
+//           </medlem>
+//         </relationer>
+//       </член>
+//     </członkowie>
+//   </conventus>
 //
-// XMLReader + expand() streamer dokumentet og ekspanderer kun ét <kontakt>-
-// element ad gangen til SimpleXMLElement — hukommelsesforbruget forbliver lavt
-// uanset filstørrelse.
+// Top-level <member> er ved depth 2 (conventus → membres → membre).
+// Nested <membre> inde i <relationer> springer vi over via depth-tjek.
+// Hold-titler slås op i $holdsMap (fra Firestore) da XML kun giver ID'er.
 
-function parse_members_stream(string $raw, array $aktivHolds): array {
+function parse_members_stream(string $raw, array $holdsMap): array {
     libxml_use_internal_errors(true);
 
     $reader = new XMLReader();
@@ -158,36 +171,35 @@ function parse_members_stream(string $raw, array $aktivHolds): array {
         return [];
     }
 
-    $members      = [];
-    $kontaktDepth = -1; // sættes første gang vi finder et top-level <kontakt>
+    $members    = [];
+    $topDepth   = -1; // depth for top-level <membre> — sættes første gang
 
     while ($reader->read()) {
         if ($reader->nodeType !== XMLReader::ELEMENT) continue;
+        if (strtolower($reader->localName) !== 'medlem') continue;
 
-        $tag = strtolower($reader->localName);
+        $d = $reader->depth;
 
-        // Acceptér kontakt på depth 1 (direkte under root) ELLER depth 2
-        // (under <kontakter>/<members>). Sæt depth første gang.
-        if ($tag === 'kontakt') {
-            $d = $reader->depth;
-            if ($kontaktDepth < 0 && $d <= 2) $kontaktDepth = $d;
-            if ($d !== $kontaktDepth) continue; // spring over nested relationer-kontakter
+        // Sæt top-depth første gang vi møder et <membre>
+        if ($topDepth < 0) $topDepth = $d;
 
-            $id = $reader->getAttribute('id') ?? '';
-            if (!$id || !ctype_digit($id)) continue;
+        // Spring nested <membre> (inde i <relationer>) over
+        if ($d !== $topDepth) continue;
 
-            // Ekspandér kun dette ene element — frigives af GC bagefter
-            $domNode = $reader->expand();
-            if (!$domNode) continue;
+        // Ekspandér kun dette ene element — frigives bagefter
+        $domNode = $reader->expand();
+        if (!$domNode) continue;
 
-            $k = simplexml_import_dom($domNode);
-            if (!$k) continue;
+        $k = simplexml_import_dom($domNode);
+        if (!$k) { unset($domNode); continue; }
 
-            $member = extract_member($k, (int)$id, $aktivHolds);
+        $id = (int)trim((string)($k->id ?? ''));
+        if ($id > 0) {
+            $member = extract_member($k, $id, $holdsMap);
             if ($member) $members[] = $member;
-
-            unset($k, $domNode);
         }
+
+        unset($k, $domNode);
     }
 
     $reader->close();
@@ -195,47 +207,27 @@ function parse_members_stream(string $raw, array $aktivHolds): array {
     return $members;
 }
 
-function extract_member(SimpleXMLElement $k, int $id, array $aktivHolds): ?array {
-    $fornavn   = trim((string)($k->fornavn   ?? $k->firstname ?? ''));
-    $efternavn = trim((string)($k->efternavn  ?? $k->lastname  ?? ''));
-    $name      = trim("$fornavn $efternavn") ?: 'Ukendt';
-    $ownEmail  = strtolower(trim((string)($k->email ?? '')));
+function extract_member(SimpleXMLElement $k, int $id, array $holdsMap): ?array {
+    $name  = trim((string)($k->navn ?? '')) ?: 'Ukendt';
+    $email = strtolower(trim((string)($k->email ?? '')));
 
-    // Relation-emails (forældre/værger)
-    $relEmails = [];
+    if (!$email || !filter_var($email, FILTER_VALIDATE_EMAIL)) return null;
+
+    // Hold-IDs fra <relationer><membre><gruppe> (tekst-indhold er ID-tallet)
+    $holds = [];
+    $seen  = [];
     if (isset($k->relationer)) {
         foreach ($k->relationer->children() as $rel) {
-            $re = strtolower(trim((string)($rel->email ?? '')));
-            if ($re && filter_var($re, FILTER_VALIDATE_EMAIL)) $relEmails[] = $re;
-        }
-    }
-
-    // Alle unikke, validerede emails
-    $allEmails = [];
-    if ($ownEmail && filter_var($ownEmail, FILTER_VALIDATE_EMAIL)) $allEmails[] = $ownEmail;
-    foreach ($relEmails as $re) {
-        if (!in_array($re, $allEmails, true)) $allEmails[] = $re;
-    }
-    if (empty($allEmails)) return null;
-
-    // Holdtilknytning
-    $holds    = [];
-    $grupNode = $k->grupper ?? $k->hold ?? null;
-    if ($grupNode) {
-        foreach ($grupNode->children() as $g) {
-            $holdId    = (int)($g['id'] ?? 0);
-            $holdTitel = html_entity_decode(
-                trim((string)($g['titel'] ?? $g['navn'] ?? $g)),
-                ENT_HTML5 | ENT_QUOTES, 'UTF-8'
-            );
-            if (!$holdTitel && !empty((string)$g['titel'])) {
-                $holdTitel = html_entity_decode((string)$g['titel'], ENT_HTML5 | ENT_QUOTES, 'UTF-8');
-            }
-            if ($holdId) {
+            foreach ($rel->children() as $child) {
+                if (strtolower($child->getName()) !== 'gruppe') continue;
+                $holdId = (int)trim((string)$child);
+                if (!$holdId || isset($seen[$holdId])) continue;
+                $seen[$holdId] = true;
+                $info  = $holdsMap[$holdId] ?? null;
                 $holds[] = [
                     'conventus_id' => $holdId,
-                    'titel'        => $holdTitel ?: "Hold #{$holdId}",
-                    'aktiv_i_app'  => isset($aktivHolds[$holdId]),
+                    'titel'        => $info['titel'] ?? "Hold #{$holdId}",
+                    'aktiv_i_app'  => $info !== null && $info['aktiv'],
                 ];
             }
         }
@@ -244,7 +236,7 @@ function extract_member(SimpleXMLElement $k, int $id, array $aktivHolds): ?array
     return [
         'conventus_id' => $id,
         'name'         => $name,
-        'allEmails'    => $allEmails,
+        'allEmails'    => [$email],
         'holds'        => $holds,
     ];
 }
@@ -261,15 +253,19 @@ function fetch_aktiv_holds(string $projectId, string $token): array {
     ]]));
     if (!$resp) return [];
 
+    // Returnerer [conventus_id => ['aktiv' => bool, 'titel' => string]]
+    // så extract_member kan slå hold-titler op (Conventus XML giver kun ID'er)
     $map = [];
     foreach ((json_decode($resp, true)['documents'] ?? []) as $doc) {
-        $f = $doc['fields'] ?? [];
-        if (($f['aktiv']['booleanValue'] ?? false) === true) {
-            $id = (int)($f['conventus_id']['integerValue']
-                     ?? $f['conventus_id']['doubleValue']
-                     ?? 0);
-            if ($id) $map[$id] = true;
-        }
+        $f  = $doc['fields'] ?? [];
+        $id = (int)($f['conventus_id']['integerValue']
+                 ?? $f['conventus_id']['doubleValue']
+                 ?? 0);
+        if (!$id) continue;
+        $map[$id] = [
+            'aktiv' => ($f['aktiv']['booleanValue'] ?? false) === true,
+            'titel' => $f['titel']['stringValue'] ?? "Hold #{$id}",
+        ];
     }
     return $map;
 }
