@@ -111,51 +111,22 @@ if (strpos(ltrim($raw), '<') !== 0) {
     exit;
 }
 
-// ── DEBUG: find ud af hvorfor XMLReader ikke finder elementer ─────────────────
-$dbg = [];
-$dbg['raw_bytes']    = strlen($raw);
-$dbg['hex_start']    = bin2hex(substr($raw, 0, 20)); // afslører BOM eller skjulte bytes
-$dbg['text_start']   = substr($raw, 0, 120);         // første 120 tegn som tekst
-
-$tr  = new XMLReader();
-$dbg['xml_open_ok']  = $tr->XML($raw, 'UTF-8', LIBXML_NOERROR | LIBXML_NOWARNING);
-$found = [];
-while ($tr->read() && count($found) < 8) {
-    if ($tr->nodeType !== XMLReader::ELEMENT) continue;
-    $found[] = 'depth=' . $tr->depth . ' <' . $tr->localName . '>';
-}
-$tr->close();
-$dbg['first_elements_no_filter'] = $found;
-// ── SLUT DEBUG ────────────────────────────────────────────────────────────────
-
-// ── Parse og skriv til Firestore (streaming for store filer) ──────────────────
+// ── Parse + batch-skriv til Firestore ────────────────────────────────────────
+// Individuelle PATCH-kald (ét pr. medlem) tager ~860s for 2873 membres.
+// Firestore batch-commit: op til 500 dokumenter pr. kald → ~6 kald i alt.
 $members  = parse_members_stream($raw, $aktivHolds);
-$written  = 0;
-$skipped  = 0;
-$errCount = 0;
 $syncedAt = date('c');
 
-foreach ($members as $member) {
-    $docId = (string)$member['conventus_id'];
-    if (!$docId) { $skipped++; continue; }
-
-    if (firestore_patch($projectId, $accessToken, "members/{$docId}", $member)) {
-        $written++;
-    } else {
-        $errCount++;
-    }
-}
-
 global $g_debug_first_member;
+$result   = firestore_batch_commit($projectId, $accessToken, $members);
+
 echo json_encode([
-    'ok'           => true,
-    'written'      => $written,
-    'skipped'      => $skipped,
-    'errors'       => $errCount,
-    'total'        => count($members),
-    'synced'       => $syncedAt,
-    'debug'        => $dbg,                   // TODO: fjern når parsing virker
-    'debug_first'  => $g_debug_first_member,  // TODO: fjern når parsing virker
+    'ok'          => true,
+    'written'     => $result['written'],
+    'errors'      => $result['errors'],
+    'total'       => count($members),
+    'synced'      => $syncedAt,
+    'debug_first' => $g_debug_first_member,  // TODO: fjern når parsing virker
 ], JSON_UNESCAPED_UNICODE);
 
 // ── Streaming XML-parser (XMLReader) ─────────────────────────────────────────
@@ -313,20 +284,45 @@ function fetch_aktiv_holds(string $projectId, string $token): array {
 
 // ── Firestore: skriv ét dokument (PATCH = upsert) ─────────────────────────────
 
-function firestore_patch(string $projectId, string $token, string $path, array $data): bool {
-    $fields = [];
-    foreach ($data as $k => $v) $fields[$k] = to_fs($v);
+// Firestore batch-commit: op til 500 dokumenter pr. HTTP-kald.
+// 2873 membres → ~6 kald i stedet for 2873 individuelle PATCH-kald.
+function firestore_batch_commit(string $projectId, string $token, array $members): array {
+    $baseUrl  = "https://firestore.googleapis.com/v1/projects/{$projectId}"
+              . "/databases/(default)";
+    $docsBase = "{$baseUrl}/documents/members";
+    $written  = 0;
+    $errors   = 0;
 
-    $url  = "https://firestore.googleapis.com/v1/projects/{$projectId}"
-          . "/databases/(default)/documents/{$path}";
-    $resp = @file_get_contents($url, false, stream_context_create(['http' => [
-        'method'        => 'PATCH',
-        'header'        => "Authorization: Bearer {$token}\r\nContent-Type: application/json\r\n",
-        'content'       => json_encode(['fields' => $fields]),
-        'timeout'       => 15,
-        'ignore_errors' => true,
-    ]]));
-    return $resp !== false && !empty(json_decode($resp, true)['fields']);
+    foreach (array_chunk($members, 500) as $chunk) {
+        $writes = [];
+        foreach ($chunk as $member) {
+            $docId  = (string)($member['conventus_id'] ?? '');
+            if (!$docId) continue;
+            $fields = [];
+            foreach ($member as $k => $v) $fields[$k] = to_fs($v);
+            $writes[] = ['update' => ['name' => "{$docsBase}/{$docId}", 'fields' => $fields]];
+        }
+        if (!$writes) continue;
+
+        $resp = @file_get_contents("{$baseUrl}/documents:commit", false,
+            stream_context_create(['http' => [
+                'method'        => 'POST',
+                'header'        => "Authorization: Bearer {$token}\r\nContent-Type: application/json\r\n",
+                'content'       => json_encode(['writes' => $writes]),
+                'timeout'       => 60,
+                'ignore_errors' => true,
+            ]])
+        );
+
+        $data = json_decode($resp ?: '', true);
+        if ($resp && isset($data['writeResults'])) {
+            $written += count($data['writeResults']);
+        } else {
+            $errors += count($writes);
+        }
+    }
+
+    return ['written' => $written, 'errors' => $errors];
 }
 
 function to_fs($v): array {
