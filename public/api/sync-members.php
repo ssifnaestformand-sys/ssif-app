@@ -189,30 +189,28 @@ function parse_members_stream(string $raw, array $holdsMap): array {
         return [];
     }
 
-    $members      = [];
-    $debugFirst   = null; // DEBUG: info om første <elem> på depth=2
+    $members = [];
+    global $g_debug_first_member;
+    $g_debug_first_member = null;
 
     while ($reader->read()) {
         if ($reader->nodeType !== XMLReader::ELEMENT) continue;
         if (strtolower($reader->localName) !== 'medlem') continue;
         if ($reader->depth !== 2) continue;
 
-        $domNode = $reader->expand();
-        if (!$domNode) continue;
+        // readOuterXml() kræver IKKE DOM-extensionen (expand() gør)
+        $xml = $reader->readOuterXml();
+        $reader->next(); // spring alle børn over, gå til næste søskende
+        if (!$xml) continue;
 
-        $k = simplexml_import_dom($domNode);
-        if (!$k) { unset($domNode); continue; }
+        $k = @simplexml_load_string($xml, 'SimpleXMLElement', LIBXML_NOERROR | LIBXML_NOWARNING);
+        if (!$k) continue;
 
         // ── DEBUG: kun første element ────────────────────────────────────────
-        if ($debugFirst === null) {
-            $dom = new DOMDocument();
-            $dom->appendChild($dom->importNode($domNode, true));
-            $rawXml = $dom->saveXML($dom->documentElement);
-
+        if ($g_debug_first_member === null) {
             $navn  = trim((string)($k->navn  ?? ''));
             $email = strtolower(trim((string)($k->email ?? '')));
             $id_el = trim((string)($k->id    ?? ''));
-
             $groupIds = [];
             if (isset($k->relationer)) {
                 foreach ($k->relationer->children() as $rel) {
@@ -221,14 +219,12 @@ function parse_members_stream(string $raw, array $holdsMap): array {
                     }
                 }
             }
-
             $skipReason = '';
-            if (!$email)                                        $skipReason = 'tom email';
-            elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) $skipReason = 'ugyldig email: ' . $email;
-            elseif ((int)$id_el === 0)                          $skipReason = 'tom/ugyldig id';
-
-            $debugFirst = [
-                'raw_xml'     => mb_substr($rawXml, 0, 800),
+            if (!$email)                                         $skipReason = 'tom email';
+            elseif (!filter_var($email, FILTER_VALIDATE_EMAIL))  $skipReason = 'ugyldig email: ' . $email;
+            elseif ((int)$id_el === 0)                           $skipReason = 'tom/ugyldig id';
+            $g_debug_first_member = [
+                'raw_xml'     => mb_substr($xml, 0, 800),
                 'id'          => $id_el,
                 'navn'        => $navn,
                 'email'       => $email,
@@ -244,16 +240,11 @@ function parse_members_stream(string $raw, array $holdsMap): array {
             if ($member) $members[] = $member;
         }
 
-        unset($k, $domNode);
+        unset($k);
     }
 
     $reader->close();
     libxml_clear_errors();
-
-    // Gem debug på global variabel så kaldestedet kan inkludere det i svaret
-    global $g_debug_first_member;
-    $g_debug_first_member = $debugFirst;
-
     return $members;
 }
 
