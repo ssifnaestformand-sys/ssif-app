@@ -1307,6 +1307,7 @@ function ProfileScreen({ user, onLogout }) {
   async function addExtraEmail(e) {
     e.preventDefault()
     if (!newEmail.trim()) return
+    if (!user.uid) { setInfo('Log ind med din rigtige konto for at tilføje emails'); return }
     setSaving(true)
     try {
       await updateDoc(doc(db, 'users', user.uid), {
@@ -1320,6 +1321,7 @@ function ProfileScreen({ user, onLogout }) {
   }
 
   async function removeExtraEmail(email) {
+    if (!user.uid) return
     await updateDoc(doc(db, 'users', user.uid), { extraEmails: arrayRemove(email) })
   }
 
@@ -1402,7 +1404,7 @@ function ProfileScreen({ user, onLogout }) {
           </div>
           <button className="btn btn-primary" style={{ height: 50, padding: '0 16px', flexShrink: 0 }}
                   disabled={saving} type="submit">
-            <Icon name="plus" size={18} color="white" />
+            {saving ? 'Gemmer…' : 'Tilføj'}
           </button>
         </form>
       </div>
@@ -1472,14 +1474,7 @@ export default function App() {
 
   const isDemoRef = useRef(false)
 
-  // ── Håndter redirect-resultat fra Google/Facebook login ──────────────────
-  useEffect(() => {
-    getRedirectResult(auth).catch(err => {
-      const msg = AUTH_ERRORS[err.code]
-      if (msg) setLoginError(msg)
-      else if (err.code && err.code !== 'auth/null-user') setLoginError(err.message)
-    })
-  }, [])
+  // (kombineret med auth-listener nedenfor)
 
   // ── Load + merge Firestore profile ───────────────────────────────────────
   async function loadAndSetUser(fbUser) {
@@ -1526,17 +1521,47 @@ export default function App() {
     })
   }
 
-  // ── Auth state listener ──────────────────────────────────────────────────
+  // ── Auth state listener + redirect-håndtering ───────────────────────────
+  // getRedirectResult SKAL afventes inden vi viser loginskærmen.
+  // Ellers: onAuthStateChanged(null) vises momentant inden redirectet
+  // er færdigbehandlet, og brugeren ender på loginskærmen.
   useEffect(() => {
-    return onAuthStateChanged(auth, async fbUser => {
+    let mounted = true
+
+    const unsubAuth = onAuthStateChanged(auth, async fbUser => {
+      if (!mounted) return
       if (fbUser) {
+        // Bruger logget ind (uanset om via redirect, kodeord eller eksisterende session)
         await loadAndSetUser(fbUser)
-        setAuthChecked(true)
-      } else if (!isDemoRef.current) {
-        setUser(null)
-        setAuthChecked(true)
+        if (mounted) setAuthChecked(true)
       }
+      // Vis IKKE loginskærm her ved null — det klares af getRedirectResult nedenfor
     })
+
+    // Behandl redirect-resultat fra Google/Facebook signInWithRedirect.
+    // Returnerer null hurtigt hvis der ikke er et afventende redirect.
+    getRedirectResult(auth)
+      .then(() => {
+        if (!mounted) return
+        // Hvis ingen bruger kom ud af redirectet (og ingen eksisterende session),
+        // viser vi loginskærmen nu.
+        if (!auth.currentUser && !isDemoRef.current) {
+          setUser(null)
+          setAuthChecked(true)
+        }
+      })
+      .catch(err => {
+        if (!mounted) return
+        const msg = AUTH_ERRORS[err.code]
+        if (msg) setLoginError(msg)
+        else if (err.code && err.code !== 'auth/null-user') setLoginError(err.message)
+        if (!auth.currentUser && !isDemoRef.current) {
+          setUser(null)
+          setAuthChecked(true)
+        }
+      })
+
+    return () => { mounted = false; unsubAuth() }
   }, [])
 
   // ── Firestore: news ──────────────────────────────────────────────────────
