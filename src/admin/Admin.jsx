@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { auth, db } from '../firebase.js'
+import { auth, db, storage } from '../firebase.js'
+import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
 import {
   sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink,
   signOut, onAuthStateChanged,
@@ -29,11 +30,22 @@ const TEAMS_STATIC = [
 ]
 
 const NEWS_CATEGORIES = [
-  { value: 'Kamp',        color: '#1a5c2a' },
-  { value: 'Klubnyt',     color: '#5856d6' },
-  { value: 'Ungdom',      color: '#ff9500' },
-  { value: 'Arrangement', color: '#ff3b30' },
-  { value: 'Frivillige',  color: '#34c759' },
+  { value: 'Kamp',             color: '#1a5c2a' },
+  { value: 'Klubnyt',          color: '#5856d6' },
+  { value: 'Arrangement',      color: '#ff3b30' },
+  { value: 'Frivillige',       color: '#34c759' },
+  { value: 'Fodbold',          color: '#007aff' },
+  { value: 'Håndbold',         color: '#ff6b00' },
+  { value: 'Badminton',        color: '#00c7be' },
+  { value: 'Floorball',        color: '#ff2d55' },
+  { value: 'Gymnastik',        color: '#af52de' },
+  { value: 'Aktiv om Dagen',   color: '#ff9500' },
+  { value: 'Volleyball',       color: '#ff6b35' },
+  { value: 'Tennis',           color: '#30d158' },
+  { value: 'Vinterbadning',    color: '#0a84ff' },
+  { value: 'Cykling',          color: '#ffd60a' },
+  { value: 'Kajak',            color: '#64d2ff' },
+  { value: 'Motion og Fitness',color: '#ff375f' },
 ]
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -610,6 +622,84 @@ function MessagesPage({ userDoc, authUser }) {
   )
 }
 
+// ─── ImageUploader ────────────────────────────────────────────────────────────
+
+function ImageUploader({ value, onChange }) {
+  const [dragging, setDragging] = useState(false)
+  const [progress, setProgress] = useState(null) // null | 0-100
+  const [error, setError]       = useState('')
+  const inputRef                = useRef(null)
+
+  function handleFile(file) {
+    if (!file || !file.type.startsWith('image/')) { setError('Kun billedfiler tilladt'); return }
+    if (file.size > 8 * 1024 * 1024)              { setError('Maks 8 MB'); return }
+    setError(''); setProgress(0)
+
+    const path   = `news-images/${Date.now()}-${file.name.replace(/[^a-z0-9.]/gi, '_')}`
+    const sRef   = storageRef(storage, path)
+    const upload = uploadBytesResumable(sRef, file)
+
+    upload.on('state_changed',
+      snap  => setProgress(Math.round(snap.bytesTransferred / snap.totalBytes * 100)),
+      err   => { setError('Upload fejlede: ' + err.message); setProgress(null) },
+      ()    => getDownloadURL(upload.snapshot.ref).then(url => { onChange(url); setProgress(null) })
+    )
+  }
+
+  function onDrop(e) {
+    e.preventDefault(); setDragging(false)
+    handleFile(e.dataTransfer.files[0])
+  }
+
+  return (
+    <div>
+      <div
+        onDragOver={e => { e.preventDefault(); setDragging(true) }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={onDrop}
+        onClick={() => inputRef.current?.click()}
+        style={{
+          border: `2px dashed ${dragging ? 'var(--primary)' : 'var(--border)'}`,
+          borderRadius: 8,
+          padding: '18px 12px',
+          textAlign: 'center',
+          cursor: 'pointer',
+          background: dragging ? 'var(--primary-soft, #e8f5e9)' : 'var(--bg)',
+          transition: 'border-color .15s, background .15s',
+        }}
+      >
+        <input ref={inputRef} type="file" accept="image/*" style={{ display: 'none' }}
+               onChange={e => handleFile(e.target.files[0])} />
+        {progress !== null ? (
+          <div>
+            <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 6 }}>Uploader… {progress}%</div>
+            <div style={{ height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: progress + '%', background: 'var(--primary, #1a5c2a)', transition: 'width .2s' }} />
+            </div>
+          </div>
+        ) : value ? (
+          <div>
+            <img src={value} alt="" style={{ maxWidth: '100%', maxHeight: 160, borderRadius: 6, objectFit: 'cover', display: 'block', margin: '0 auto 8px' }} />
+            <span style={{ fontSize: 12, color: 'var(--text2)' }}>Klik eller træk for at skifte billede</span>
+          </div>
+        ) : (
+          <div style={{ fontSize: 13, color: 'var(--text2)', pointerEvents: 'none' }}>
+            <div style={{ fontSize: 24, marginBottom: 6 }}>🖼</div>
+            Træk et billede hertil eller <span style={{ color: 'var(--primary, #1a5c2a)', fontWeight: 600 }}>vælg fil</span>
+          </div>
+        )}
+      </div>
+      {error && <p style={{ fontSize: 12, color: '#dc3545', marginTop: 4 }}>{error}</p>}
+      {value && !progress && (
+        <button type="button" style={{ fontSize: 12, color: '#dc3545', background: 'none', border: 'none', cursor: 'pointer', marginTop: 4, padding: 0 }}
+                onClick={e => { e.stopPropagation(); onChange('') }}>
+          Fjern billede
+        </button>
+      )}
+    </div>
+  )
+}
+
 // ─── News ─────────────────────────────────────────────────────────────────────
 
 const EMPTY_ARTICLE = {
@@ -740,18 +830,12 @@ function NewsPage({ userDoc, authUser }) {
               </select>
             </div>
             <div className="form-group">
-              <label className="form-label">Billed-URL (valgfrit)</label>
-              <input className="form-control" type="url" value={form.imageUrl} onChange={e => setField('imageUrl', e.target.value)} placeholder="https://…" />
-              <p className="form-hint">Link til et billede (Imgur, etc.)</p>
-            </div>
-            {form.imageUrl && (
-              <img
-                src={form.imageUrl}
-                alt=""
-                style={{ width: '100%', borderRadius: 8, objectFit: 'cover', maxHeight: 180, marginTop: 8 }}
-                onError={e => { e.target.style.display = 'none' }}
+              <label className="form-label">Billede (valgfrit)</label>
+              <ImageUploader
+                value={form.imageUrl}
+                onChange={url => setField('imageUrl', url)}
               />
-            )}
+            </div>
             <div style={{ marginTop: 16, padding: '12px 14px', borderRadius: 8, background: 'var(--bg)', border: '1px solid var(--border)' }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 6 }}>FORHÅNDSVISNING</div>
               <CategoryPill label={form.category} color={form.categoryColor} />

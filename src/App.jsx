@@ -745,12 +745,16 @@ function NewsScreen({ onSelectArticle, articles, isLive }) {
       <div className="card-list">
         {articles.map(article => (
           <div className="news-card" key={article.id} onClick={() => onSelectArticle(article)}>
+            {article.imageUrl && (
+              <img className="news-card-image" src={article.imageUrl} alt=""
+                   onError={e => { e.target.style.display = 'none' }} />
+            )}
             <div className="news-card-top">
               <CategoryPill label={article.category} color={article.categoryColor || '#1a5c2a'} />
               <span className="news-date">{article.date}</span>
             </div>
             <h3 className="news-title">{article.title}</h3>
-            <p className="news-excerpt">{article.excerpt}</p>
+            {article.excerpt && <p className="news-excerpt">{article.excerpt}</p>}
           </div>
         ))}
       </div>
@@ -762,6 +766,10 @@ function NewsScreen({ onSelectArticle, articles, isLive }) {
 function NewsDetailScreen({ article }) {
   return (
     <div className="screen">
+      {article.imageUrl && (
+        <img className="article-hero-image" src={article.imageUrl} alt=""
+             onError={e => { e.target.style.display = 'none' }} />
+      )}
       <div className="article">
         <div className="article-meta">
           <CategoryPill label={article.category} color={article.categoryColor || '#1a5c2a'} />
