@@ -1301,13 +1301,26 @@ function FamilieTab({ user }) {
 
 // ─── Profil ───────────────────────────────────────────────────────────────────
 
-function ProfileScreen({ user, onLogout }) {
-  const [newEmail, setNewEmail]   = useState('')
-  const [saving, setSaving]       = useState(false)
-  const [info, setInfo]           = useState('')
-  const [resent, setResent]       = useState(false)
+function ProfileScreen({ user, onLogout, onUserUpdate, verifyMsg }) {
+  const [newEmail, setNewEmail] = useState('')
+  const [saving, setSaving]     = useState(false)
+  const [info, setInfo]         = useState('')
+  const [resent, setResent]     = useState(false)
 
-  async function resendVerification() {
+  // Vis bekræftelsesbesked når en email er verificeret via link
+  useEffect(() => {
+    if (!verifyMsg) return
+    setInfo(verifyMsg)
+    const t = setTimeout(() => setInfo(''), 6000)
+    return () => clearTimeout(t)
+  }, [verifyMsg])
+
+  // Normalisér: extraEmails kan være strenge (ældre format) eller objekter
+  const extraEmails = (user.extraEmails || []).map(e =>
+    typeof e === 'string' ? { email: e, verified: false, token: null } : e
+  )
+
+  async function resendPrimaryVerification() {
     try {
       await sendEmailVerification(auth.currentUser)
       setResent(true)
@@ -1317,23 +1330,71 @@ function ProfileScreen({ user, onLogout }) {
 
   async function addExtraEmail(e) {
     e.preventDefault()
-    if (!newEmail.trim()) return
-    if (!user.uid) { setInfo('Log ind med din rigtige konto for at tilføje emails'); return }
+    const emailLower = newEmail.trim().toLowerCase()
+    if (!emailLower) return
+    if (!user?.uid) { setInfo('Log ind for at tilføje emails'); return }
+    if (extraEmails.some(x => x.email === emailLower)) { setInfo('Email er allerede tilføjet'); return }
+
     setSaving(true)
     try {
-      await updateDoc(doc(db, 'users', user.uid), {
-        extraEmails: arrayUnion(newEmail.trim().toLowerCase()),
+      const token  = crypto.randomUUID()
+      const entry  = { email: emailLower, verified: false, token }
+      const ref    = doc(db, 'users', user.uid)
+      const snap   = await getDoc(ref)
+      const current = snap.data()?.extraEmails || []
+      await updateDoc(ref, { extraEmails: [...current, entry] })
+
+      const res = await fetch('api/send-verification.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailLower, uid: user.uid, token }),
       })
-      setInfo('Email tilføjet')
+
+      onUserUpdate(prev => ({ ...prev, extraEmails: [...current, entry] }))
       setNewEmail('')
-      setTimeout(() => setInfo(''), 4000)
+      setInfo(res.ok
+        ? 'Verifikationsmail sendt til ' + emailLower
+        : 'Email gemt — verifikationsmail kunne ikke sendes')
+      setTimeout(() => setInfo(''), 7000)
     } catch (err) { setInfo('Fejl: ' + err.message) }
     finally { setSaving(false) }
   }
 
-  async function removeExtraEmail(email) {
-    if (!user.uid) return
-    await updateDoc(doc(db, 'users', user.uid), { extraEmails: arrayRemove(email) })
+  async function removeExtraEmail(emailStr) {
+    if (!user?.uid) return
+    try {
+      const ref     = doc(db, 'users', user.uid)
+      const snap    = await getDoc(ref)
+      const current = snap.data()?.extraEmails || []
+      const updated = current.filter(e => (typeof e === 'string' ? e : e.email) !== emailStr)
+      await updateDoc(ref, { extraEmails: updated })
+      onUserUpdate(prev => ({ ...prev, extraEmails: updated }))
+    } catch (err) { setInfo('Fejl: ' + err.message) }
+  }
+
+  async function resendExtraVerification(emailStr) {
+    if (!user?.uid) return
+    setSaving(true)
+    try {
+      const token   = crypto.randomUUID()
+      const ref     = doc(db, 'users', user.uid)
+      const snap    = await getDoc(ref)
+      const current = snap.data()?.extraEmails || []
+      const updated = current.map(e => {
+        const em = typeof e === 'string' ? e : e.email
+        return em === emailStr ? { email: em, verified: false, token } : e
+      })
+      await updateDoc(ref, { extraEmails: updated })
+      await fetch('api/send-verification.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailStr, uid: user.uid, token }),
+      })
+      onUserUpdate(prev => ({ ...prev, extraEmails: updated }))
+      setInfo('Ny verifikationsmail sendt')
+      setTimeout(() => setInfo(''), 5000)
+    } catch (err) { setInfo('Fejl: ' + err.message) }
+    finally { setSaving(false) }
   }
 
   return (
@@ -1364,33 +1425,53 @@ function ProfileScreen({ user, onLogout }) {
           </div>
           {!user.emailVerified && !user.isDemo && (
             <button className="btn btn-secondary" style={{ height: 32, fontSize: 12, padding: '0 12px' }}
-                    onClick={resendVerification} disabled={resent}>
+                    onClick={resendPrimaryVerification} disabled={resent}>
               {resent ? '✓ Sendt' : 'Send igen'}
             </button>
           )}
         </div>
       </div>
 
-      {(user.extraEmails ?? []).length > 0 && (
+      {info && (
+        <p style={{ fontSize: 13, color: 'var(--green)', padding: '10px 16px 0', lineHeight: 1.5 }}>
+          {info}
+        </p>
+      )}
+
+      {extraEmails.length > 0 && (
         <>
           <SectionHeader title="Tilknyttede emails" />
           <div className="list-group">
-            {(user.extraEmails ?? []).map((em, i) => (
-              <div key={em}>
+            {extraEmails.map((entry, i) => (
+              <div key={entry.email}>
                 {i > 0 && <div className="list-separator" />}
                 <div className="list-item" style={{ cursor: 'default' }}>
-                  <div className="list-item-icon" style={{ background: 'var(--bg)' }}>
-                    <Icon name="mail" size={17} color="var(--text2)" />
+                  <div className="list-item-icon"
+                       style={{ background: entry.verified ? 'var(--green-soft)' : '#fff3e0' }}>
+                    <Icon name={entry.verified ? 'check-circle' : 'alert-circle'} size={17}
+                          color={entry.verified ? 'var(--green)' : '#ff9500'} />
                   </div>
                   <div className="list-item-body">
-                    <span className="list-item-title">{em}</span>
-                    <span className="list-item-detail" style={{ color: 'var(--text3)' }}>
-                      Hold-tilknytning via Conventus
+                    <span className="list-item-title">{entry.email}</span>
+                    <span className="list-item-detail"
+                          style={{ color: entry.verified ? 'var(--text3)' : '#ff9500' }}>
+                      {entry.verified
+                        ? 'Verificeret · Hold-tilknytning via Conventus'
+                        : 'Afventer verificering'}
                     </span>
                   </div>
-                  <button className="fam-remove" onClick={() => removeExtraEmail(em)}>
-                    <Icon name="x" size={16} color="var(--text3)" />
-                  </button>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+                    {!entry.verified && (
+                      <button className="btn btn-secondary"
+                              style={{ height: 32, fontSize: 12, padding: '0 10px' }}
+                              onClick={() => resendExtraVerification(entry.email)} disabled={saving}>
+                        Send igen
+                      </button>
+                    )}
+                    <button className="fam-remove" onClick={() => removeExtraEmail(entry.email)}>
+                      <Icon name="x" size={16} color="var(--text3)" />
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -1402,15 +1483,14 @@ function ProfileScreen({ user, onLogout }) {
       <div style={{ padding: '0 16px' }}>
         <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 10, lineHeight: 1.5 }}>
           Tilføj email-adresser der er tilknyttet Conventus — fx din ægtefælles email.
-          Systemet finder automatisk de hold der er registreret under den pågældende email.
+          Du modtager en bekræftelsesmail til den tilføjede adresse.
         </p>
-        {info && <p style={{ fontSize: 13, color: 'var(--green)', marginBottom: 8 }}>{info}</p>}
         <form onSubmit={addExtraEmail} style={{ display: 'flex', gap: 8 }}>
           <div className="input-group" style={{ flex: 1 }}>
             <div className="input-row">
               <span className="input-icon"><Icon name="mail" size={17} color="var(--text3)" /></span>
               <input className="input-field" type="email" placeholder="email@eksempel.dk" required
-                value={newEmail} onChange={e => setNewEmail(e.target.value)} />
+                     value={newEmail} onChange={e => setNewEmail(e.target.value)} />
             </div>
           </div>
           <button className="btn btn-primary" style={{ height: 50, padding: '0 16px', flexShrink: 0 }}
@@ -1482,10 +1562,53 @@ export default function App() {
   })
   const [loginError, setLoginError]               = useState('')
   const [pushGranted, setPushGranted]             = useState(false)
+  const [verifyMsg, setVerifyMsg]                 = useState('')
 
-  const isDemoRef = useRef(false)
+  const isDemoRef        = useRef(false)
+  const pendingVerifyRef = useRef(null)
 
-  // (kombineret med auth-listener nedenfor)
+  // Fang verifikationsparametre fra URL inden auth-flowet starter
+  useEffect(() => {
+    const p     = new URLSearchParams(window.location.search)
+    const token = p.get('verifyEmail')
+    const uid   = p.get('uid')
+    if (token && uid) {
+      pendingVerifyRef.current = { token, uid }
+      // Fjern parametre fra URL uden reload
+      window.history.replaceState({}, '', window.location.pathname + window.location.hash)
+    }
+  }, [])
+
+  // Behandl afventende email-verificering når brugeren er autentificeret
+  useEffect(() => {
+    const pending = pendingVerifyRef.current
+    if (!authChecked || !user?.uid || !pending) return
+    pendingVerifyRef.current = null
+
+    if (pending.uid !== user.uid) return  // forkert konto — ignorer
+
+    async function doVerify() {
+      try {
+        const ref  = doc(db, 'users', user.uid)
+        const snap = await getDoc(ref)
+        const current = snap.data()?.extraEmails || []
+        let found = false
+        const updated = current.map(e => {
+          if (typeof e === 'object' && e.token === pending.token && !e.verified) {
+            found = true
+            return { email: e.email, verified: true, token: null }
+          }
+          return e
+        })
+        if (!found) return
+        await updateDoc(ref, { extraEmails: updated })
+        setUser(prev => ({ ...prev, extraEmails: updated }))
+        setActiveTab('profil')
+        setVerifyMsg('Email verificeret!')
+      } catch {}
+    }
+    doVerify()
+  }, [authChecked, user?.uid])
 
   // ── Load + merge Firestore profile ───────────────────────────────────────
   async function loadAndSetUser(fbUser) {
@@ -1805,7 +1928,8 @@ export default function App() {
             showPushBanner={canRequestPush()} onEnableNotifications={handleEnableNotifications} />
         )}
         {activeTab === 'profil' && (
-          <ProfileScreen user={user} onLogout={handleLogout} />
+          <ProfileScreen user={user} onLogout={handleLogout}
+                         onUserUpdate={setUser} verifyMsg={verifyMsg} />
         )}
         {activeTab === 'teams' && !user.emailVerified ? (
           <UnverifiedScreen user={user} onLogout={handleLogout} />
