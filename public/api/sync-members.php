@@ -104,41 +104,19 @@ if (preg_match('/encoding=["\']ISO-8859-1["\']/i', $raw)) {
     $raw = preg_replace('/encoding=["\']ISO-8859-1["\']/i', 'encoding="UTF-8"', $raw);
 }
 
-// ── DEBUG (midlertidig) ───────────────────────────────────────────────────────
-$debug = [];
-$debug['raw_length']  = strlen($raw);
-$debug['raw_preview'] = mb_substr($raw, 0, 500);
-
 // Tjek at svaret ser ud som XML
 if (strpos(ltrim($raw), '<') !== 0) {
     http_response_code(502);
-    echo json_encode(['error' => 'Uventet svar fra Conventus (ikke XML)', 'debug' => $debug]);
+    echo json_encode(['error' => 'Uventet svar fra Conventus (ikke XML)']);
     exit;
 }
 
-// Scan element-navne og dybder med XMLReader (uden at parse fuldt)
-$debugReader = new XMLReader();
-$debugReader->XML($raw, 'UTF-8', LIBXML_NOERROR | LIBXML_NOWARNING);
-$elementCounts = [];
-$depthSamples  = []; // første 20 elementer med navn+depth
-$i = 0;
-while ($debugReader->read()) {
-    if ($debugReader->nodeType !== XMLReader::ELEMENT) continue;
-    $name = $debugReader->localName;
-    $elementCounts[$name] = ($elementCounts[$name] ?? 0) + 1;
-    if ($i < 20) { $depthSamples[] = "depth={$debugReader->depth} <{$name}>"; $i++; }
-}
-$debugReader->close();
-$debug['element_counts'] = $elementCounts;
-$debug['first_20_elements'] = $depthSamples;
-// ── SLUT DEBUG ────────────────────────────────────────────────────────────────
-
 // ── Parse og skriv til Firestore (streaming for store filer) ──────────────────
-$members    = parse_members_stream($raw, $aktivHolds);
-$written    = 0;
-$skipped    = 0;
-$errCount   = 0;
-$syncedAt   = date('c');
+$members  = parse_members_stream($raw, $aktivHolds);
+$written  = 0;
+$skipped  = 0;
+$errCount = 0;
+$syncedAt = date('c');
 
 foreach ($members as $member) {
     $docId = (string)$member['conventus_id'];
@@ -158,7 +136,6 @@ echo json_encode([
     'errors'  => $errCount,
     'total'   => count($members),
     'synced'  => $syncedAt,
-    'debug'   => $debug,   // TODO: fjern når parsing virker
 ], JSON_UNESCAPED_UNICODE);
 
 // ── Streaming XML-parser (XMLReader) ─────────────────────────────────────────
@@ -192,20 +169,15 @@ function parse_members_stream(string $raw, array $holdsMap): array {
         return [];
     }
 
-    $members    = [];
-    $topDepth   = -1; // depth for top-level <membre> — sættes første gang
+    $members = [];
 
     while ($reader->read()) {
         if ($reader->nodeType !== XMLReader::ELEMENT) continue;
         if (strtolower($reader->localName) !== 'medlem') continue;
 
-        $d = $reader->depth;
-
-        // Sæt top-depth første gang vi møder et <membre>
-        if ($topDepth < 0) $topDepth = $d;
-
-        // Spring nested <membre> (inde i <relationer>) over
-        if ($d !== $topDepth) continue;
+        // Kun depth=2: <conventus><membres><membre>
+        // depth=4 er nested <membre> inde i <relationer> — ignoreres
+        if ($reader->depth !== 2) continue;
 
         // Ekspandér kun dette ene element — frigives bagefter
         $domNode = $reader->expand();

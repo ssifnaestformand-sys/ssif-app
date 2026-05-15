@@ -1523,35 +1523,29 @@ function ProfileScreen({ user, onLogout, onUserUpdate, verifyMsg }) {
             {linkedMembers.map((m, mi) => (
               <div key={m.conventus_id ?? mi}>
                 {mi > 0 && <div className="list-separator" />}
-                <div style={{ padding: '12px 16px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: m.holds?.length ? 8 : 0 }}>
-                    <div className="list-item-icon" style={{ background: 'var(--green-soft)', flexShrink: 0 }}>
-                      <Icon name="person-circle" size={17} color="var(--green)" />
+                {/* Hvert hold vises med medlemmets navn tydeligt — vigtigt når
+                    der er flere børn knyttet til samme konto */}
+                {(m.holds?.length > 0 ? m.holds : [null]).map((h, hi) => (
+                  <div key={h?.conventus_id ?? hi} className="list-item" style={{ cursor: 'default' }}>
+                    <div className="list-item-icon" style={{
+                      background: h?.aktiv_i_app ? 'var(--green-soft)' : 'var(--bg)',
+                      flexShrink: 0,
+                    }}>
+                      <Icon name="person-circle" size={17}
+                            color={h?.aktiv_i_app ? 'var(--green)' : 'var(--text3)'} />
                     </div>
-                    <span style={{ fontWeight: 600, fontSize: 15 }}>{m.name}</span>
+                    <div className="list-item-body">
+                      <span className="list-item-title">
+                        {h ? h.titel : 'Ingen hold tilknyttet'}
+                      </span>
+                      <span className="list-item-detail" style={{
+                        color: h?.aktiv_i_app ? 'var(--green)' : 'var(--text3)',
+                      }}>
+                        {m.name}{h?.aktiv_i_app ? ' · Aktiv i appen' : ''}
+                      </span>
+                    </div>
                   </div>
-                  {m.holds?.length > 0 && (
-                    <div style={{ paddingLeft: 46, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {m.holds.map((h, hi) => (
-                        <div key={h.conventus_id ?? hi}
-                             style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <div style={{
-                            width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                            background: h.aktiv_i_app ? 'var(--green)' : 'var(--text3)',
-                          }} />
-                          <span style={{ fontSize: 14, color: 'var(--text)' }}>{h.titel}</span>
-                          {h.aktiv_i_app && (
-                            <span style={{
-                              fontSize: 11, fontWeight: 600, color: 'var(--green)',
-                              background: 'var(--green-soft)', borderRadius: 4,
-                              padding: '2px 6px', flexShrink: 0,
-                            }}>Aktiv i appen</span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                ))}
               </div>
             ))}
           </div>
