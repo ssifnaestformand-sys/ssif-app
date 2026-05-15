@@ -96,6 +96,44 @@ if ($endpoint === 'sync') {
     exit;
 }
 
+// ── AFDELING: hent hold for én bestemt afdeling ──────────────────────────────
+if ($endpoint === 'afdeling') {
+    header('Cache-Control: no-cache');
+
+    $afdelingId = trim($_GET['id'] ?? '');
+    if (!$afdelingId || !preg_match('/^\d+$/', $afdelingId)) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Angiv et gyldigt numerisk afdelings-ID']);
+        exit;
+    }
+
+    $url = BASE_URL . '?' . http_build_query([
+        'forening' => FORENING,
+        'key'      => $apiKey,
+        'type'     => 'hold',
+        'aktiv'    => 'true',
+        'afdeling' => $afdelingId,
+    ]);
+
+    $raw = @file_get_contents($url, false, $ctx);
+    if ($raw === false) { http_response_code(503); echo json_encode(['error' => 'Ingen svar fra Conventus']); exit; }
+
+    $xml = @simplexml_load_string($raw);
+    if ($xml === false) { http_response_code(502); echo json_encode(['error' => 'XML parse-fejl fra Conventus']); exit; }
+    if (!empty((string)$xml->error)) { http_response_code(502); echo json_encode(['error' => (string)$xml->error]); exit; }
+
+    $arr   = xmlToArray($xml);
+    $holds = extractHolds($arr, null);
+    usort($holds, fn($a,$b) => strcmp($a['aktivitet_titel'], $b['aktivitet_titel']) ?: strcmp($a['titel'], $b['titel']));
+
+    echo json_encode([
+        'holds'   => $holds,
+        'count'   => count($holds),
+        'fetched' => date('c'),
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 // ── GRUPPER: simpel hold-liste til dropdown ───────────────────────────────────
 if ($endpoint === 'grupper') {
     header('Cache-Control: public, max-age=1800');
