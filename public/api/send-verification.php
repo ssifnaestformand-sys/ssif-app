@@ -3,8 +3,7 @@
  * Extra-email verifikation
  *
  * POST { email, uid, token }
- * → sender en verificeringsmail til den angivne adresse med et link
- *   der peger tilbage på appen med token+uid som query-parametre.
+ * → sender en verificeringsmail via SMTP (send.one.com:465 SSL)
  *
  * Sikkerheden ligger i Firestore: tokenet skal matche et dokument
  * ejet af den pågældende uid for at verificeringen accepteres i appen.
@@ -34,7 +33,6 @@ if (!filter_var($to, FILTER_VALIDATE_EMAIL)) {
     exit;
 }
 
-// Tokenet må kun indeholde hex + bindestreger (UUID-format)
 if (!preg_match('/^[0-9a-f\-]{32,36}$/i', $token)) {
     http_response_code(400);
     echo json_encode(['error' => 'Ugyldigt token-format']);
@@ -47,8 +45,7 @@ $verifyUrl = 'https://app.sejssvejbaek-if.dk/?verifyEmail=' . urlencode($token)
 $subject = 'Bekræft din emailadresse — Sejs-Svejbæk IF';
 
 $body = "Hej,\n\n"
-      . "Du er ved at tilføje denne emailadresse til SSIF-appen på\n"
-      . "Sejs-Svejbæk IF.\n\n"
+      . "Du er ved at tilføje denne emailadresse til SSIF-appen.\n\n"
       . "Klik på linket nedenfor for at bekræfte:\n\n"
       . $verifyUrl . "\n\n"
       . "Linket er gyldigt i 7 dage.\n\n"
@@ -56,23 +53,76 @@ $body = "Hej,\n\n"
       . "Venlig hilsen\n"
       . "Sejs-Svejbæk IF";
 
-$from    = 'noreply@sejssvejbaek-if.dk';
-$headers = implode("\r\n", [
-    'From: Sejs-Svejbaek IF <' . $from . '>',
-    'Reply-To: ' . $from,
-    'Content-Type: text/plain; charset=UTF-8',
-    'Content-Transfer-Encoding: 8bit',
-    'X-Mailer: PHP/' . PHP_VERSION,
-]);
-
-// mb_encode_mimeheader koder emnet korrekt som UTF-8 MIME
-$encodedSubject = mb_encode_mimeheader($subject, 'UTF-8', 'B', "\r\n");
-
-$sent = mail($to, $encodedSubject, $body, $headers);
-
-if ($sent) {
-    echo json_encode(['ok' => true]);
-} else {
+if (!smtp_send($to, $subject, $body)) {
     http_response_code(500);
-    echo json_encode(['error' => 'Serveren kunne ikke sende emailen']);
+    echo json_encode(['error' => 'SMTP-afsendelse fejlede']);
+    exit;
+}
+
+echo json_encode(['ok' => true]);
+
+// ── SMTP via socket (ingen afhængigheder) ─────────────────────────────────────
+
+function smtp_send(string $to, string $subject, string $body): bool {
+    $host = 'send.one.com';
+    $port = 465;
+    $user = 'noreply@sejssvejbaek-if.dk';
+    $pass = getenv('SMTP_PASSWORD') ?: '';
+    $from = 'noreply@sejssvejbaek-if.dk';
+    $name = 'SSIF App';
+
+    if (!$pass) return false;
+
+    $ctx  = stream_context_create(['ssl' => [
+        'verify_peer'      => true,
+        'verify_peer_name' => true,
+    ]]);
+    $sock = @stream_socket_client("ssl://{$host}:{$port}", $errno, $errstr, 15,
+                                   STREAM_CLIENT_CONNECT, $ctx);
+    if (!$sock) return false;
+
+    stream_set_timeout($sock, 10);
+
+    smtp_read($sock);                               // 220 greeting
+
+    smtp_cmd($sock, 'EHLO sejssvejbaek-if.dk');     // multi-line — read til ' '
+    smtp_cmd($sock, 'AUTH LOGIN');
+    smtp_cmd($sock, base64_encode($user));
+    $authResp = smtp_cmd($sock, base64_encode($pass));
+    if (strncmp($authResp, '235', 3) !== 0) { fclose($sock); return false; }
+
+    smtp_cmd($sock, "MAIL FROM:<{$from}>");
+    smtp_cmd($sock, "RCPT TO:<{$to}>");
+    smtp_cmd($sock, 'DATA');
+
+    $enc  = '=?UTF-8?B?' . base64_encode($subject) . '?=';
+    $msg  = "Date: " . date('r') . "\r\n"
+          . "From: {$name} <{$from}>\r\n"
+          . "To: {$to}\r\n"
+          . "Subject: {$enc}\r\n"
+          . "MIME-Version: 1.0\r\n"
+          . "Content-Type: text/plain; charset=UTF-8\r\n"
+          . "Content-Transfer-Encoding: 8bit\r\n"
+          . "\r\n"
+          . $body
+          . "\r\n.";                               // end-of-data marker
+
+    smtp_cmd($sock, $msg);
+    fwrite($sock, "QUIT\r\n");
+    fclose($sock);
+    return true;
+}
+
+function smtp_read($sock): string {
+    $out = '';
+    while ($line = fgets($sock, 512)) {
+        $out = $line;
+        if (isset($line[3]) && $line[3] === ' ') break;  // singleline or last of multi
+    }
+    return $out;
+}
+
+function smtp_cmd($sock, string $cmd): string {
+    fwrite($sock, $cmd . "\r\n");
+    return smtp_read($sock);
 }
