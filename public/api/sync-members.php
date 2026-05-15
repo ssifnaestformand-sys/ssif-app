@@ -129,13 +129,15 @@ foreach ($members as $member) {
     }
 }
 
+global $g_debug_first_member;
 echo json_encode([
-    'ok'      => true,
-    'written' => $written,
-    'skipped' => $skipped,
-    'errors'  => $errCount,
-    'total'   => count($members),
-    'synced'  => $syncedAt,
+    'ok'           => true,
+    'written'      => $written,
+    'skipped'      => $skipped,
+    'errors'       => $errCount,
+    'total'        => count($members),
+    'synced'       => $syncedAt,
+    'debug_first'  => $g_debug_first_member,  // TODO: fjern når parsing virker
 ], JSON_UNESCAPED_UNICODE);
 
 // ── Streaming XML-parser (XMLReader) ─────────────────────────────────────────
@@ -169,22 +171,54 @@ function parse_members_stream(string $raw, array $holdsMap): array {
         return [];
     }
 
-    $members = [];
+    $members      = [];
+    $debugFirst   = null; // DEBUG: info om første <elem> på depth=2
 
     while ($reader->read()) {
         if ($reader->nodeType !== XMLReader::ELEMENT) continue;
         if (strtolower($reader->localName) !== 'medlem') continue;
-
-        // Kun depth=2: <conventus><membres><membre>
-        // depth=4 er nested <membre> inde i <relationer> — ignoreres
         if ($reader->depth !== 2) continue;
 
-        // Ekspandér kun dette ene element — frigives bagefter
         $domNode = $reader->expand();
         if (!$domNode) continue;
 
         $k = simplexml_import_dom($domNode);
         if (!$k) { unset($domNode); continue; }
+
+        // ── DEBUG: kun første element ────────────────────────────────────────
+        if ($debugFirst === null) {
+            $dom = new DOMDocument();
+            $dom->appendChild($dom->importNode($domNode, true));
+            $rawXml = $dom->saveXML($dom->documentElement);
+
+            $navn  = trim((string)($k->navn  ?? ''));
+            $email = strtolower(trim((string)($k->email ?? '')));
+            $id_el = trim((string)($k->id    ?? ''));
+
+            $groupIds = [];
+            if (isset($k->relationer)) {
+                foreach ($k->relationer->children() as $rel) {
+                    foreach ($rel->children() as $child) {
+                        $groupIds[] = strtolower($child->getName()) . '=' . trim((string)$child);
+                    }
+                }
+            }
+
+            $skipReason = '';
+            if (!$email)                                        $skipReason = 'tom email';
+            elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) $skipReason = 'ugyldig email: ' . $email;
+            elseif ((int)$id_el === 0)                          $skipReason = 'tom/ugyldig id';
+
+            $debugFirst = [
+                'raw_xml'     => mb_substr($rawXml, 0, 800),
+                'id'          => $id_el,
+                'navn'        => $navn,
+                'email'       => $email,
+                'gruppe_ids'  => $groupIds,
+                'skip_reason' => $skipReason ?: 'ingen — ville blive gemt',
+            ];
+        }
+        // ── SLUT DEBUG ───────────────────────────────────────────────────────
 
         $id = (int)trim((string)($k->id ?? ''));
         if ($id > 0) {
@@ -197,6 +231,11 @@ function parse_members_stream(string $raw, array $holdsMap): array {
 
     $reader->close();
     libxml_clear_errors();
+
+    // Gem debug på global variabel så kaldestedet kan inkludere det i svaret
+    global $g_debug_first_member;
+    $g_debug_first_member = $debugFirst;
+
     return $members;
 }
 
