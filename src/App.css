@@ -1149,3 +1149,76 @@ body {
   background: var(--green);
   border-color: var(--green);
 }
+
+/* ─── Login – social + email/password ──────────────────────────────────────── */
+.login-info {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--green-soft);
+  color: var(--green);
+  font-size: 14px;
+  text-align: center;
+  line-height: 1.5;
+}
+
+.btn-social {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  height: 50px;
+  border-radius: var(--radius);
+  border: 1.5px solid var(--sep);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: opacity .15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn-social:active { opacity: .75; }
+.btn-social:disabled { opacity: .5; cursor: default; }
+
+.btn-google   { background: white; color: #3c4043; }
+.btn-facebook { background: #1877F2; color: white; border-color: #1877F2; }
+
+.input-pw-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  -webkit-tap-highlight-color: transparent;
+  flex-shrink: 0;
+}
+
+.login-links {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 2px;
+}
+.login-link {
+  background: none;
+  border: none;
+  color: var(--green);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  padding: 4px;
+  -webkit-tap-highlight-color: transparent;
+}
+.login-link:active { opacity: .7; }
+
+/* ─── Spinner variants ───────────────────────────────────────────────────────── */
+.spinner--dark {
+  border-color: rgba(0,0,0,.2);
+  border-top-color: #3c4043;
+}
+.spinner--white {
+  border-color: rgba(255,255,255,.35);
+  border-top-color: white;
+}

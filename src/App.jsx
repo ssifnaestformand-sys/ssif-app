@@ -3,12 +3,20 @@ import './App.css'
 import { auth, db, getAppMessaging } from './firebase.js'
 import { getToken, onMessage } from 'firebase/messaging'
 import {
-  sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink,
-  signInWithCustomToken, signOut, onAuthStateChanged,
+  GoogleAuthProvider,
+  FacebookAuthProvider,
+  signInWithRedirect,
+  getRedirectResult,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  signOut,
+  onAuthStateChanged,
 } from 'firebase/auth'
 import {
   collection, query, where, orderBy, onSnapshot,
-  addDoc, updateDoc, serverTimestamp, limit,
+  addDoc, updateDoc, arrayUnion, arrayRemove, serverTimestamp, limit,
   doc, getDoc, setDoc, getDocs,
 } from 'firebase/firestore'
 
@@ -35,8 +43,13 @@ function Icon({ name, size = 24, color = 'currentColor', sw = 1.75 }) {
     star:      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>,
     x:         <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>,
     'user-plus':<><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></>,
-    heart:     <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>,
-    bell:      <><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></>,
+    heart:         <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>,
+    bell:          <><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></>,
+    eye:           <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>,
+    'eye-off':     <><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></>,
+    'check-circle':<><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></>,
+    'alert-circle':<><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></>,
+    'person-circle':<><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></>,
   }
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -50,14 +63,18 @@ function Icon({ name, size = 24, color = 'currentColor', sw = 1.75 }) {
 // ─── Dummy Data (fallback) ────────────────────────────────────────────────────
 
 const DEMO_USER = {
-  name: 'Lars Thoomsen',
-  firstName: 'Lars',
-  email: 'lars@demo.dk',
-  team: 'Herrer A',
-  role: 'Spiller',
-  memberId: 'DM-1234',
-  initials: 'LT',
-  isDemo: true,
+  name:          'Lars Thomsen',
+  firstName:     'Lars',
+  email:         'lars@demo.dk',
+  initials:      'LT',
+  isDemo:        true,
+  emailVerified: true,
+  primaryEmail:  'lars@demo.dk',
+  extraEmails:   [],
+  holdIds:       [],
+  holds:         [],
+  familyMembers: [],
+  role:          'Medlem',
 }
 
 const TEAMS = [
@@ -164,27 +181,22 @@ const MATCHES = [
   { id: 5, team: 'Damer',    opponent: 'Them IF',      date: 'Ons 14. maj', time: '18:00', isHome: false },
 ]
 
-// ─── Firebase config ──────────────────────────────────────────────────────────
-
-const ACTION_CODE_SETTINGS = {
-  url: 'https://app.sejssvejbaek-if.dk',
-  handleCodeInApp: true,
-}
-
-const LS_EMAIL_KEY = 'ssif_email_for_signin'
-
 // ─── Firebase error codes → Danish messages ──────────────────────────────────
 
 const AUTH_ERRORS = {
-  'auth/user-not-found':           'Ingen bruger med denne email.',
-  'auth/invalid-email':            'Ugyldig email-adresse.',
-  'auth/invalid-credential':       'Forkert email eller adgangskode.',
-  'auth/too-many-requests':        'For mange forsøg. Prøv igen om lidt.',
-  'auth/user-disabled':            'Denne konto er deaktiveret.',
-  'auth/network-request-failed':   'Ingen netværksforbindelse.',
-  'auth/invalid-action-code':      'Linket er ugyldigt. Anmod om et nyt.',
-  'auth/expired-action-code':      'Linket er udløbet. Anmod om et nyt.',
-  'auth/invalid-email-link':       'Ugyldigt login-link.',
+  'auth/invalid-email':                             'Ugyldig email-adresse.',
+  'auth/user-not-found':                            'Ingen bruger med denne email.',
+  'auth/wrong-password':                            'Forkert adgangskode.',
+  'auth/invalid-credential':                        'Forkert email eller adgangskode.',
+  'auth/email-already-in-use':                      'Email-adressen er allerede i brug.',
+  'auth/weak-password':                             'Adgangskoden skal være mindst 6 tegn.',
+  'auth/too-many-requests':                         'For mange forsøg. Prøv igen om lidt.',
+  'auth/user-disabled':                             'Denne konto er deaktiveret.',
+  'auth/network-request-failed':                    'Ingen netværksforbindelse.',
+  'auth/popup-closed-by-user':                      '',
+  'auth/cancelled-popup-request':                   '',
+  'auth/account-exists-with-different-credential':  'Denne email er registreret med en anden login-metode.',
+  'auth/requires-recent-login':                     'Log venligst ind igen for at gøre dette.',
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -231,13 +243,64 @@ function SplashScreen({ label }) {
   )
 }
 
-// ─── Login (Magic Link) ───────────────────────────────────────────────────────
+// ─── Login ────────────────────────────────────────────────────────────────────
 
 function LoginScreen({ onDemoLogin, initialError }) {
-  const [email, setEmail] = useState(localStorage.getItem(LS_EMAIL_KEY) || '')
-  const [phase, setPhase] = useState(initialError ? 'error' : 'idle')
-  // phase: 'idle' | 'sending' | 'sent' | 'error'
-  const [error, setError] = useState(initialError || '')
+  const [mode, setMode]         = useState('main') // 'main' | 'forgot' | 'create'
+  const [email, setEmail]       = useState('')
+  const [password, setPassword] = useState('')
+  const [showPw, setShowPw]     = useState(false)
+  const [loading, setLoading]   = useState(null)  // null | 'google' | 'facebook' | 'email' | 'create' | 'reset'
+  const [error, setError]       = useState(initialError || '')
+  const [info, setInfo]         = useState('')
+
+  function reset(m = 'main') { setMode(m); setError(''); setInfo('') }
+
+  async function social(ProviderClass) {
+    const key = ProviderClass === GoogleAuthProvider ? 'google' : 'facebook'
+    setLoading(key); setError('')
+    try {
+      await signInWithRedirect(auth, new ProviderClass())
+      // onAuthStateChanged håndterer resten efter redirect
+    } catch (e) {
+      const msg = AUTH_ERRORS[e.code]
+      if (msg) setError(msg)
+      setLoading(null)
+    }
+  }
+
+  async function emailLogin(e) {
+    e.preventDefault(); setLoading('email'); setError('')
+    try {
+      await signInWithEmailAndPassword(auth, email, password)
+    } catch (e) {
+      setError(AUTH_ERRORS[e.code] || 'Forkert email eller adgangskode.')
+      setLoading(null)
+    }
+  }
+
+  async function createAccount(e) {
+    e.preventDefault(); setLoading('create'); setError('')
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, email, password)
+      await sendEmailVerification(cred.user)
+      setInfo('Konto oprettet! Tjek din email for at bekræfte adressen.')
+      setMode('main')
+    } catch (e) {
+      setError(AUTH_ERRORS[e.code] || e.message)
+    } finally { setLoading(null) }
+  }
+
+  async function resetPassword(e) {
+    e.preventDefault(); setLoading('reset'); setError('')
+    try {
+      await sendPasswordResetEmail(auth, email)
+      setInfo(`Nulstillingsmail sendt til ${email}`)
+      reset('main')
+    } catch (e) {
+      setError(AUTH_ERRORS[e.code] || e.message)
+    } finally { setLoading(null) }
+  }
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -254,131 +317,123 @@ function LoginScreen({ onDemoLogin, initialError }) {
     }
   }
 
-  // ── Sent confirmation ────────────────────────────────────────────────────
-  if (phase === 'sent') {
-    return (
-      <div className="login-screen">
-        <div className="magic-sent">
-          <div className="magic-sent-icon">
-            <Icon name="mail" size={40} color="var(--green)" />
-          </div>
-          <h2 className="magic-sent-title">Tjek din email!</h2>
-          <p className="magic-sent-body">
-            Vi har sendt et login-link til
-          </p>
-          <p className="magic-sent-email">{email}</p>
-          <p className="magic-sent-hint">
-            Klik linket i emailen for at logge ind.
-            Linket er gyldigt i 1 time.
-          </p>
-          <a className="btn btn-primary btn-full" href="mailto:">
-            Åbn mail-app
-          </a>
-          <button
-            className="magic-resend"
-            onClick={() => { setPhase('idle'); setError('') }}
-          >
-            Ikke modtaget? Send nyt link
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  // ── Email input ──────────────────────────────────────────────────────────
   return (
     <div className="login-screen">
       <div className="login-top">
         <div className="login-logo"><span>SSIF</span></div>
         <h1 className="login-club">Sejs-Svejbæk IF</h1>
-        <p className="login-subtitle">Log ind uden adgangskode</p>
-      </div>
-
-      <form className="login-form" onSubmit={handleSubmit}>
-        <div className="input-group">
-          <div className="input-row">
-            <span className="input-icon"><Icon name="mail" size={18} color="var(--text3)" /></span>
-            <input
-              className="input-field"
-              type="email"
-              placeholder="Din email"
-              autoComplete="email"
-              autoFocus
-              value={email}
-              onChange={e => { setEmail(e.target.value); setPhase('idle'); setError('') }}
-            />
-          </div>
-        </div>
-
-        {error && <p className="login-error">{error}</p>}
-
-        <button className="btn btn-primary btn-full" type="submit" disabled={phase === 'sending'}>
-          {phase === 'sending'
-            ? <span className="spinner" />
-            : <><Icon name="mail" size={17} color="white" sw={2} />&nbsp; Send magic link</>
-          }
-        </button>
-
-        <div className="login-divider"><span>eller</span></div>
-
-        <button className="btn btn-secondary btn-full" type="button" onClick={onDemoLogin}>
-          Demo adgang
-        </button>
-      </form>
-
-      <p className="login-hint">
-        Vi sender et link til din email – ingen adgangskode nødvendig
-      </p>
-    </div>
-  )
-}
-
-// ─── Needs-email screen (magic link åbnet på anden enhed) ────────────────────
-
-function NeedsEmailScreen({ onSubmit, onCancel }) {
-  const [email, setEmail]   = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError]   = useState('')
-
-  async function handleSubmit(e) {
-    e.preventDefault()
-    if (!email) { setError('Indtast din email'); return }
-    setLoading(true)
-    setError('')
-    try {
-      await onSubmit(email)
-    } catch (err) {
-      setError(AUTH_ERRORS[err.code] || 'Ugyldigt link. Anmod om et nyt.')
-      setLoading(false)
-    }
-  }
-
-  return (
-    <div className="login-screen">
-      <div className="login-top">
-        <div className="login-logo"><span>SSIF</span></div>
-        <h1 className="login-club" style={{ fontSize: 20 }}>Bekræft din email</h1>
         <p className="login-subtitle">
-          Du åbnede linket på en ny enhed.{'\n'}
-          Bekræft din email for at logge ind.
+          {mode === 'forgot' ? 'Nulstil adgangskode' : mode === 'create' ? 'Opret konto' : 'Log ind på din konto'}
         </p>
       </div>
-      <form className="login-form" onSubmit={handleSubmit}>
-        <div className="input-group">
-          <div className="input-row">
-            <span className="input-icon"><Icon name="mail" size={18} color="var(--text3)" /></span>
-            <input className="input-field" type="email" placeholder="Din email" autoComplete="email" autoFocus
-              value={email} onChange={e => setEmail(e.target.value)} />
+
+      {info && <p className="login-info">{info}</p>}
+      {error && <p className="login-error">{error}</p>}
+
+      {/* ── Glemt kodeord ─────────────────────────────── */}
+      {mode === 'forgot' && (
+        <form className="login-form" onSubmit={resetPassword}>
+          <div className="input-group">
+            <div className="input-row">
+              <span className="input-icon"><Icon name="mail" size={18} color="var(--text3)" /></span>
+              <input className="input-field" type="email" placeholder="Din email" autoComplete="email" autoFocus required
+                value={email} onChange={e => setEmail(e.target.value)} />
+            </div>
           </div>
+          <button className="btn btn-primary btn-full" type="submit" disabled={loading === 'reset'}>
+            {loading === 'reset' ? <span className="spinner" /> : 'Send nulstillingsmail'}
+          </button>
+          <button className="btn btn-secondary btn-full" type="button" onClick={() => reset()}>← Tilbage</button>
+        </form>
+      )}
+
+      {/* ── Opret konto ───────────────────────────────── */}
+      {mode === 'create' && (
+        <form className="login-form" onSubmit={createAccount}>
+          <div className="input-group">
+            <div className="input-row">
+              <span className="input-icon"><Icon name="mail" size={18} color="var(--text3)" /></span>
+              <input className="input-field" type="email" placeholder="Email" autoComplete="email" autoFocus required
+                value={email} onChange={e => setEmail(e.target.value)} />
+            </div>
+            <div className="input-separator" />
+            <div className="input-row">
+              <span className="input-icon"><Icon name="lock" size={18} color="var(--text3)" /></span>
+              <input className="input-field" type={showPw ? 'text' : 'password'} placeholder="Adgangskode (min. 6 tegn)"
+                autoComplete="new-password" required minLength={6}
+                value={password} onChange={e => setPassword(e.target.value)} />
+              <button type="button" className="input-pw-toggle" onClick={() => setShowPw(p => !p)}>
+                <Icon name={showPw ? 'eye-off' : 'eye'} size={17} color="var(--text3)" />
+              </button>
+            </div>
+          </div>
+          <button className="btn btn-primary btn-full" type="submit" disabled={loading === 'create'}>
+            {loading === 'create' ? <span className="spinner" /> : 'Opret konto'}
+          </button>
+          <button className="btn btn-secondary btn-full" type="button" onClick={() => reset()}>← Tilbage</button>
+        </form>
+      )}
+
+      {/* ── Hoved login ───────────────────────────────── */}
+      {mode === 'main' && (
+        <div className="login-form">
+          {/* Social login */}
+          <button className="btn btn-social btn-google" onClick={() => social(GoogleAuthProvider)}
+                  disabled={!!loading}>
+            <svg width="18" height="18" viewBox="0 0 18 18" style={{ flexShrink: 0 }}>
+              <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
+              <path d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z" fill="#34A853"/>
+              <path d="M3.964 10.706A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.706V4.962H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.038l3.007-2.332z" fill="#FBBC05"/>
+              <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.962L3.964 6.294C4.672 4.169 6.656 3.58 9 3.58z" fill="#EA4335"/>
+            </svg>
+            {loading === 'google' ? <span className="spinner spinner--dark" /> : 'Log ind med Google'}
+          </button>
+
+          <button className="btn btn-social btn-facebook" onClick={() => social(FacebookAuthProvider)}
+                  disabled={!!loading}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="white" style={{ flexShrink: 0 }}>
+              <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+            </svg>
+            {loading === 'facebook' ? <span className="spinner spinner--white" /> : 'Log ind med Facebook'}
+          </button>
+
+          <div className="login-divider"><span>eller</span></div>
+
+          {/* Email/adgangskode */}
+          <form onSubmit={emailLogin} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div className="input-group">
+              <div className="input-row">
+                <span className="input-icon"><Icon name="mail" size={18} color="var(--text3)" /></span>
+                <input className="input-field" type="email" placeholder="Email" autoComplete="email" required
+                  value={email} onChange={e => setEmail(e.target.value)} />
+              </div>
+              <div className="input-separator" />
+              <div className="input-row">
+                <span className="input-icon"><Icon name="lock" size={18} color="var(--text3)" /></span>
+                <input className="input-field" type={showPw ? 'text' : 'password'} placeholder="Adgangskode"
+                  autoComplete="current-password" required
+                  value={password} onChange={e => setPassword(e.target.value)} />
+                <button type="button" className="input-pw-toggle" onClick={() => setShowPw(p => !p)}>
+                  <Icon name={showPw ? 'eye-off' : 'eye'} size={17} color="var(--text3)" />
+                </button>
+              </div>
+            </div>
+            <button className="btn btn-primary btn-full" type="submit" disabled={!!loading}>
+              {loading === 'email' ? <span className="spinner" /> : 'Log ind'}
+            </button>
+          </form>
+
+          <div className="login-links">
+            <button className="login-link" type="button" onClick={() => reset('forgot')}>Glemt kodeord?</button>
+            <button className="login-link" type="button" onClick={() => reset('create')}>Opret konto</button>
+          </div>
+
+          <div className="login-divider"><span>test</span></div>
+          <button className="btn btn-secondary btn-full" type="button" onClick={onDemoLogin}>
+            Demo adgang
+          </button>
         </div>
-        {error && <p className="login-error">{error}</p>}
-        <button className="btn btn-primary btn-full" type="submit" disabled={loading}>
-          {loading ? <span className="spinner" /> : 'Log ind'}
-        </button>
-        <button className="btn btn-secondary btn-full" type="button" onClick={onCancel}>
-          Annuller
-        </button>
-      </form>
+      )}
     </div>
   )
 }
@@ -407,11 +462,11 @@ function AppHeader({ title, onBack, backLabel, right }) {
 
 function BottomNav({ activeTab, onChange, unreadCount }) {
   const tabs = [
-    { id: 'dashboard', label: 'Hjem',     icon: 'home'    },
-    { id: 'familie',   label: 'Familie',  icon: 'heart'   },
-    { id: 'news',      label: 'Nyheder',  icon: 'news'    },
-    { id: 'messages',  label: 'Beskeder', icon: 'message' },
-    { id: 'teams',     label: 'Hold',     icon: 'users'   },
+    { id: 'dashboard', label: 'Hjem',     icon: 'home'          },
+    { id: 'profil',    label: 'Profil',   icon: 'person-circle' },
+    { id: 'news',      label: 'Nyheder',  icon: 'news'          },
+    { id: 'messages',  label: 'Beskeder', icon: 'message'       },
+    { id: 'teams',     label: 'Hold',     icon: 'users'         },
   ]
   return (
     <nav className="tab-bar">
@@ -1233,6 +1288,166 @@ function FamilieTab({ user }) {
   )
 }
 
+// ─── Profil ───────────────────────────────────────────────────────────────────
+
+function ProfileScreen({ user, onLogout }) {
+  const [newEmail, setNewEmail]   = useState('')
+  const [saving, setSaving]       = useState(false)
+  const [info, setInfo]           = useState('')
+  const [resent, setResent]       = useState(false)
+
+  async function resendVerification() {
+    try {
+      await sendEmailVerification(auth.currentUser)
+      setResent(true)
+      setTimeout(() => setResent(false), 5000)
+    } catch {}
+  }
+
+  async function addExtraEmail(e) {
+    e.preventDefault()
+    if (!newEmail.trim()) return
+    setSaving(true)
+    try {
+      await updateDoc(doc(db, 'users', user.uid), {
+        extraEmails: arrayUnion(newEmail.trim().toLowerCase()),
+      })
+      setInfo('Email tilføjet')
+      setNewEmail('')
+      setTimeout(() => setInfo(''), 4000)
+    } catch (err) { setInfo('Fejl: ' + err.message) }
+    finally { setSaving(false) }
+  }
+
+  async function removeExtraEmail(email) {
+    await updateDoc(doc(db, 'users', user.uid), { extraEmails: arrayRemove(email) })
+  }
+
+  return (
+    <div className="screen">
+      <SectionHeader title="Min konto" />
+      <div className="list-group">
+        <div className="list-item" style={{ cursor: 'default' }}>
+          <Avatar initials={user.initials} size={40} />
+          <div className="list-item-body" style={{ marginLeft: 12 }}>
+            <span className="list-item-title">{user.name}</span>
+            <span className="list-item-detail">{user.email}</span>
+          </div>
+        </div>
+        <div className="list-separator" />
+        <div className="list-item" style={{ cursor: 'default' }}>
+          <div className="list-item-icon"
+               style={{ background: user.emailVerified ? 'var(--green-soft)' : '#fff3e0' }}>
+            <Icon name={user.emailVerified ? 'check-circle' : 'alert-circle'} size={17}
+                  color={user.emailVerified ? 'var(--green)' : '#ff9500'} />
+          </div>
+          <div className="list-item-body">
+            <span className="list-item-title">
+              {user.emailVerified ? 'Email verificeret' : 'Email ikke verificeret'}
+            </span>
+            {!user.emailVerified && (
+              <span className="list-item-detail">Verificér for at se hold og indhold</span>
+            )}
+          </div>
+          {!user.emailVerified && !user.isDemo && (
+            <button className="btn btn-secondary" style={{ height: 32, fontSize: 12, padding: '0 12px' }}
+                    onClick={resendVerification} disabled={resent}>
+              {resent ? '✓ Sendt' : 'Send igen'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {(user.extraEmails ?? []).length > 0 && (
+        <>
+          <SectionHeader title="Tilknyttede emails" />
+          <div className="list-group">
+            {(user.extraEmails ?? []).map((em, i) => (
+              <div key={em}>
+                {i > 0 && <div className="list-separator" />}
+                <div className="list-item" style={{ cursor: 'default' }}>
+                  <div className="list-item-icon" style={{ background: 'var(--bg)' }}>
+                    <Icon name="mail" size={17} color="var(--text2)" />
+                  </div>
+                  <div className="list-item-body">
+                    <span className="list-item-title">{em}</span>
+                    <span className="list-item-detail" style={{ color: 'var(--text3)' }}>
+                      Hold-tilknytning via Conventus
+                    </span>
+                  </div>
+                  <button className="fam-remove" onClick={() => removeExtraEmail(em)}>
+                    <Icon name="x" size={16} color="var(--text3)" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      <SectionHeader title="Tilføj email" />
+      <div style={{ padding: '0 16px' }}>
+        <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 10, lineHeight: 1.5 }}>
+          Tilføj email-adresser der er tilknyttet Conventus — fx din ægtefælles email.
+          Systemet finder automatisk de hold der er registreret under den pågældende email.
+        </p>
+        {info && <p style={{ fontSize: 13, color: 'var(--green)', marginBottom: 8 }}>{info}</p>}
+        <form onSubmit={addExtraEmail} style={{ display: 'flex', gap: 8 }}>
+          <div className="input-group" style={{ flex: 1 }}>
+            <div className="input-row">
+              <span className="input-icon"><Icon name="mail" size={17} color="var(--text3)" /></span>
+              <input className="input-field" type="email" placeholder="email@eksempel.dk" required
+                value={newEmail} onChange={e => setNewEmail(e.target.value)} />
+            </div>
+          </div>
+          <button className="btn btn-primary" style={{ height: 50, padding: '0 16px', flexShrink: 0 }}
+                  disabled={saving} type="submit">
+            <Icon name="plus" size={18} color="white" />
+          </button>
+        </form>
+      </div>
+
+      <div style={{ height: 16 }} />
+      <div style={{ padding: '0 16px' }}>
+        <button className="btn btn-secondary btn-full" onClick={onLogout}>
+          <Icon name="logout" size={17} color="var(--green)" />
+          Log ud
+        </button>
+      </div>
+      <div style={{ height: 8 }} />
+    </div>
+  )
+}
+
+function UnverifiedScreen({ user, onLogout }) {
+  const [resent, setResent] = useState(false)
+  async function resend() {
+    try { await sendEmailVerification(auth.currentUser); setResent(true) } catch {}
+  }
+  return (
+    <div className="screen" style={{ padding: '32px 24px', textAlign: 'center' }}>
+      <div style={{ fontSize: 48, marginBottom: 16 }}>📧</div>
+      <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Bekræft din email</h2>
+      <p style={{ fontSize: 15, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 24 }}>
+        Du er logget ind som <strong>{user.email}</strong>,
+        men din email er endnu ikke verificeret.
+      </p>
+      <p style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 24 }}>
+        Tjek din indbakke og klik bekræftelseslinket
+        for at få adgang til hold og indhold.
+      </p>
+      {!user.isDemo && (
+        <button className="btn btn-primary btn-full" onClick={resend} disabled={resent}>
+          {resent ? '✓ Bekræftelsesmail sendt' : 'Send bekræftelsesmail igen'}
+        </button>
+      )}
+      <button className="btn btn-secondary btn-full" style={{ marginTop: 12 }} onClick={onLogout}>
+        Log ud
+      </button>
+    </div>
+  )
+}
+
 // ─── Root App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -1252,29 +1467,17 @@ export default function App() {
     try { return new Set(JSON.parse(localStorage.getItem('ssif-read') || '[]')) }
     catch { return new Set() }
   })
-  const [needsEmailForLink, setNeedsEmailForLink] = useState(false)
-  const [magicLinkError, setMagicLinkError]       = useState('')
-  const [pushGranted, setPushGranted]             = useState(false) // tvinger re-render efter bruger giver tilladelse
+  const [loginError, setLoginError]               = useState('')
+  const [pushGranted, setPushGranted]             = useState(false)
 
-  // magicLinkRef: true while sign-in link is being processed → prevents
-  // the onAuthStateChanged null-event from showing the login screen
-  const magicLinkRef     = useRef(false)
-  const magicLinkHrefRef = useRef(null)   // saved for cross-device flow
-  const isDemoRef        = useRef(false)
+  const isDemoRef = useRef(false)
 
-  // ── Cookie-bro: genoptag session fra Safari i den installerede PWA ────────
-  // iOS deler cookies (men ikke IndexedDB) mellem Safari og standalone PWA.
-  // session.php sætter en kortlivet cookie efter magic-link-login i Safari.
+  // ── Håndter redirect-resultat fra Google/Facebook login ──────────────────
   useEffect(() => {
-    const match = document.cookie.match(/firebase-custom-token=([^;]+)/)
-    if (!match) return
-    // Slet cookien straks (single-use)
-    document.cookie = 'firebase-custom-token=; Path=/; Max-Age=0; SameSite=Lax; Secure'
-    const token = decodeURIComponent(match[1])
-    magicLinkRef.current = true   // forhindrer login-flash mens sign-in er i gang
-    signInWithCustomToken(auth, token).catch(() => {
-      magicLinkRef.current = false
-      setAuthChecked(true)        // vis login hvis cookien var ugyldig/udløbet
+    getRedirectResult(auth).catch(err => {
+      const msg = AUTH_ERRORS[err.code]
+      if (msg) setLoginError(msg)
+      else if (err.code && err.code !== 'auth/null-user') setLoginError(err.message)
     })
   }, [])
 
@@ -1282,110 +1485,59 @@ export default function App() {
   async function loadAndSetUser(fbUser) {
     let profile = {}
     try {
-      const snap = await getDoc(doc(db, 'users', fbUser.uid))
+      const ref  = doc(db, 'users', fbUser.uid)
+      const snap = await getDoc(ref)
       if (snap.exists()) {
         profile = snap.data()
-      } else {
-        // First login – create a minimal profile document
-        profile = {
-          email:       fbUser.email,
-          displayName: fbUser.displayName || fbUser.email.split('@')[0],
-          role:        'Medlem',
-          createdAt:   serverTimestamp(),
+        // Opdatér emailVerified status synkront
+        if (profile.emailVerified !== fbUser.emailVerified) {
+          updateDoc(ref, { emailVerified: fbUser.emailVerified }).catch(() => {})
         }
-        setDoc(doc(db, 'users', fbUser.uid), profile).catch(() => {})
+      } else {
+        profile = {
+          primaryEmail:  fbUser.email  || '',
+          displayName:   fbUser.displayName || fbUser.email?.split('@')[0] || 'Bruger',
+          emailVerified: fbUser.emailVerified,
+          extraEmails:   [],
+          holdIds:       [],
+          role:          'Medlem',
+          createdAt:     serverTimestamp(),
+        }
+        setDoc(ref, profile).catch(() => {})
       }
-    } catch { /* Firestore unavailable – use Auth data only */ }
+    } catch {}
 
-    const displayName = profile.displayName || fbUser.displayName || fbUser.email.split('@')[0]
+    const displayName = profile.displayName || fbUser.displayName || fbUser.email?.split('@')[0] || 'Bruger'
     const parts = displayName.trim().split(' ').filter(Boolean)
     setUser({
-      name:      displayName,
-      firstName: profile.firstName || parts[0] || fbUser.email.split('@')[0],
-      email:     fbUser.email,
-      uid:       fbUser.uid,
-      initials:  ((parts[0]?.[0] || '') + (parts[parts.length - 1]?.[0] || '')).toUpperCase()
-                 || fbUser.email.slice(0, 2).toUpperCase(),
-      team:          profile.team          || '',
+      name:          displayName,
+      firstName:     parts[0] || 'Bruger',
+      email:         fbUser.email,
+      uid:           fbUser.uid,
+      emailVerified: fbUser.emailVerified,
+      initials:      ((parts[0]?.[0] || '') + (parts[parts.length - 1]?.[0] || '')).toUpperCase()
+                     || (fbUser.email?.slice(0,2).toUpperCase() ?? 'SS'),
       role:          profile.role          || 'Medlem',
-      memberId:      profile.memberId      || '',
       holds:         profile.holds         || [],
-      familyMembers: profile.familyMembers || [],
+      holdIds:       profile.holdIds        || [],
+      familyMembers: profile.familyMembers  || [],
+      primaryEmail:  profile.primaryEmail   || fbUser.email || '',
+      extraEmails:   profile.extraEmails    || [],
     })
   }
 
   // ── Auth state listener ──────────────────────────────────────────────────
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async fbUser => {
+    return onAuthStateChanged(auth, async fbUser => {
       if (fbUser) {
-        magicLinkRef.current = false
         await loadAndSetUser(fbUser)
         setAuthChecked(true)
-      } else if (!magicLinkRef.current && !isDemoRef.current) {
-        // No magic link in flight and no demo session → show login
+      } else if (!isDemoRef.current) {
         setUser(null)
         setAuthChecked(true)
       }
-      // If magicLinkRef is true, we stay on the splash screen until
-      // signInWithEmailLink resolves and triggers this listener again
     })
-    return unsub
   }, [])
-
-  // ── Magic link handler (runs once on mount) ──────────────────────────────
-  useEffect(() => {
-    const href = window.location.href
-    if (!isSignInWithEmailLink(auth, href)) return
-
-    // Store href before cleaning the URL
-    magicLinkHrefRef.current = href
-    window.history.replaceState(null, '', window.location.pathname)
-    magicLinkRef.current = true
-
-    const savedEmail = localStorage.getItem(LS_EMAIL_KEY)
-    if (!savedEmail) {
-      // Opened on a different device – ask the user to confirm their email
-      setNeedsEmailForLink(true)
-      magicLinkRef.current = false
-      setAuthChecked(true)
-      return
-    }
-
-    signInWithEmailLink(auth, savedEmail, href)
-      .then(async () => {
-        localStorage.removeItem(LS_EMAIL_KEY)
-        await bridgeSessionToCookie()   // sæt cookie til PWA-brug
-        // onAuthStateChanged fires next and completes the flow
-      })
-      .catch(err => {
-        magicLinkRef.current = false
-        setMagicLinkError(AUTH_ERRORS[err.code] || 'Linket er ugyldigt eller udløbet. Anmod om et nyt.')
-        setAuthChecked(true)
-      })
-  }, [])
-
-  // ── Cross-device: user confirms email to finish sign-in ──────────────────
-  async function handleEmailConfirmForLink(email) {
-    await signInWithEmailLink(auth, email, magicLinkHrefRef.current)
-    localStorage.removeItem(LS_EMAIL_KEY)
-    await bridgeSessionToCookie()     // sæt cookie til PWA-brug
-    setNeedsEmailForLink(false)
-    // onAuthStateChanged completes the rest
-  }
-
-  // Kalder session.php som sætter en kortlivet cookie så den installerede
-  // PWA kan genoptage sessionen uden at brugeren skal logge ind igen
-  async function bridgeSessionToCookie() {
-    try {
-      const idToken = await auth.currentUser?.getIdToken()
-      if (!idToken) return
-      const fd = new FormData()
-      fd.append('idToken', idToken)
-      await fetch(`${import.meta.env.BASE_URL}api/session.php`, { method: 'POST', body: fd })
-    } catch {
-      // Fejler lydløst — PWA kan stadig bede brugeren logge ind manuelt
-    }
-  }
 
   // ── Firestore: news ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -1556,34 +1708,25 @@ export default function App() {
 
   // ── Render guards ─────────────────────────────────────────────────────────
 
-  // Splash while Firebase checks existing session or processes magic link
-  if (!authChecked) return <SplashScreen label={magicLinkRef.current ? 'Logger ind…' : undefined} />
-
-  // Cross-device: user must confirm email before we can finish sign-in
-  if (needsEmailForLink) {
-    return (
-      <NeedsEmailScreen
-        onSubmit={handleEmailConfirmForLink}
-        onCancel={() => {
-          setNeedsEmailForLink(false)
-          magicLinkRef.current = false
-        }}
-      />
-    )
-  }
+  if (!authChecked) return <SplashScreen />
 
   if (!user) {
     return (
       <LoginScreen
-        initialError={magicLinkError}
+        initialError={loginError}
         onDemoLogin={() => { isDemoRef.current = true; setUser(DEMO_USER) }}
       />
     )
   }
 
+  // Ikke-verificerede brugere ser kun nyheder
+  if (!user.emailVerified && activeTab !== 'news' && activeTab !== 'profil') {
+    // Stil dem på news-tab første gang
+  }
+
   // ── Header state ─────────────────────────────────────────────────────────
-  const TAB_TITLES = { dashboard: 'Hjem', familie: 'Familie', teams: 'Hold', news: 'Nyheder', messages: 'Beskeder' }
-  let headerTitle = TAB_TITLES[activeTab]
+  const TAB_TITLES = { dashboard: 'Hjem', profil: 'Min profil', teams: 'Hold', news: 'Nyheder', messages: 'Beskeder' }
+  let headerTitle = TAB_TITLES[activeTab] ?? 'SSIF'
   let onBack = null
   let backLabel = null
 
@@ -1597,13 +1740,14 @@ export default function App() {
     headerTitle = 'Besked'; onBack = () => setSelectedAdminMsg(null); backLabel = 'Beskeder'
   }
 
-  // Filtrer admin-beskeder til brugerens hold (holds + familyMembers)
+  // Admin-beskeder filtreret til brugerens hold
   const _userHoldIds = new Set([
-    ...(user.holds ?? []).map(String),
+    ...(user.holds         ?? []).map(String),
+    ...(user.holdIds       ?? []).map(String),
     ...(user.familyMembers ?? []).map(m => String(m.holdId)).filter(Boolean),
   ])
   const relevantAdminMsgs = user.isDemo
-    ? adminMsgs  // demo-bruger ser alle beskeder for at lette test
+    ? adminMsgs
     : _userHoldIds.size > 0
       ? adminMsgs.filter(m => (m.targetHolds ?? []).some(h => {
           const id = typeof h === 'object' ? String(h.conventus_id) : String(h)
@@ -1611,40 +1755,38 @@ export default function App() {
         }))
       : []
 
-  const unreadConvos  = convos.reduce((s, c) => s + (c.unread || 0), 0)
-  const unreadAdmin   = relevantAdminMsgs.filter(m => !readMsgIds.has(m.id)).length
-  const totalUnread   = unreadConvos + unreadAdmin
-
-  const logoutBtn = !onBack && (
-    <button className="header-action" onClick={handleLogout} title="Log ud">
-      <Icon name="logout" size={19} color="var(--text2)" />
-    </button>
-  )
+  const unreadConvos = convos.reduce((s, c) => s + (c.unread || 0), 0)
+  const unreadAdmin  = relevantAdminMsgs.filter(m => !readMsgIds.has(m.id)).length
+  const totalUnread  = unreadConvos + unreadAdmin
 
   return (
     <div className="app">
-      <AppHeader title={headerTitle} onBack={onBack} backLabel={backLabel} right={logoutBtn} />
+      <AppHeader title={headerTitle} onBack={onBack} backLabel={backLabel} />
 
       <main className="app-content">
         {activeTab === 'dashboard' && (
-          <DashboardScreen user={user} conversations={convos} news={news} onNavigate={navigateFromDashboard} showPushBanner={canRequestPush()} onEnableNotifications={handleEnableNotifications} />
+          <DashboardScreen user={user} conversations={convos} news={news} onNavigate={navigateFromDashboard}
+            showPushBanner={canRequestPush()} onEnableNotifications={handleEnableNotifications} />
         )}
-        {activeTab === 'familie' && (
-          <FamilieTab user={user} />
+        {activeTab === 'profil' && (
+          <ProfileScreen user={user} onLogout={handleLogout} />
         )}
-        {activeTab === 'teams' && !selectedTeam && (
+        {activeTab === 'teams' && !user.emailVerified ? (
+          <UnverifiedScreen user={user} onLogout={handleLogout} />
+        ) : activeTab === 'teams' && !selectedTeam ? (
           <TeamsScreen onSelectTeam={setSelectedTeam} user={user} />
-        )}
-        {activeTab === 'teams' && selectedTeam && (
+        ) : activeTab === 'teams' && selectedTeam ? (
           <TeamDetailScreen team={selectedTeam} />
-        )}
+        ) : null}
         {activeTab === 'news' && !selectedArticle && (
           <NewsScreen articles={news} isLive={newsLive} onSelectArticle={setSelectedArticle} />
         )}
         {activeTab === 'news' && selectedArticle && (
           <NewsDetailScreen article={selectedArticle} />
         )}
-        {activeTab === 'messages' && !selectedConv && !selectedAdminMsg && (
+        {activeTab === 'messages' && !user.emailVerified ? (
+          <UnverifiedScreen user={user} onLogout={handleLogout} />
+        ) : activeTab === 'messages' && !selectedConv && !selectedAdminMsg ? (
           <MessagesScreen
             conversations={convos}
             isLive={convosLive}
@@ -1654,13 +1796,11 @@ export default function App() {
             onSelectAdminMsg={handleSelectAdminMsg}
             onEnableNotifications={handleEnableNotifications}
           />
-        )}
-        {activeTab === 'messages' && selectedConv && (
+        ) : activeTab === 'messages' && selectedConv ? (
           <ChatScreen conversation={selectedConv} user={user} />
-        )}
-        {activeTab === 'messages' && selectedAdminMsg && (
+        ) : activeTab === 'messages' && selectedAdminMsg ? (
           <BroadcastScreen message={selectedAdminMsg} />
-        )}
+        ) : null}
       </main>
 
       <BottomNav activeTab={activeTab} onChange={switchTab} unreadCount={totalUnread} />
