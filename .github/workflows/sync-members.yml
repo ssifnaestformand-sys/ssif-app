@@ -1,21 +1,14 @@
-name: Synkronisér Conventus-medlemmer
-
-# Kører dagligt kl. 04:00 UTC + ved push til main
-# For timesync: opsæt server-side cron på one.com i stedet
-# (undgår at bruge GitHub Actions-minutter):
-#   0 * * * *  curl -s -X POST https://app.sejssvejbaek-if.dk/api/sync-members.php \
-#                -H "X-Sync-Secret: DIN_SYNC_SECRET"
+name: Synkronisér Conventus-medlemmer (timesvis)
 
 on:
   schedule:
-    - cron: '0 4 * * *'   # Dagligt kl. 04:00 UTC
-  workflow_dispatch:       # Manuel trigger fra GitHub Actions-UI
+    - cron: '0 * * * *'   # Hver time
 
 jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Synkronisér medlemmer
+      - name: Synkronisér
         run: |
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
             https://app.sejssvejbaek-if.dk/api/sync-members.php \
@@ -25,8 +18,7 @@ jobs:
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)
           BODY=$(echo "$RESPONSE" | head -1)
 
-          echo "HTTP status: $HTTP_CODE"
-          echo "Svar: $BODY"
+          echo "HTTP: $HTTP_CODE  |  $BODY"
 
           if [ "$HTTP_CODE" != "200" ]; then
             echo "Fejl: uventet HTTP-statuskode $HTTP_CODE"

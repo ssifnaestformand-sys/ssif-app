@@ -32,24 +32,15 @@ set_time_limit(180);
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
-header('Access-Control-Allow-Headers: Authorization, Content-Type, X-Sync-Secret');
+header('Access-Control-Allow-Headers: X-Sync-Secret');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(200); exit; }
 if ($_SERVER['REQUEST_METHOD'] !== 'POST')    { http_response_code(405); echo json_encode(['error' => 'Kun POST']); exit; }
 
-require_once __DIR__ . '/_auth.php';
-
-// ── Autentificering ───────────────────────────────────────────────────────────
-// Accepterer to metoder:
-//   1. X-Sync-Secret  – server-til-server (GitHub Actions cron)
-//   2. Authorization: Bearer <Firebase ID-token>  – admin-browser
-$syncSecret    = getenv('SYNC_SECRET') ?: '';
-$sentSecret    = $_SERVER['HTTP_X_SYNC_SECRET'] ?? '';
-$bearerToken   = bearer_token();
-$hasValidSecret = $syncSecret && hash_equals($syncSecret, $sentSecret);
-
-// Afvis tidligt hvis ingen credential er medsendt
-if (!$hasValidSecret && !$bearerToken) {
+// ── Autentificering (kun server-til-server via cron/deploy) ──────────────────
+$syncSecret = getenv('SYNC_SECRET') ?: '';
+$sentSecret = $_SERVER['HTTP_X_SYNC_SECRET'] ?? '';
+if (!$syncSecret || !hash_equals($syncSecret, $sentSecret)) {
     http_response_code(401);
     echo json_encode(['error' => 'Uautoriseret']);
     exit;
@@ -80,13 +71,6 @@ if (!file_exists($saPath)) {
 }
 $sa        = json_decode(file_get_contents($saPath), true);
 $projectId = $sa['project_id'];
-
-// Fuld token-verifikation (kræver project_id fra service account)
-if (!$hasValidSecret && !verify_firebase_id_token($bearerToken, $projectId)) {
-    http_response_code(401);
-    echo json_encode(['error' => 'Uautoriseret']);
-    exit;
-}
 
 $accessToken = google_access_token($sa);
 if (!$accessToken) {

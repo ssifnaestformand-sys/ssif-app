@@ -1552,32 +1552,6 @@ function UsersPage({ authUser }) {
   const [inviteSent, setInviteSent]     = useState(false)
   const [expandedId, setExpandedId]     = useState(null)
   const [saving, setSaving]             = useState(null)
-  const [syncingMembers, setSyncingMembers] = useState(false)
-  const [syncMemberResult, setSyncMemberResult] = useState(null)
-
-  async function syncMembers() {
-    setSyncingMembers(true)
-    setSyncMemberResult(null)
-    try {
-      const idToken = await auth.currentUser?.getIdToken() ?? ''
-      const res = await fetch(`${BASE}api/sync-members.php`, {
-        method: 'POST',
-        headers: {
-          'Authorization':  `Bearer ${idToken}`,
-          'Content-Type':   'application/json',
-        },
-        body: JSON.stringify({ idToken }),
-      })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
-      if (data.error) throw new Error(data.error)
-      setSyncMemberResult({ ok: true, written: data.written, total: data.total, errors: data.errors })
-    } catch (e) {
-      setSyncMemberResult({ error: e.message })
-    } finally {
-      setSyncingMembers(false)
-    }
-  }
 
   useEffect(() => {
     // Hent aktive hold fra Firestore til brug i hold-tildeling
@@ -1679,21 +1653,7 @@ function UsersPage({ authUser }) {
     <>
       <div className="page-header">
         <h1 className="page-title">Brugere</h1>
-        <button className="btn btn-primary" onClick={syncMembers} disabled={syncingMembers}>
-          <Icon name="link" size={15} color="white" />
-          {syncingMembers ? 'Synkroniserer…' : 'Synkronisér medlemmer'}
-        </button>
       </div>
-      {syncMemberResult && !syncMemberResult.error && (
-        <div className="alert-info" style={{ marginBottom: 16 }}>
-          <strong>Synkronisering gennemført:</strong> {syncMemberResult.written} skrevet
-          · {syncMemberResult.total} i alt
-          {syncMemberResult.errors > 0 && ` · ${syncMemberResult.errors} fejl`}
-        </div>
-      )}
-      {syncMemberResult?.error && (
-        <div className="alert-warn" style={{ marginBottom: 16 }}>Fejl: {syncMemberResult.error}</div>
-      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 20, alignItems: 'start' }}>
         <div className="card">
