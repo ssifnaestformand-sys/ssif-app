@@ -10,25 +10,41 @@
  */
 
 /**
- * Returnerer Bearer-token fra Authorization-headeren, eller tom streng.
+ * Returnerer Firebase ID-token fra requesten.
  *
- * Apache på shared hosting (fx one.com) stripper Authorization-headeren.
- * .htaccess-reglen `RewriteRule ^ - [E=HTTP_AUTHORIZATION:...]` sætter
- * den tilbage i $_SERVER. Vi prøver alle kendte varianter som fallback.
+ * Prøver i rækkefølge:
+ *  1. Authorization: Bearer <token>  (header — kan blive strippet af Apache)
+ *  2. JSON-body { "idToken": "..." } (bruges af sync-members.php)
+ *  3. POST-felt idToken              (bruges af send-push.php med FormData)
+ *
+ * php://input kan kun læses én gang — kalder vi denne funktion tidligt,
+ * gemmes resultatet i en statisk variabel så det ikke går tabt.
  */
 function bearer_token(): string {
-    // Forsøg alle kendte steder Apache/PHP kan placere headeren
+    static $cached = null;
+    if ($cached !== null) return $cached;
+
+    // 1. Authorization-header (virker hvis .htaccess RewriteRule er aktiv)
     $h = $_SERVER['HTTP_AUTHORIZATION']
       ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION']
       ?? '';
-
-    // Sidst udvej: getallheaders() virker på nogle Apache-konfigurationer
     if (!$h && function_exists('getallheaders')) {
         $all = getallheaders();
         $h   = $all['Authorization'] ?? $all['authorization'] ?? '';
     }
+    if (strpos($h, 'Bearer ') === 0) {
+        return $cached = trim(substr($h, 7));
+    }
 
-    return (strpos($h, 'Bearer ') === 0) ? trim(substr($h, 7)) : '';
+    // 2. JSON-body (Apache kan ikke strippe dette)
+    $raw  = file_get_contents('php://input');
+    $body = $raw ? (json_decode($raw, true) ?: []) : [];
+    if (!empty($body['idToken'])) {
+        return $cached = (string)$body['idToken'];
+    }
+
+    // 3. FormData POST-felt (send-push.php)
+    return $cached = (string)($_POST['idToken'] ?? '');
 }
 
 /**

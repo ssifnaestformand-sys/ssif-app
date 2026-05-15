@@ -479,14 +479,15 @@ function MessagesPage({ userDoc, authUser }) {
 
       // Push-notifikation (fejler lydløst)
       try {
-        const idToken = await auth.currentUser?.getIdToken()
+        const idToken = await auth.currentUser?.getIdToken() ?? ''
         const fd = new FormData()
-        fd.append('holdIds', JSON.stringify(selectedIds))
-        fd.append('text',    text.trim())
-        fd.append('title',   `Besked fra ${authorName}`)
+        fd.append('idToken',  idToken)
+        fd.append('holdIds',  JSON.stringify(selectedIds))
+        fd.append('text',     text.trim())
+        fd.append('title',    `Besked fra ${authorName}`)
         await fetch(`${BASE}api/send-push.php`, {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${idToken ?? ''}` },
+          headers: { 'Authorization': `Bearer ${idToken}` },
           body: fd,
         })
       } catch {}
@@ -1558,10 +1559,14 @@ function UsersPage({ authUser }) {
     setSyncingMembers(true)
     setSyncMemberResult(null)
     try {
-      const idToken = await auth.currentUser?.getIdToken()
+      const idToken = await auth.currentUser?.getIdToken() ?? ''
       const res = await fetch(`${BASE}api/sync-members.php`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${idToken ?? ''}` },
+        headers: {
+          'Authorization':  `Bearer ${idToken}`,
+          'Content-Type':   'application/json',
+        },
+        body: JSON.stringify({ idToken }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
