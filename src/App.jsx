@@ -1562,9 +1562,9 @@ export default function App() {
   const [selectedArticle, setSelectedArticle]     = useState(null)
   const [selectedConv, setSelectedConv]           = useState(null)
   const [selectedAdminMsg, setSelectedAdminMsg]   = useState(null)
-  const [news, setNews]                           = useState(NEWS_FALLBACK)
+  const [news, setNews]                           = useState([])
   const [newsLive, setNewsLive]                   = useState(false)
-  const [convos, setConvos]                       = useState(CONVERSATIONS_FALLBACK)
+  const [convos, setConvos]                       = useState([])
   const [convosLive, setConvosLive]               = useState(false)
   const [adminMsgs, setAdminMsgs]                 = useState([])
   const [readMsgIds, setReadMsgIds]               = useState(() => {
@@ -1798,7 +1798,7 @@ export default function App() {
     setUser(null); setActiveTab('dashboard')
     setSelectedTeam(null); setSelectedArticle(null); setSelectedConv(null)
     setNewsLive(false); setConvosLive(false)
-    setNews(NEWS_FALLBACK); setConvos(CONVERSATIONS_FALLBACK)
+    setNews([]); setConvos([])
     try { await signOut(auth) } catch {}
   }
 
