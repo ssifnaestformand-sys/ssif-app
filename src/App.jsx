@@ -1315,6 +1315,17 @@ function ProfileScreen({ user, onLogout, onUserUpdate, verifyMsg }) {
     return () => clearTimeout(t)
   }, [verifyMsg])
 
+  // Genindlæs extraEmails fra Firestore ved hver profilvisning,
+  // så ændringer fra andre enheder (fx verificering) vises straks
+  useEffect(() => {
+    if (!user?.uid) return
+    getDoc(doc(db, 'users', user.uid)).then(snap => {
+      if (!snap.exists()) return
+      const fresh = snap.data().extraEmails || []
+      onUserUpdate(prev => ({ ...prev, extraEmails: fresh }))
+    }).catch(() => {})
+  }, [])
+
   // Normalisér: extraEmails kan være strenge (ældre format) eller objekter
   const extraEmails = (user.extraEmails || []).map(e =>
     typeof e === 'string' ? { email: e, verified: false, token: null } : e
@@ -1564,51 +1575,29 @@ export default function App() {
   const [pushGranted, setPushGranted]             = useState(false)
   const [verifyMsg, setVerifyMsg]                 = useState('')
 
-  const isDemoRef        = useRef(false)
-  const pendingVerifyRef = useRef(null)
+  const isDemoRef = useRef(false)
 
-  // Fang verifikationsparametre fra URL inden auth-flowet starter
+  // PHP-endpointet (verify-email.php) håndterer selve Firestore-opdateringen
+  // og redirecter hertil med ?verifySuccess=1 eller ?verifyError=X
   useEffect(() => {
-    const p     = new URLSearchParams(window.location.search)
-    const token = p.get('verifyEmail')
-    const uid   = p.get('uid')
-    if (token && uid) {
-      pendingVerifyRef.current = { token, uid }
-      // Fjern parametre fra URL uden reload
-      window.history.replaceState({}, '', window.location.pathname + window.location.hash)
+    const p       = new URLSearchParams(window.location.search)
+    const success = p.get('verifySuccess')
+    const error   = p.get('verifyError')
+    if (!success && !error) return
+    window.history.replaceState({}, '', window.location.pathname + window.location.hash)
+    if (success) {
+      setVerifyMsg('Email bekræftet!')
+      setActiveTab('profil')
+    }
+    if (error) {
+      const msgs = {
+        expired:  'Linket er allerede brugt eller udløbet.',
+        invalid:  'Ugyldigt verificeringslink.',
+        notfound: 'Brugeren blev ikke fundet.',
+      }
+      setLoginError(msgs[error] || 'Verificering fejlede — prøv at tilføje emailen igen.')
     }
   }, [])
-
-  // Behandl afventende email-verificering når brugeren er autentificeret
-  useEffect(() => {
-    const pending = pendingVerifyRef.current
-    if (!authChecked || !user?.uid || !pending) return
-    pendingVerifyRef.current = null
-
-    if (pending.uid !== user.uid) return  // forkert konto — ignorer
-
-    async function doVerify() {
-      try {
-        const ref  = doc(db, 'users', user.uid)
-        const snap = await getDoc(ref)
-        const current = snap.data()?.extraEmails || []
-        let found = false
-        const updated = current.map(e => {
-          if (typeof e === 'object' && e.token === pending.token && !e.verified) {
-            found = true
-            return { email: e.email, verified: true, token: null }
-          }
-          return e
-        })
-        if (!found) return
-        await updateDoc(ref, { extraEmails: updated })
-        setUser(prev => ({ ...prev, extraEmails: updated }))
-        setActiveTab('profil')
-        setVerifyMsg('Email verificeret!')
-      } catch {}
-    }
-    doVerify()
-  }, [authChecked, user?.uid])
 
   // ── Load + merge Firestore profile ───────────────────────────────────────
   async function loadAndSetUser(fbUser) {

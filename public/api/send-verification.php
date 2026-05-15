@@ -39,7 +39,7 @@ if (!preg_match('/^[0-9a-f\-]{32,36}$/i', $token)) {
     exit;
 }
 
-$verifyUrl = 'https://app.sejssvejbaek-if.dk/?verifyEmail=' . urlencode($token)
+$verifyUrl = 'https://app.sejssvejbaek-if.dk/api/verify-email.php?token=' . urlencode($token)
            . '&uid=' . urlencode($uid);
 
 $subject = 'Bekræft din emailadresse — Sejs-Svejbæk IF';
