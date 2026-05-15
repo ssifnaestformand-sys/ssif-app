@@ -104,12 +104,34 @@ if (preg_match('/encoding=["\']ISO-8859-1["\']/i', $raw)) {
     $raw = preg_replace('/encoding=["\']ISO-8859-1["\']/i', 'encoding="UTF-8"', $raw);
 }
 
+// ── DEBUG (midlertidig) ───────────────────────────────────────────────────────
+$debug = [];
+$debug['raw_length']  = strlen($raw);
+$debug['raw_preview'] = mb_substr($raw, 0, 500);
+
 // Tjek at svaret ser ud som XML
 if (strpos(ltrim($raw), '<') !== 0) {
     http_response_code(502);
-    echo json_encode(['error' => 'Uventet svar fra Conventus (ikke XML)']);
+    echo json_encode(['error' => 'Uventet svar fra Conventus (ikke XML)', 'debug' => $debug]);
     exit;
 }
+
+// Scan element-navne og dybder med XMLReader (uden at parse fuldt)
+$debugReader = new XMLReader();
+$debugReader->XML($raw, 'UTF-8', LIBXML_NOERROR | LIBXML_NOWARNING);
+$elementCounts = [];
+$depthSamples  = []; // første 20 elementer med navn+depth
+$i = 0;
+while ($debugReader->read()) {
+    if ($debugReader->nodeType !== XMLReader::ELEMENT) continue;
+    $name = $debugReader->localName;
+    $elementCounts[$name] = ($elementCounts[$name] ?? 0) + 1;
+    if ($i < 20) { $depthSamples[] = "depth={$debugReader->depth} <{$name}>"; $i++; }
+}
+$debugReader->close();
+$debug['element_counts'] = $elementCounts;
+$debug['first_20_elements'] = $depthSamples;
+// ── SLUT DEBUG ────────────────────────────────────────────────────────────────
 
 // ── Parse og skriv til Firestore (streaming for store filer) ──────────────────
 $members    = parse_members_stream($raw, $aktivHolds);
@@ -122,7 +144,6 @@ foreach ($members as $member) {
     $docId = (string)$member['conventus_id'];
     if (!$docId) { $skipped++; continue; }
 
-    // Skriv ALDRIG navn/email i fejlbeskeder der returneres til klienten
     if (firestore_patch($projectId, $accessToken, "members/{$docId}", $member)) {
         $written++;
     } else {
@@ -130,7 +151,6 @@ foreach ($members as $member) {
     }
 }
 
-// Svar indeholder kun tæller — ingen persdata
 echo json_encode([
     'ok'      => true,
     'written' => $written,
@@ -138,6 +158,7 @@ echo json_encode([
     'errors'  => $errCount,
     'total'   => count($members),
     'synced'  => $syncedAt,
+    'debug'   => $debug,   // TODO: fjern når parsing virker
 ], JSON_UNESCAPED_UNICODE);
 
 // ── Streaming XML-parser (XMLReader) ─────────────────────────────────────────
