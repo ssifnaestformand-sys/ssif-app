@@ -593,16 +593,30 @@ function relevantHoldIds(user) {
 }
 
 function TeamsScreen({ onSelectTeam, user }) {
-  const [holds,   setHolds]   = useState([])
-  const [loading, setLoading] = useState(true)
+  const [holds,         setHolds]         = useState([])
+  const [loading,       setLoading]       = useState(true)
+  const [linkedMembers, setLinkedMembers] = useState(null) // null=loading, []=ingen
 
   useEffect(() => {
-    // Hent kun aktive hold fra Firestore
     getDocs(query(collection(db, 'holds'), where('aktiv', '==', true)))
       .then(snap => setHolds(snap.docs.map(d => ({ _id: d.id, ...d.data() }))))
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
+
+  // Hent Conventus-tilmeldinger for brugerens emails (primær + verificerede extra)
+  useEffect(() => {
+    const extras       = (user.extraEmails || []).map(e => typeof e === 'string' ? { email: e, verified: false } : e)
+    const verifiedExtra = extras.filter(e => e.verified).map(e => e.email)
+    const allEmails    = [user.email, ...verifiedExtra].filter(Boolean)
+    if (!allEmails.length) { setLinkedMembers([]); return }
+
+    getDocs(query(
+      collection(db, 'members'),
+      where('allEmails', 'array-contains-any', allEmails.slice(0, 30))
+    )).then(snap => setLinkedMembers(snap.docs.map(d => d.data())))
+      .catch(() => setLinkedMembers([]))
+  }, [user.email, JSON.stringify(user.extraEmails)])
 
   const userIds = relevantHoldIds(user)
 
@@ -636,6 +650,66 @@ function TeamsScreen({ onSelectTeam, user }) {
 
   return (
     <div className="screen">
+
+      {/* ── Conventus-tilmeldinger organiseret efter person ── */}
+      {linkedMembers !== null && linkedMembers.length > 0 && (
+        <>
+          <SectionHeader title="Dine tilmeldinger" />
+          {linkedMembers.map(m => (
+            <div key={m.conventus_id} style={{ marginBottom: 4 }}>
+              {/* Navn-header */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '10px 16px 6px',
+              }}>
+                <div style={{
+                  width: 32, height: 32, borderRadius: '50%',
+                  background: 'var(--green-soft)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0,
+                }}>
+                  <Icon name="person-circle" size={16} color="var(--green)" />
+                </div>
+                <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)' }}>
+                  {m.name}
+                </span>
+              </div>
+              {/* Holdliste under personen */}
+              {m.holds?.length > 0 ? (
+                <div className="list-group" style={{ marginTop: 0 }}>
+                  {m.holds.map((h, hi) => (
+                    <div key={h.conventus_id ?? hi}>
+                      {hi > 0 && <div className="list-separator" />}
+                      <div className="list-item" style={{ cursor: 'default' }}>
+                        <div className="list-item-icon" style={{
+                          background: h.aktiv_i_app ? 'var(--green-soft)' : 'var(--bg)',
+                        }}>
+                          <Icon name="users" size={17}
+                                color={h.aktiv_i_app ? 'var(--green)' : 'var(--text3)'} />
+                        </div>
+                        <div className="list-item-body">
+                          <span className="list-item-title">{h.titel}</span>
+                          {h.aktiv_i_app && (
+                            <span className="list-item-detail" style={{ color: 'var(--green)' }}>
+                              Aktiv i appen
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p style={{ fontSize: 13, color: 'var(--text3)', padding: '0 16px 8px 58px' }}>
+                  Ingen holdtilmeldinger
+                </p>
+              )}
+            </div>
+          ))}
+          <div style={{ height: 8 }} />
+        </>
+      )}
+
       {userIds.size === 0 && holds.length > 0 && (
         <div style={{ margin: '16px 16px 0', background: 'var(--green-soft)', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: 'var(--green)' }}>
           Alle {holds.length} aktive hold vises · Tilknyt egne hold via Familie-fanen
@@ -1310,11 +1384,10 @@ function FamilieTab({ user }) {
 // ─── Profil ───────────────────────────────────────────────────────────────────
 
 function ProfileScreen({ user, onLogout, onUserUpdate, verifyMsg }) {
-  const [newEmail, setNewEmail]     = useState('')
-  const [saving, setSaving]         = useState(false)
-  const [info, setInfo]             = useState('')
-  const [resent, setResent]         = useState(false)
-  const [linkedMembers, setLinkedMembers] = useState(null) // null=loading, []=empty
+  const [newEmail, setNewEmail] = useState('')
+  const [saving, setSaving]     = useState(false)
+  const [info, setInfo]         = useState('')
+  const [resent, setResent]     = useState(false)
 
   // Vis bekræftelsesbesked når en email er verificeret via link
   useEffect(() => {
@@ -1333,23 +1406,6 @@ function ProfileScreen({ user, onLogout, onUserUpdate, verifyMsg }) {
       onUserUpdate(prev => ({ ...prev, extraEmails: fresh }))
     }).catch(() => {})
   }, [])
-
-  // Hent Conventus-members tilknyttet brugerens verificerede emails
-  useEffect(() => {
-    const extraEmails = (user.extraEmails || []).map(e =>
-      typeof e === 'string' ? { email: e, verified: false } : e
-    )
-    const verifiedExtras = extraEmails.filter(e => e.verified).map(e => e.email)
-    const allEmails = [user.email, ...verifiedExtras].filter(Boolean)
-    if (!allEmails.length) { setLinkedMembers([]); return }
-
-    getDocs(query(
-      collection(db, 'members'),
-      where('allEmails', 'array-contains-any', allEmails.slice(0, 30))
-    )).then(snap => {
-      setLinkedMembers(snap.docs.map(d => d.data()))
-    }).catch(() => setLinkedMembers([]))
-  }, [user.email, JSON.stringify(user.extraEmails)])
 
   // Normalisér: extraEmails kan være strenge (ældre format) eller objekter
   const extraEmails = (user.extraEmails || []).map(e =>
@@ -1516,42 +1572,6 @@ function ProfileScreen({ user, onLogout, onUserUpdate, verifyMsg }) {
       )}
 
       {/* ── Conventus-tilknyttede members ── */}
-      {linkedMembers !== null && linkedMembers.length > 0 && (
-        <>
-          <SectionHeader title="Tilmeldte i Conventus" />
-          <div className="list-group">
-            {linkedMembers.map((m, mi) => (
-              <div key={m.conventus_id ?? mi}>
-                {mi > 0 && <div className="list-separator" />}
-                {/* Hvert hold vises med medlemmets navn tydeligt — vigtigt når
-                    der er flere børn knyttet til samme konto */}
-                {(m.holds?.length > 0 ? m.holds : [null]).map((h, hi) => (
-                  <div key={h?.conventus_id ?? hi} className="list-item" style={{ cursor: 'default' }}>
-                    <div className="list-item-icon" style={{
-                      background: h?.aktiv_i_app ? 'var(--green-soft)' : 'var(--bg)',
-                      flexShrink: 0,
-                    }}>
-                      <Icon name="person-circle" size={17}
-                            color={h?.aktiv_i_app ? 'var(--green)' : 'var(--text3)'} />
-                    </div>
-                    <div className="list-item-body">
-                      <span className="list-item-title">
-                        {h ? h.titel : 'Ingen hold tilknyttet'}
-                      </span>
-                      <span className="list-item-detail" style={{
-                        color: h?.aktiv_i_app ? 'var(--green)' : 'var(--text3)',
-                      }}>
-                        {m.name}{h?.aktiv_i_app ? ' · Aktiv i appen' : ''}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-
       <SectionHeader title="Tilføj email" />
       <div style={{ padding: '0 16px' }}>
         <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 10, lineHeight: 1.5 }}>

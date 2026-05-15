@@ -117,17 +117,14 @@ if (strpos(ltrim($raw), '<') !== 0) {
 // Firestore batch-commit: op til 500 dokumenter pr. kald → ~6 kald i alt.
 $members  = parse_members_stream($raw, $aktivHolds);
 $syncedAt = date('c');
-
-global $g_debug_first_member;
 $result   = firestore_batch_commit($projectId, $accessToken, $members);
 
 echo json_encode([
-    'ok'          => true,
-    'written'     => $result['written'],
-    'errors'      => $result['errors'],
-    'total'       => count($members),
-    'synced'      => $syncedAt,
-    'debug_first' => $g_debug_first_member,  // TODO: fjern når parsing virker
+    'ok'      => true,
+    'written' => $result['written'],
+    'errors'  => $result['errors'],
+    'total'   => count($members),
+    'synced'  => $syncedAt,
 ], JSON_UNESCAPED_UNICODE);
 
 // ── Streaming XML-parser (XMLReader) ─────────────────────────────────────────
@@ -170,41 +167,12 @@ function parse_members_stream(string $raw, array $holdsMap): array {
         if (strtolower($reader->localName) !== 'medlem') continue;
         if ($reader->depth !== 2) continue;
 
-        // readOuterXml() kræver IKKE DOM-extensionen (expand() gør)
         $xml = $reader->readOuterXml();
-        $reader->next(); // spring alle børn over, gå til næste søskende
+        $reader->next();
         if (!$xml) continue;
 
         $k = @simplexml_load_string($xml, 'SimpleXMLElement', LIBXML_NOERROR | LIBXML_NOWARNING);
         if (!$k) continue;
-
-        // ── DEBUG: kun første element ────────────────────────────────────────
-        if ($g_debug_first_member === null) {
-            $navn  = trim((string)($k->navn  ?? ''));
-            $email = strtolower(trim((string)($k->email ?? '')));
-            $id_el = trim((string)($k->id    ?? ''));
-            $groupIds = [];
-            if (isset($k->relationer)) {
-                foreach ($k->relationer->children() as $rel) {
-                    foreach ($rel->children() as $child) {
-                        $groupIds[] = strtolower($child->getName()) . '=' . trim((string)$child);
-                    }
-                }
-            }
-            $skipReason = '';
-            if (!$email)                                         $skipReason = 'tom email';
-            elseif (!filter_var($email, FILTER_VALIDATE_EMAIL))  $skipReason = 'ugyldig email: ' . $email;
-            elseif ((int)$id_el === 0)                           $skipReason = 'tom/ugyldig id';
-            $g_debug_first_member = [
-                'raw_xml'     => mb_substr($xml, 0, 800),
-                'id'          => $id_el,
-                'navn'        => $navn,
-                'email'       => $email,
-                'gruppe_ids'  => $groupIds,
-                'skip_reason' => $skipReason ?: 'ingen — ville blive gemt',
-            ];
-        }
-        // ── SLUT DEBUG ───────────────────────────────────────────────────────
 
         $id = (int)trim((string)($k->id ?? ''));
         if ($id > 0) {
@@ -288,9 +256,9 @@ function fetch_aktiv_holds(string $projectId, string $token): array {
 // Firestore batch-commit: op til 500 dokumenter pr. HTTP-kald.
 // 2873 membres → ~6 kald i stedet for 2873 individuelle PATCH-kald.
 function firestore_batch_commit(string $projectId, string $token, array $members): array {
-    $baseUrl  = "https://firestore.googleapis.com/v1/projects/{$projectId}"
-              . "/databases/(default)";
-    $docsBase = "{$baseUrl}/documents/members";
+    // Firestore document name = resource-sti, IKKE fuld HTTPS-URL
+    $apiBase  = "https://firestore.googleapis.com/v1/projects/{$projectId}/databases/(default)";
+    $docPath  = "projects/{$projectId}/databases/(default)/documents/members";
     $written  = 0;
     $errors   = 0;
 
@@ -301,11 +269,11 @@ function firestore_batch_commit(string $projectId, string $token, array $members
             if (!$docId) continue;
             $fields = [];
             foreach ($member as $k => $v) $fields[$k] = to_fs($v);
-            $writes[] = ['update' => ['name' => "{$docsBase}/{$docId}", 'fields' => $fields]];
+            $writes[] = ['update' => ['name' => "{$docPath}/{$docId}", 'fields' => $fields]];
         }
         if (!$writes) continue;
 
-        $resp = @file_get_contents("{$baseUrl}/documents:commit", false,
+        $resp = @file_get_contents("{$apiBase}/documents:commit", false,
             stream_context_create(['http' => [
                 'method'        => 'POST',
                 'header'        => "Authorization: Bearer {$token}\r\nContent-Type: application/json\r\n",
