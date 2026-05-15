@@ -27,7 +27,8 @@
  *                -H "X-Sync-Secret: DIN_SYNC_SECRET"
  */
 
-set_time_limit(180);
+set_time_limit(300);
+ini_set('memory_limit', '256M'); // Stor XML-fil fra Conventus kræver mere hukommelse
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
@@ -83,7 +84,7 @@ if (!$accessToken) {
 $aktivHolds = fetch_aktiv_holds($projectId, $accessToken);
 
 // ── Hent medlemmer fra Conventus ──────────────────────────────────────────────
-$ctx = stream_context_create(['http' => ['timeout' => 30, 'ignore_errors' => true]]);
+$ctx = stream_context_create(['http' => ['timeout' => 60, 'ignore_errors' => true]]);
 $membresUrl = 'https://www.conventus.dk/dataudv/api/adressebog/get_membres.php?' . http_build_query([
     'forening'   => '1031',
     'key'        => $apiKey,
@@ -103,21 +104,15 @@ if (preg_match('/encoding=["\']ISO-8859-1["\']/i', $raw)) {
     $raw = preg_replace('/encoding=["\']ISO-8859-1["\']/i', 'encoding="UTF-8"', $raw);
 }
 
-$xml = @simplexml_load_string($raw);
-if ($xml === false) {
+// Tjek at svaret ser ud som XML
+if (strpos(ltrim($raw), '<') !== 0) {
     http_response_code(502);
-    echo json_encode(['error' => 'XML parse-fejl fra Conventus']);
-    exit;
-}
-if (!empty((string)$xml->error)) {
-    http_response_code(502);
-    // Fejlbeskeden kan indeholde API-nøgle – returner kun generisk fejl
-    echo json_encode(['error' => 'Conventus returnerede en fejl']);
+    echo json_encode(['error' => 'Uventet svar fra Conventus (ikke XML)']);
     exit;
 }
 
-// ── Parse og skriv til Firestore ──────────────────────────────────────────────
-$members    = parse_members($xml, $aktivHolds);
+// ── Parse og skriv til Firestore (streaming for store filer) ──────────────────
+$members    = parse_members_stream($raw, $aktivHolds);
 $written    = 0;
 $skipped    = 0;
 $errCount   = 0;
@@ -145,83 +140,113 @@ echo json_encode([
     'synced'  => $syncedAt,
 ], JSON_UNESCAPED_UNICODE);
 
-// ── Parser ────────────────────────────────────────────────────────────────────
+// ── Streaming XML-parser (XMLReader) ─────────────────────────────────────────
+//
+// simplexml_load_string() loader hele dokumentet til hukommelsen på én gang.
+// For store Conventus-filer (mange hundrede membres) kan det overskride PHP's
+// memory_limit på shared hosting.
+//
+// XMLReader + expand() streamer dokumentet og ekspanderer kun ét <kontakt>-
+// element ad gangen til SimpleXMLElement — hukommelsesforbruget forbliver lavt
+// uanset filstørrelse.
 
-function parse_members(SimpleXMLElement $xml, array $aktivHolds): array {
+function parse_members_stream(string $raw, array $aktivHolds): array {
+    libxml_use_internal_errors(true);
+
+    $reader = new XMLReader();
+    if (!$reader->XML($raw, 'UTF-8', LIBXML_NOERROR | LIBXML_NOWARNING)) {
+        return [];
+    }
+
     $members      = [];
-    $kontaktNodes = [];
+    $kontaktDepth = -1; // sættes første gang vi finder et top-level <kontakt>
 
-    // Find kontakt-elementer: direkte børn ELLER under <kontakter>
-    foreach ($xml->children() as $child) {
-        $tag = strtolower($child->getName());
+    while ($reader->read()) {
+        if ($reader->nodeType !== XMLReader::ELEMENT) continue;
+
+        $tag = strtolower($reader->localName);
+
+        // Acceptér kontakt på depth 1 (direkte under root) ELLER depth 2
+        // (under <kontakter>/<members>). Sæt depth første gang.
         if ($tag === 'kontakt') {
-            $kontaktNodes[] = $child;
-        } elseif (in_array($tag, ['kontakter', 'members', 'persons'], true)) {
-            foreach ($child->children() as $k) {
-                if (strtolower($k->getName()) === 'kontakt') $kontaktNodes[] = $k;
-            }
+            $d = $reader->depth;
+            if ($kontaktDepth < 0 && $d <= 2) $kontaktDepth = $d;
+            if ($d !== $kontaktDepth) continue; // spring over nested relationer-kontakter
+
+            $id = $reader->getAttribute('id') ?? '';
+            if (!$id || !ctype_digit($id)) continue;
+
+            // Ekspandér kun dette ene element — frigives af GC bagefter
+            $domNode = $reader->expand();
+            if (!$domNode) continue;
+
+            $k = simplexml_import_dom($domNode);
+            if (!$k) continue;
+
+            $member = extract_member($k, (int)$id, $aktivHolds);
+            if ($member) $members[] = $member;
+
+            unset($k, $domNode);
         }
     }
 
-    foreach ($kontaktNodes as $k) {
-        $id = trim((string)($k['id'] ?? ''));
-        if (!$id || !ctype_digit($id)) continue;
-
-        $fornavn   = trim((string)($k->fornavn   ?? $k->firstname ?? ''));
-        $efternavn = trim((string)($k->efternavn  ?? $k->lastname  ?? ''));
-        $name      = trim("$fornavn $efternavn") ?: 'Ukendt';
-
-        $ownEmail = strtolower(trim((string)($k->email ?? '')));
-
-        // Relation-emails (forældre/værger) – kun direkte underordnede kontakter
-        $relEmails = [];
-        if (isset($k->relationer)) {
-            foreach ($k->relationer->children() as $rel) {
-                $re = strtolower(trim((string)($rel->email ?? '')));
-                if ($re && filter_var($re, FILTER_VALIDATE_EMAIL)) $relEmails[] = $re;
-            }
-        }
-
-        // Alle unikke, validerede emails
-        $allEmails = [];
-        if ($ownEmail && filter_var($ownEmail, FILTER_VALIDATE_EMAIL)) $allEmails[] = $ownEmail;
-        foreach ($relEmails as $re) {
-            if (!in_array($re, $allEmails, true)) $allEmails[] = $re;
-        }
-        if (empty($allEmails)) continue; // Ingen emails = ikke brugbar
-
-        // Holdtilknytning
-        $holds    = [];
-        $grupNode = $k->grupper ?? $k->hold ?? null;
-        if ($grupNode) {
-            foreach ($grupNode->children() as $g) {
-                $holdId    = (int)($g['id'] ?? 0);
-                $holdTitel = html_entity_decode(
-                    trim((string)($g['titel'] ?? $g['navn'] ?? $g)),
-                    ENT_HTML5 | ENT_QUOTES, 'UTF-8'
-                );
-                if (!$holdTitel && !empty((string)$g['titel'])) {
-                    $holdTitel = html_entity_decode((string)$g['titel'], ENT_HTML5 | ENT_QUOTES, 'UTF-8');
-                }
-                if ($holdId) {
-                    $holds[] = [
-                        'conventus_id' => $holdId,
-                        'titel'        => $holdTitel ?: "Hold #{$holdId}",
-                        'aktiv_i_app'  => isset($aktivHolds[$holdId]),
-                    ];
-                }
-            }
-        }
-
-        $members[] = [
-            'conventus_id' => (int)$id,
-            'name'         => $name,
-            'allEmails'    => $allEmails,
-            'holds'        => $holds,
-        ];
-    }
-
+    $reader->close();
+    libxml_clear_errors();
     return $members;
+}
+
+function extract_member(SimpleXMLElement $k, int $id, array $aktivHolds): ?array {
+    $fornavn   = trim((string)($k->fornavn   ?? $k->firstname ?? ''));
+    $efternavn = trim((string)($k->efternavn  ?? $k->lastname  ?? ''));
+    $name      = trim("$fornavn $efternavn") ?: 'Ukendt';
+    $ownEmail  = strtolower(trim((string)($k->email ?? '')));
+
+    // Relation-emails (forældre/værger)
+    $relEmails = [];
+    if (isset($k->relationer)) {
+        foreach ($k->relationer->children() as $rel) {
+            $re = strtolower(trim((string)($rel->email ?? '')));
+            if ($re && filter_var($re, FILTER_VALIDATE_EMAIL)) $relEmails[] = $re;
+        }
+    }
+
+    // Alle unikke, validerede emails
+    $allEmails = [];
+    if ($ownEmail && filter_var($ownEmail, FILTER_VALIDATE_EMAIL)) $allEmails[] = $ownEmail;
+    foreach ($relEmails as $re) {
+        if (!in_array($re, $allEmails, true)) $allEmails[] = $re;
+    }
+    if (empty($allEmails)) return null;
+
+    // Holdtilknytning
+    $holds    = [];
+    $grupNode = $k->grupper ?? $k->hold ?? null;
+    if ($grupNode) {
+        foreach ($grupNode->children() as $g) {
+            $holdId    = (int)($g['id'] ?? 0);
+            $holdTitel = html_entity_decode(
+                trim((string)($g['titel'] ?? $g['navn'] ?? $g)),
+                ENT_HTML5 | ENT_QUOTES, 'UTF-8'
+            );
+            if (!$holdTitel && !empty((string)$g['titel'])) {
+                $holdTitel = html_entity_decode((string)$g['titel'], ENT_HTML5 | ENT_QUOTES, 'UTF-8');
+            }
+            if ($holdId) {
+                $holds[] = [
+                    'conventus_id' => $holdId,
+                    'titel'        => $holdTitel ?: "Hold #{$holdId}",
+                    'aktiv_i_app'  => isset($aktivHolds[$holdId]),
+                ];
+            }
+        }
+    }
+
+    return [
+        'conventus_id' => $id,
+        'name'         => $name,
+        'allEmails'    => $allEmails,
+        'holds'        => $holds,
+    ];
 }
 
 // ── Firestore: hent aktive hold ───────────────────────────────────────────────
