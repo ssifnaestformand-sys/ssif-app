@@ -618,14 +618,15 @@ function TeamsScreen({ onSelectTeam, user }) {
       .catch(() => setLinkedMembers([]))
   }, [user.email, JSON.stringify(user.extraEmails)])
 
-  const userIds = relevantHoldIds(user)
+  // Slå hold op efter conventus_id — bruges til at rette navne og klikbarhed
+  const holdById = {}
+  holds.forEach(h => { holdById[String(h.conventus_id)] = h })
 
-  // Vis kun brugerens hold — eller alle aktive, hvis ingen er tildelt
+  const userIds = relevantHoldIds(user)
   const visible = userIds.size > 0
     ? holds.filter(h => userIds.has(String(h.conventus_id)))
     : holds
 
-  // Gruppér efter aktivitet_titel
   const byType = {}
   visible.forEach(h => {
     const t = h.aktivitet_titel || 'Hold'
@@ -640,64 +641,68 @@ function TeamsScreen({ onSelectTeam, user }) {
     </div>
   )
 
-  if (visible.length === 0) return (
+  if (visible.length === 0 && !linkedMembers?.length) return (
     <div className="screen" style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text2)', fontSize: 14 }}>
       {holds.length === 0
         ? 'Ingen hold er aktiveret endnu. Kontakt en administrator.'
-        : 'Du er ikke tilknyttet nogen aktive hold. Tilføj via Familie-fanen.'}
+        : 'Ingen hold fundet.'}
     </div>
   )
 
   return (
     <div className="screen">
 
-      {/* ── Conventus-tilmeldinger organiseret efter person ── */}
+      {/* ── Dine tilmeldinger (fra Conventus) ─────────────────────────────── */}
       {linkedMembers !== null && linkedMembers.length > 0 && (
         <>
           <SectionHeader title="Dine tilmeldinger" />
           {linkedMembers.map(m => (
             <div key={m.conventus_id} style={{ marginBottom: 4 }}>
-              {/* Navn-header */}
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                padding: '10px 16px 6px',
-              }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px 6px' }}>
                 <div style={{
-                  width: 32, height: 32, borderRadius: '50%',
-                  background: 'var(--green-soft)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  flexShrink: 0,
+                  width: 32, height: 32, borderRadius: '50%', background: 'var(--green-soft)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                 }}>
                   <Icon name="person-circle" size={16} color="var(--green)" />
                 </div>
-                <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)' }}>
-                  {m.name}
-                </span>
+                <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)' }}>{m.name}</span>
               </div>
-              {/* Holdliste under personen */}
+
               {m.holds?.length > 0 ? (
                 <div className="list-group" style={{ marginTop: 0 }}>
-                  {m.holds.map((h, hi) => (
-                    <div key={h.conventus_id ?? hi}>
-                      {hi > 0 && <div className="list-separator" />}
-                      <div className="list-item" style={{ cursor: 'default' }}>
-                        <div className="list-item-icon" style={{
-                          background: h.aktiv_i_app ? 'var(--green-soft)' : 'var(--bg)',
-                        }}>
-                          <Icon name="users" size={17}
-                                color={h.aktiv_i_app ? 'var(--green)' : 'var(--text3)'} />
+                  {m.holds.map((h, hi) => {
+                    // Brug Firestore-hold-navn hvis tilgængeligt (retter "Hold #ID")
+                    const fsHold    = holdById[String(h.conventus_id)]
+                    const navn      = fsHold?.titel || h.titel || `Hold #${h.conventus_id}`
+                    const aktivIApp = !!fsHold  // er i appen hvis holdet findes i Firestore
+                    const detalje   = fsHold?.traeningstider
+                      || (fsHold?.periode_fra ? `${fsHold.periode_fra} – ${fsHold.periode_til}` : '')
+
+                    const inner = (
+                      <>
+                        <div className="list-item-icon" style={{ background: aktivIApp ? 'var(--green-soft)' : 'var(--bg)' }}>
+                          <Icon name="users" size={17} color={aktivIApp ? 'var(--green)' : 'var(--text3)'} />
                         </div>
                         <div className="list-item-body">
-                          <span className="list-item-title">{h.titel}</span>
-                          {h.aktiv_i_app && (
-                            <span className="list-item-detail" style={{ color: 'var(--green)' }}>
-                              Aktiv i appen
-                            </span>
-                          )}
+                          <span className="list-item-title">{navn}</span>
+                          <span className="list-item-detail" style={{ color: aktivIApp ? 'var(--green)' : 'var(--text3)' }}>
+                            {aktivIApp ? `Aktiv i appen${detalje ? ' · ' + detalje : ''}` : 'Ikke tilknyttet appen endnu'}
+                          </span>
                         </div>
+                        {aktivIApp && <Chevron />}
+                      </>
+                    )
+
+                    return (
+                      <div key={h.conventus_id ?? hi}>
+                        {hi > 0 && <div className="list-separator" />}
+                        {fsHold
+                          ? <button className="list-item" onClick={() => onSelectTeam(fsHold)}>{inner}</button>
+                          : <div className="list-item" style={{ cursor: 'default' }}>{inner}</div>
+                        }
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               ) : (
                 <p style={{ fontSize: 13, color: 'var(--text3)', padding: '0 16px 8px 58px' }}>
@@ -710,11 +715,7 @@ function TeamsScreen({ onSelectTeam, user }) {
         </>
       )}
 
-      {userIds.size === 0 && holds.length > 0 && (
-        <div style={{ margin: '16px 16px 0', background: 'var(--green-soft)', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: 'var(--green)' }}>
-          Alle {holds.length} aktive hold vises · Tilknyt egne hold via Familie-fanen
-        </div>
-      )}
+      {/* ── Alle aktive hold ───────────────────────────────────────────────── */}
       {types.map(type => (
         <div key={type}>
           <SectionHeader title={type} />
@@ -728,8 +729,8 @@ function TeamsScreen({ onSelectTeam, user }) {
                   </div>
                   <div className="list-item-body">
                     <span className="list-item-title">{hold.titel}</span>
-                    <span className="list-item-detail">
-                      {hold.traeningstider || (hold.periode_fra ? `${hold.periode_fra} – ${hold.periode_til}` : '–')}
+                    <span className="list-item-detail" style={{ color: 'var(--green)' }}>
+                      Aktiv i appen{hold.traeningstider ? ' · ' + hold.traeningstider : hold.periode_fra ? ' · ' + hold.periode_fra + ' – ' + hold.periode_til : ''}
                     </span>
                   </div>
                   <Chevron />
