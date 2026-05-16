@@ -86,10 +86,13 @@ if (!$afdXml) {
     exit;
 }
 
-// XML-struktur: <afdeling><id>4001</id><titel>...</titel></afdeling>
-// id og titel er child-elementer, ikke attributter — brug $node->id, ikke $node['id']
-$afdelinger = [];
-foreach ($afdXml->xpath('//afdelinger/afdeling') ?: [] as $node) {
+// XML-struktur: <conventus><afdelinger><afdeling><id>...</id><titel>...</titel>
+$afdelinger  = [];
+$xpathNodes  = $afdXml->xpath('//afdelinger/afdeling') ?: [];
+$debugXpath  = count($xpathNodes);
+$debugRawLen = strlen($afdRaw);
+
+foreach ($xpathNodes as $node) {
     $id    = trim((string)$node->id);
     $titel = trim((string)($node->titel ?: $node->navn ?: $node->name ?: ''));
     if ($id && ctype_digit($id) && !isset($afdelinger[$id])) {
@@ -97,17 +100,32 @@ foreach ($afdXml->xpath('//afdelinger/afdeling') ?: [] as $node) {
     }
 }
 if (!$afdelinger) {
-    http_response_code(200);
-    echo json_encode(['ok' => true, 'afdelinger' => 0, 'holds_written' => 0, 'note' => 'Ingen afdelinger fundet']);
+    echo json_encode([
+        'ok'          => true,
+        'afdelinger'  => 0,
+        'holds_written' => 0,
+        'note'        => 'Ingen afdelinger fundet',
+        'debug'       => [
+            'raw_bytes'   => $debugRawLen,
+            'xpath_nodes' => $debugXpath,
+            'raw_preview' => substr($afdRaw, 0, 300),
+        ],
+    ]);
     exit;
 }
 
-// ── 2. Hent hold for hver afdeling ───────────────────────────────────────────
-$allHolds      = [];
-$holdsWritten  = 0;
-$now           = date('c');
+// ── 2. Skriv afdelinger til Firestore + hent hold ────────────────────────────
+$allHolds     = [];
+$holdsWritten = 0;
+$now          = date('c');
 
 foreach ($afdelinger as $afdId => $afdNavn) {
+    // Skriv altid afdeling — uanset om hold-fetch lykkes
+    firestore_patch($projectId, $token, "afdelinger/{$afdId}", [
+        'navn'         => $afdNavn,
+        'sidst_hentet' => $now,
+    ]);
+
     $holdRaw = @file_get_contents(
         BASE_URL . 'get_grupper.php?' . http_build_query([
             'forening' => FORENING, 'key' => $apiKey,
@@ -120,15 +138,7 @@ foreach ($afdelinger as $afdId => $afdNavn) {
     $holdXml = @simplexml_load_string($holdRaw);
     if (!$holdXml) continue;
 
-    // Skriv afdeling til Firestore
-    firestore_patch($projectId, $token, "afdelinger/{$afdId}", [
-        'navn'        => $afdNavn,
-        'sidst_hentet' => $now,
-    ]);
-
-    // Udtruk hold
-    $holds = extract_holds($holdXml);
-    foreach ($holds as $h) {
+    foreach (extract_holds($holdXml) as $h) {
         $allHolds[] = array_merge($h, ['afdeling_id' => $afdId]);
     }
 }
@@ -182,6 +192,11 @@ echo json_encode([
     'holds_total'   => count($allHolds),
     'holds_written' => $holdsWritten,
     'synced'        => $now,
+    'debug'         => [
+        'raw_bytes'    => $debugRawLen,
+        'xpath_nodes'  => $debugXpath,
+        'afd_sample'   => array_slice(array_values($afdelinger), 0, 3),
+    ],
 ], JSON_UNESCAPED_UNICODE);
 
 // ── Hjælpefunktioner ─────────────────────────────────────────────────────────

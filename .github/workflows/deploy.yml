@@ -60,9 +60,10 @@ jobs:
       - name: Synkronisér Conventus-hold
         continue-on-error: true
         run: |
-          curl -s -X POST https://app.sejssvejbaek-if.dk/api/sync-holds.php \
+          RESP=$(curl -s -X POST https://app.sejssvejbaek-if.dk/api/sync-holds.php \
             -H "X-Sync-Secret: ${{ secrets.SYNC_SECRET }}" \
-            --max-time 120
+            --max-time 120)
+          echo "sync-holds svar: $RESP"
 
       - name: Synkronisér Conventus-medlemmer
         continue-on-error: true
