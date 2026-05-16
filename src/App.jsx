@@ -5,7 +5,6 @@ import { getToken, onMessage } from 'firebase/messaging'
 import {
   GoogleAuthProvider,
   FacebookAuthProvider,
-  signInWithRedirect,
   signInWithPopup,
   getRedirectResult,
   signInWithEmailAndPassword,
@@ -260,19 +259,12 @@ function LoginScreen({ onDemoLogin, initialError }) {
   async function social(ProviderClass) {
     const key = ProviderClass === GoogleAuthProvider ? 'google' : 'facebook'
     setLoading(key); setError('')
-    // signInWithRedirect er upålidelig i browser-kontekster med tredjepartscookie-
-    // begrænsninger (Chrome, Safari desktop). Brug kun redirect i iOS PWA standalone,
-    // hvor popup ikke er tilgængeligt.
-    const isIOSPWA = window.matchMedia('(display-mode: standalone)').matches
-                     && /iPhone|iPad/i.test(navigator.userAgent)
+    // signInWithPopup bruges på alle platforme inkl. iOS PWA (kræver iOS 16.4+).
+    // signInWithRedirect virker ikke i iOS PWA — Google redirecter tilbage til Safari,
+    // ikke til PWA-konteksten, og getRedirectResult finder ingen session.
     try {
-      if (isIOSPWA) {
-        await signInWithRedirect(auth, new ProviderClass())
-        // Siden loader om — onAuthStateChanged + getRedirectResult håndterer resten
-      } else {
-        await signInWithPopup(auth, new ProviderClass())
-        // onAuthStateChanged fyrer med brugeren direkte
-      }
+      await signInWithPopup(auth, new ProviderClass())
+      // onAuthStateChanged fyrer med brugeren direkte — ingen redirect nødvendig
     } catch (e) {
       const msg = AUTH_ERRORS[e.code]
       if (msg) setError(msg)
