@@ -116,31 +116,64 @@ if (!$afdelinger) {
     exit;
 }
 
-// ── 2. Hent hold for alle afdelinger ─────────────────────────────────────────
+// ── 2. Hent hold + udvalg for alle afdelinger + globalt opsamlingskald ────────
+//
+// Strategi for at sikre at ALLE grupper fra Conventus er i Firestore:
+//   a) Per afdeling → type=hold og type=udvalg → giver afdeling_id
+//   b) Globalt kald (ingen afdeling) → type=hold og type=udvalg
+//      → opsamler grupper der ikke er tilknyttet en afdeling
+//
+// Deduplicering via $seen[conventus_id] = true sikrer ingen dobbeltskrivning.
+// PATCH med updateMask bevarer admin-felter (aktiv, traener_uid, traeningstider).
+
 $allHolds = [];
+$seen     = [];
 $now      = date('c');
 
 foreach ($afdelinger as $afdId => $afdNavn) {
-    $holdRaw = @file_get_contents(
+    foreach (['hold', 'udvalg'] as $type) {
+        $raw = @file_get_contents(
+            BASE_URL . 'get_grupper.php?' . http_build_query([
+                'forening' => FORENING, 'key' => $apiKey,
+                'type'     => $type,    'afdeling' => $afdId,
+            ]),
+            false, $ctx
+        );
+        if (!$raw) continue;
+        $raw = fix_encoding($raw);
+        $xml = @simplexml_load_string($raw);
+        if (!$xml) continue;
+        foreach (extract_holds($xml) as $h) {
+            $id = (int)$h['conventus_id'];
+            if (!$id || isset($seen[$id])) continue;
+            $seen[$id]  = true;
+            $allHolds[] = array_merge($h, ['afdeling_id' => $afdId, 'hold_type' => $type]);
+        }
+    }
+}
+
+// Globalt kald — fanger grupper der ikke er registreret under en afdeling
+foreach (['hold', 'udvalg'] as $type) {
+    $raw = @file_get_contents(
         BASE_URL . 'get_grupper.php?' . http_build_query([
             'forening' => FORENING, 'key' => $apiKey,
-            'type' => 'hold', 'afdeling' => $afdId,
+            'type'     => $type,
         ]),
         false, $ctx
     );
-    if (!$holdRaw) continue;
-    $holdRaw = fix_encoding($holdRaw);
-    $holdXml = @simplexml_load_string($holdRaw);
-    if (!$holdXml) continue;
-    foreach (extract_holds($holdXml) as $h) {
-        $allHolds[] = array_merge($h, ['afdeling_id' => $afdId]);
+    if (!$raw) continue;
+    $raw = fix_encoding($raw);
+    $xml = @simplexml_load_string($raw);
+    if (!$xml) continue;
+    foreach (extract_holds($xml) as $h) {
+        $id = (int)$h['conventus_id'];
+        if (!$id || isset($seen[$id])) continue;
+        $seen[$id]  = true;
+        $allHolds[] = array_merge($h, ['afdeling_id' => '', 'hold_type' => $type]);
     }
 }
 
 // ── 3. Skriv afdelinger + hold individuelt med PATCH ─────────────────────────
-// Batch-endpoints rammer 429-kvoten. Individuelle PATCH-kald er langsommere
-// men pålidelige. PHP kører videre i baggrunden (ignore_user_abort = true)
-// selv efter curl afbryder ved --max-time 30.
 $base        = "projects/{$projectId}/databases/(default)/documents";
 $holdsWritten = 0;
 
@@ -151,11 +184,11 @@ foreach ($afdelinger as $afdId => $afdNavn) {
         'navn'         => to_fs($afdNavn),
         'sidst_hentet' => to_fs($now),
     ]);
-    usleep(50000); // 50ms
+    usleep(50000);
 }
 
-// Hold — updateMask bevarer admin-felter (aktiv, traener_uid, traeningstider)
-$holdKeys = ['conventus_id','titel','aktivitet_titel','periode_fra','periode_til','beskrivelse','afdeling_id','sidst_synkroniseret'];
+// Hold/udvalg — updateMask bevarer admin-felter (aktiv, traener_uid, traeningstider)
+$holdKeys = ['conventus_id','titel','aktivitet_titel','periode_fra','periode_til','beskrivelse','afdeling_id','hold_type','sidst_synkroniseret'];
 foreach ($allHolds as $h) {
     $docId    = (string)$h['conventus_id'];
     $fsFields = [];
