@@ -112,20 +112,19 @@ if ($endpoint === 'afdelinger') {
     $xml = @simplexml_load_string($raw);
     if ($xml === false) { http_response_code(502); echo json_encode(['error' => 'XML parse-fejl']); exit; }
 
+    // xpath finder alle <afdeling>-noder uanset dybde — PHP 7.4 kompatibelt
     $afdelinger = [];
-    // Rekursivt find alle <afdeling>-noder og udtruk id + titel
-    foreach ([$xml, ...(array)$xml->children()] as $node) {
-        foreach ((is_object($node) ? $node->children() : []) as $child) {
-            if (strtolower($child->getName()) === 'afdeling') {
-                $id    = trim((string)($child['id']    ?? $child['Id']    ?? ''));
-                $titel = trim((string)($child['titel'] ?? $child['navn']  ?? $child['name'] ?? $child));
-                if ($id && ctype_digit($id)) $afdelinger[] = ['id' => $id, 'titel' => $titel];
-            }
-        }
-        if (strtolower((is_object($node) ? $node->getName() : '')) === 'afdeling') {
-            $id    = trim((string)($node['id']    ?? ''));
-            $titel = trim((string)($node['titel'] ?? $node['navn'] ?? $node['name'] ?? $node));
-            if ($id && ctype_digit($id)) $afdelinger[] = ['id' => $id, 'titel' => $titel];
+    $seen       = [];
+    $nodes      = $xml->xpath('//*[local-name()="afdeling"]') ?: [];
+    foreach ($nodes as $node) {
+        $id    = trim((string)($node['id']    ?? ''));
+        $titel = trim((string)($node['titel'] ?? $node['navn'] ?? $node['name'] ?? $node));
+        if ($id && ctype_digit($id) && !isset($seen[$id])) {
+            $seen[$id]    = true;
+            $afdelinger[] = [
+                'id'    => $id,
+                'titel' => html_entity_decode($titel, ENT_HTML5 | ENT_QUOTES, 'UTF-8'),
+            ];
         }
     }
     echo json_encode(['afdelinger' => $afdelinger, 'count' => count($afdelinger)], JSON_UNESCAPED_UNICODE);
