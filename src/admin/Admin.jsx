@@ -934,17 +934,18 @@ function NewsPage({ userDoc, authUser }) {
  *   sidst_hentet (Timestamp)
  */
 function TeamsPage({ userDoc, authUser }) {
-  const [holds,         setHolds]         = useState([])
-  const [afdelinger,    setAfdelinger]     = useState([])  // [{id, sidst_hentet}]
-  const [users,         setUsers]          = useState([])
-  const [loading,       setLoading]        = useState(true)
-  const [afdelingInput, setAfdelingInput]  = useState('')
-  const [fetchingAfd,   setFetchingAfd]    = useState(null) // afdeling-id der hentes
-  const [fetchResults,  setFetchResults]   = useState({})   // {id: {added,updated,total}|{error}}
-  const [saving,        setSaving]         = useState(null)
-  const [expanded,      setExpanded]       = useState(null)
-  const [editForm,      setEditForm]       = useState({ traeningstider: '', traener_uid: '' })
-  const [openGroups,    setOpenGroups]     = useState(new Set()) // åbne gruppe-navne i Øvrige hold
+  const [holds,          setHolds]         = useState([])
+  const [afdelinger,     setAfdelinger]    = useState([])
+  const [afdelingNavne,  setAfdelingNavne] = useState({}) // {id: titel} fra Conventus
+  const [users,          setUsers]         = useState([])
+  const [loading,        setLoading]       = useState(true)
+  const [afdelingInput,  setAfdelingInput] = useState('')
+  const [fetchingAfd,    setFetchingAfd]   = useState(null)
+  const [fetchResults,   setFetchResults]  = useState({})
+  const [saving,         setSaving]        = useState(null)
+  const [expanded,       setExpanded]      = useState(null)
+  const [editForm,       setEditForm]      = useState({ traeningstider: '', traener_uid: '' })
+  const [openGroups,     setOpenGroups]    = useState(new Set())
 
   function loadHolds() {
     setLoading(true)
@@ -970,24 +971,22 @@ function TeamsPage({ userDoc, authUser }) {
     })
   }
 
-  async function nulstilAfdelinger() {
-    if (!window.confirm('Slet alle afdelinger og fjern afdeling-tilknytning fra alle hold? Holdene beholdes men skal hentes igen.')) return
-    // Slet alle afdelinger-dokumenter
-    const afdSnap  = await getDocs(collection(db, 'afdelinger'))
-    await Promise.all(afdSnap.docs.map(d => deleteDoc(d.ref)))
-    // Fjern afdeling_id fra alle hold så de ikke hænger som forældreløse
-    const holdSnap = await getDocs(collection(db, 'holds'))
-    await Promise.all(holdSnap.docs.map(d => updateDoc(d.ref, { afdeling_id: '' })))
-    setAfdelinger([])
-    loadHolds()
-  }
-
   useEffect(() => {
     loadHolds()
     loadAfdelinger()
     getDocs(collection(db, 'users')).then(snap =>
       setUsers(snap.docs.map(d => ({ id: d.id, ...d.data() })))
     )
+    // Hent afdelings-navne fra Conventus én gang
+    fetch(`${BASE}api/conventus.php?endpoint=afdelinger`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data?.afdelinger) return
+        const map = {}
+        data.afdelinger.forEach(a => { if (a.id) map[a.id] = a.titel })
+        setAfdelingNavne(map)
+      })
+      .catch(() => {})
   }, [])
 
   async function fetchAfdeling(id) {
@@ -1027,9 +1026,10 @@ function TeamsPage({ userDoc, authUser }) {
         }
       }
 
-      // Brug aktivitet_titel som afdelingsnavn — det er hvad Conventus kalder afdelingen
-      const afdelingNavn = conventusHolds
-        .map(h => h.aktivitet_titel).filter(Boolean)[0] || afdId
+      // Brug officielt navn fra Conventus get_afdelinger — fallback til aktivitet_titel
+      const afdelingNavn = afdelingNavne[afdId]
+        || conventusHolds.map(h => h.aktivitet_titel).filter(Boolean)[0]
+        || afdId
 
       await setDoc(doc(db, 'afdelinger', afdId), {
         navn:         afdelingNavn,
@@ -1189,10 +1189,6 @@ function TeamsPage({ userDoc, authUser }) {
     <>
       <div className="page-header">
         <h1 className="page-title">Hold</h1>
-        <button className="btn btn-ghost btn-sm" style={{ color: '#dc3545' }}
-                onClick={nulstilAfdelinger}>
-          Nulstil alle afdelinger
-        </button>
       </div>
 
       {/* ── Tilføj afdeling ── */}
@@ -1238,20 +1234,18 @@ function TeamsPage({ userDoc, authUser }) {
             const afdHolds    = holds.filter(h => String(h.afdeling_id) === String(afd.id))
             const result      = fetchResults[afd.id]
             const activeCount = afdHolds.filter(h => h.aktiv).length
-            const displayNavn = afd.navn
-              || [...new Set(afdHolds.map(h => h.aktivitet_titel).filter(Boolean))][0]
-              || `Afdeling ${afd.id}`
+            // Prioritér: live Conventus-navn → gemt navn → afdeling-ID
+            const displayNavn = afdelingNavne[afd.id] || afd.navn || `Afdeling ${afd.id}`
 
             return (
               <div key={afd.id} style={{ marginBottom: 24 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                               gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ fontWeight: 700, fontSize: 15 }}>{displayNavn}</span>
-                    <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'monospace' }}>#{afd.id}</span>
                     <span style={{ fontSize: 12, color: 'var(--text3)' }}>
                       {activeCount}/{afdHolds.length} aktive
-                      {afd.sidst_hentet && ` · hentet ${formatDate(afd.sidst_hentet)}`}
+                      {afd.sidst_hentet && ` · ${formatDate(afd.sidst_hentet)}`}
                     </span>
                   </div>
                   <button className="btn btn-ghost btn-sm" onClick={() => fetchAfdeling(afd.id)}

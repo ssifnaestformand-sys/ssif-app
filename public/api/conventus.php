@@ -96,6 +96,42 @@ if ($endpoint === 'sync') {
     exit;
 }
 
+// ── AFDELINGER: hent alle afdelinger med ID og titel ─────────────────────────
+if ($endpoint === 'afdelinger') {
+    header('Cache-Control: public, max-age=3600');
+    $url = 'https://www.conventus.dk/dataudv/api/adressebog/get_afdelinger.php?' . http_build_query([
+        'forening' => FORENING,
+        'key'      => $apiKey,
+    ]);
+    $raw = @file_get_contents($url, false, $ctx);
+    if ($raw === false) { http_response_code(503); echo json_encode(['error' => 'Ingen svar fra Conventus']); exit; }
+    if (preg_match('/encoding=["\']ISO-8859-1["\']/i', $raw)) {
+        $raw = mb_convert_encoding($raw, 'UTF-8', 'ISO-8859-1');
+        $raw = preg_replace('/encoding=["\']ISO-8859-1["\']/i', 'encoding="UTF-8"', $raw);
+    }
+    $xml = @simplexml_load_string($raw);
+    if ($xml === false) { http_response_code(502); echo json_encode(['error' => 'XML parse-fejl']); exit; }
+
+    $afdelinger = [];
+    // Rekursivt find alle <afdeling>-noder og udtruk id + titel
+    foreach ([$xml, ...(array)$xml->children()] as $node) {
+        foreach ((is_object($node) ? $node->children() : []) as $child) {
+            if (strtolower($child->getName()) === 'afdeling') {
+                $id    = trim((string)($child['id']    ?? $child['Id']    ?? ''));
+                $titel = trim((string)($child['titel'] ?? $child['navn']  ?? $child['name'] ?? $child));
+                if ($id && ctype_digit($id)) $afdelinger[] = ['id' => $id, 'titel' => $titel];
+            }
+        }
+        if (strtolower((is_object($node) ? $node->getName() : '')) === 'afdeling') {
+            $id    = trim((string)($node['id']    ?? ''));
+            $titel = trim((string)($node['titel'] ?? $node['navn'] ?? $node['name'] ?? $node));
+            if ($id && ctype_digit($id)) $afdelinger[] = ['id' => $id, 'titel' => $titel];
+        }
+    }
+    echo json_encode(['afdelinger' => $afdelinger, 'count' => count($afdelinger)], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 // ── AFDELING: hent hold for én bestemt afdeling ──────────────────────────────
 if ($endpoint === 'afdeling') {
     header('Cache-Control: no-cache');
