@@ -12,6 +12,8 @@
  *    Admin-felterne (aktiv, traener_uid, traeningstider) bevares.
  */
 
+ini_set('display_errors', '1');
+error_reporting(E_ALL);
 set_time_limit(300);
 ignore_user_abort(true);
 ini_set('memory_limit', '128M');
