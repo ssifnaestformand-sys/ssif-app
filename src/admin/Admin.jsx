@@ -965,7 +965,7 @@ function TeamsPage({ userDoc, authUser }) {
     getDocs(collection(db, 'afdelinger')).then(snap => {
       setAfdelinger(
         snap.docs.map(d => ({ id: d.id, ...d.data() }))
-                 .sort((a, b) => Number(a.id) - Number(b.id))
+                 .sort((a, b) => (a.navn || a.id).localeCompare(b.navn || b.id, 'da'))
       )
     })
   }
@@ -1015,10 +1015,18 @@ function TeamsPage({ userDoc, authUser }) {
         }
       }
 
-      await setDoc(doc(db, 'afdelinger', afdId), { sidst_hentet: serverTimestamp() }, { merge: true })
+      // Brug aktivitet_titel som afdelingsnavn — det er hvad Conventus kalder afdelingen
+      const afdelingNavn = conventusHolds
+        .map(h => h.aktivitet_titel).filter(Boolean)[0] || afdId
+
+      await setDoc(doc(db, 'afdelinger', afdId), {
+        navn:         afdelingNavn,
+        sidst_hentet: serverTimestamp(),
+      }, { merge: true })
       setAfdelinger(prev => {
         const rest = prev.filter(a => a.id !== afdId)
-        return [...rest, { id: afdId, sidst_hentet: new Date() }].sort((a, b) => Number(a.id) - Number(b.id))
+        return [...rest, { id: afdId, navn: afdelingNavn, sidst_hentet: new Date() }]
+          .sort((a, b) => (a.navn || a.id).localeCompare(b.navn || b.id, 'da'))
       })
       setFetchResults(r => ({ ...r, [afdId]: { added, updated, total: conventusHolds.length } }))
       setAfdelingInput('')
@@ -1211,18 +1219,20 @@ function TeamsPage({ userDoc, authUser }) {
       ) : (
         <>
           {afdelinger.map(afd => {
-            const afdHolds  = holds.filter(h => String(h.afdeling_id) === String(afd.id))
-            const result    = fetchResults[afd.id]
-            const aktivNavn = [...new Set(afdHolds.map(h => h.aktivitet_titel).filter(Boolean))].join(' · ')
+            const afdHolds    = holds.filter(h => String(h.afdeling_id) === String(afd.id))
+            const result      = fetchResults[afd.id]
             const activeCount = afdHolds.filter(h => h.aktiv).length
+            const displayNavn = afd.navn
+              || [...new Set(afdHolds.map(h => h.aktivitet_titel).filter(Boolean))][0]
+              || `Afdeling ${afd.id}`
 
             return (
               <div key={afd.id} style={{ marginBottom: 24 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                               gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-                    <span style={{ fontWeight: 700, fontSize: 15 }}>Afdeling {afd.id}</span>
-                    {aktivNavn && <span style={{ fontSize: 13, color: 'var(--text2)' }}>{aktivNavn}</span>}
+                    <span style={{ fontWeight: 700, fontSize: 15 }}>{displayNavn}</span>
+                    <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'monospace' }}>#{afd.id}</span>
                     <span style={{ fontSize: 12, color: 'var(--text3)' }}>
                       {activeCount}/{afdHolds.length} aktive
                       {afd.sidst_hentet && ` · hentet ${formatDate(afd.sidst_hentet)}`}
