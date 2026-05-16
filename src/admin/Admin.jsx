@@ -1092,13 +1092,28 @@ function TeamsPage({ userDoc, authUser }) {
                         {hold.periode_fra && hold.periode_til ? `${hold.periode_fra} – ${hold.periode_til}` : '–'}
                       </td>
                       <td style={{ textAlign: 'center' }}>
-                        <input
-                          type="checkbox"
-                          checked={hold.aktiv ?? false}
+                        <button
+                          type="button"
+                          onClick={() => toggleAktiv(hold)}
                           disabled={saving === hold.conventus_id + '-aktiv'}
-                          onChange={() => toggleAktiv(hold)}
-                          style={{ accentColor: 'var(--green)', width: 16, height: 16, cursor: 'pointer' }}
-                        />
+                          aria-label={hold.aktiv ? 'Deaktivér' : 'Aktivér'}
+                          style={{
+                            width: 36, height: 20, borderRadius: 10, padding: 2,
+                            border: 'none', cursor: 'pointer',
+                            display: 'inline-flex', alignItems: 'center',
+                            background: hold.aktiv ? '#1a5c2a' : '#d1d5db',
+                            transition: 'background .2s',
+                            opacity: saving === hold.conventus_id + '-aktiv' ? .5 : 1,
+                          }}
+                        >
+                          <span style={{
+                            width: 16, height: 16, borderRadius: '50%',
+                            background: 'white', display: 'block',
+                            transform: hold.aktiv ? 'translateX(16px)' : 'translateX(0)',
+                            transition: 'transform .2s',
+                            boxShadow: '0 1px 3px rgba(0,0,0,.25)',
+                          }} />
+                        </button>
                       </td>
                       <td>
                         <button className="btn btn-ghost btn-sm" onClick={() => isExp ? setExpanded(null) : openEdit(hold)}>
@@ -1156,6 +1171,41 @@ function TeamsPage({ userDoc, authUser }) {
 
   const isReady = !loading && afdelinger !== null
 
+  function AfdSection({ id, label, holdList }) {
+    const activeCount = holdList.filter(h => h.aktiv).length
+    const isOpen      = openAfd.has(id)
+    return (
+      <div className="card">
+        <button
+          onClick={() => toggleOpenAfd(id)}
+          style={{ width: '100%', display: 'flex', alignItems: 'center',
+                   justifyContent: 'space-between', padding: '12px 16px',
+                   background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+        >
+          <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontWeight: 600, fontSize: 14 }}>{label}</span>
+            <span style={{ fontSize: 12, color: 'var(--text3)' }}>
+              {holdList.length > 0 ? `${activeCount}/${holdList.length} aktive` : '–'}
+            </span>
+          </span>
+          <span style={{ fontSize: 12, color: 'var(--text2)', flexShrink: 0 }}>
+            {isOpen ? '▲' : '▼'}
+          </span>
+        </button>
+        {isOpen && (
+          <div style={{ borderTop: '1px solid var(--border)' }}>
+            {holdList.length > 0
+              ? <HoldTable holdList={holdList} />
+              : <p style={{ padding: '12px 16px', fontSize: 13, color: 'var(--text2)', margin: 0 }}>
+                  Ingen hold importeret endnu
+                </p>
+            }
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <>
       <div className="page-header">
@@ -1164,45 +1214,31 @@ function TeamsPage({ userDoc, authUser }) {
 
       {!isReady ? (
         <div className="card"><div className="loading-dots"><span/><span/><span/></div></div>
-      ) : afdelinger.length === 0 ? (
-        <EmptyState icon="users" text="Ingen afdelinger — data synkroniseres automatisk én gang i døgnet" />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {afdelinger.map(afd => {
-            const afdHolds    = holds.filter(h => String(h.afdeling_id) === String(afd.id))
-            const activeCount = afdHolds.filter(h => h.aktiv).length
-            const isOpen      = openAfd.has(afd.id)
+          {afdelinger.length === 0 && holds.length === 0 && (
+            <EmptyState icon="users" text="Ingen hold — data synkroniseres automatisk én gang i døgnet" />
+          )}
+          {afdelinger.map(afd => (
+            <AfdSection
+              key={afd.id}
+              id={afd.id}
+              label={afd.navn || afd.id}
+              holdList={holds.filter(h => String(h.afdeling_id) === String(afd.id))}
+            />
+          ))}
+          {(() => {
+            const afdIds    = new Set(afdelinger.map(a => String(a.id)))
+            const orphans   = holds.filter(h => !afdIds.has(String(h.afdeling_id)))
+            if (!orphans.length) return null
             return (
-              <div key={afd.id} className="card">
-                <button
-                  onClick={() => toggleOpenAfd(afd.id)}
-                  style={{ width: '100%', display: 'flex', alignItems: 'center',
-                           justifyContent: 'space-between', padding: '12px 16px',
-                           background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
-                >
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontWeight: 600, fontSize: 14 }}>{afd.navn || afd.id}</span>
-                    <span style={{ fontSize: 12, color: 'var(--text3)' }}>
-                      {afdHolds.length > 0 ? `${activeCount}/${afdHolds.length} aktive` : '–'}
-                    </span>
-                  </span>
-                  <span style={{ fontSize: 12, color: 'var(--text2)', flexShrink: 0 }}>
-                    {isOpen ? '▲' : '▼'}
-                  </span>
-                </button>
-                {isOpen && (
-                  <div style={{ borderTop: '1px solid var(--border)' }}>
-                    {afdHolds.length > 0
-                      ? <HoldTable holdList={afdHolds} />
-                      : <p style={{ padding: '12px 16px', fontSize: 13, color: 'var(--text2)', margin: 0 }}>
-                          Ingen hold importeret endnu
-                        </p>
-                    }
-                  </div>
-                )}
-              </div>
+              <AfdSection
+                id="__orphan__"
+                label="Øvrige hold"
+                holdList={orphans}
+              />
             )
-          })}
+          })()}
         </div>
       )}
     </>
@@ -1215,16 +1251,20 @@ const EVENT_TYPES = ['kamp', 'træning', 'stævne', 'arrangement']
 const EMPTY_EVENT = { title: '', date: '', time: '', type: 'kamp', holdId: '', location: '', notes: '' }
 
 function EventsPage({ userDoc, authUser }) {
-  const [events,  setEvents]  = useState([])
-  const [loading, setLoading] = useState(true)
-  const [holds,   setHolds]   = useState([])
-  const [editing, setEditing] = useState(null)   // null | 'new' | event obj
-  const [form,    setForm]    = useState(EMPTY_EVENT)
-  const [saving,  setSaving]  = useState(false)
-  const [toDelete,setToDelete]= useState(null)
+  const [events,    setEvents]    = useState([])
+  const [loading,   setLoading]   = useState(true)
+  const [holds,     setHolds]     = useState([])
+  const [editing,   setEditing]   = useState(null)   // null | 'new' | event obj
+  const [form,      setForm]      = useState(EMPTY_EVENT)
+  const [saving,    setSaving]    = useState(false)
+  const [toDelete,  setToDelete]  = useState(null)
+  const [importing, setImporting] = useState(false)
+  const [importMsg, setImportMsg] = useState('')
 
   useEffect(() => {
-    fetch(`${BASE}holds.php`).then(r => r.json()).then(d => setHolds(d.groups || [])).catch(() => {})
+    getDocs(query(collection(db, 'holds'), where('aktiv', '==', true)))
+      .then(snap => setHolds(snap.docs.map(d => ({ _id: d.id, ...d.data() }))))
+      .catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -1236,25 +1276,29 @@ function EventsPage({ userDoc, authUser }) {
 
   const visibleHolds = userDoc?.role === 'admin'
     ? holds
-    : holds.filter(h => (userDoc?.holds ?? []).includes(String(h.id)))
+    : holds.filter(h => (userDoc?.holds ?? []).includes(String(h.conventus_id)))
 
-  function startNew()       { setForm(EMPTY_EVENT); setEditing('new') }
-  function startEdit(ev)    { setForm({ title: ev.title ?? '', date: ev.date ?? '', time: ev.time ?? '', type: ev.type ?? 'kamp', holdId: String(ev.holdId ?? ''), location: ev.location ?? '', notes: ev.notes ?? '' }); setEditing(ev) }
-  function setF(k, v)       { setForm(f => ({ ...f, [k]: v })) }
+  function startNew()    { setForm(EMPTY_EVENT); setEditing('new') }
+  function startEdit(ev) {
+    setForm({ title: ev.title ?? '', date: ev.date ?? '', time: ev.time ?? '',
+              type: ev.type ?? 'kamp', holdId: String(ev.holdId ?? ''),
+              location: ev.location ?? '', notes: ev.notes ?? '' })
+    setEditing(ev)
+  }
+  function setF(k, v) { setForm(f => ({ ...f, [k]: v })) }
 
   async function save(e) {
     e.preventDefault()
     if (!form.title || !form.date) return
     setSaving(true)
-    const hold = holds.find(h => String(h.id) === form.holdId) ?? {}
+    const hold = holds.find(h => String(h.conventus_id) === form.holdId) ?? {}
     const payload = {
       ...form,
-      holdId:           form.holdId || null,
-      holdName:         hold.name ?? '',
-      activityTypeName: hold.activityTypeName ?? '',
-      authorUid:        authUser.uid,
-      authorName:       userDoc?.displayName || authUser.email,
-      updatedAt:        serverTimestamp(),
+      holdId:    form.holdId || null,
+      holdName:  hold.titel ?? '',
+      authorUid: authUser.uid,
+      authorName: userDoc?.displayName || authUser.email,
+      updatedAt:  serverTimestamp(),
     }
     try {
       if (editing === 'new') {
@@ -1264,6 +1308,45 @@ function EventsPage({ userDoc, authUser }) {
       }
       setEditing(null)
     } finally { setSaving(false) }
+  }
+
+  async function importFromConventus() {
+    setImporting(true); setImportMsg('')
+    try {
+      const res  = await fetch(`${BASE}api/conventus.php?endpoint=kalender`)
+      const data = await res.json()
+      if (data.error) { setImportMsg('Fejl: ' + data.error); return }
+      const items = data.events ?? []
+      if (!items.length) { setImportMsg('Ingen begivenheder fundet i Conventus-kalenderen.'); return }
+
+      // Skriv til Firestore — upsert baseret på titel+dato
+      const existingKeys = new Set(events.map(e => e.title + '|' + e.date))
+      let added = 0
+      for (const ev of items) {
+        if (!ev.title || !ev.date) continue
+        if (existingKeys.has(ev.title + '|' + ev.date)) continue
+        await addDoc(collection(db, 'events'), {
+          title:          ev.title,
+          date:           ev.date,
+          time:           ev.time || '',
+          type:           'arrangement',
+          holdId:         null,
+          holdName:       '',
+          location:       ev.location || '',
+          notes:          ev.description || '',
+          conventus_link: ev.link || '',
+          conventus:      true,
+          authorUid:      authUser.uid,
+          authorName:     userDoc?.displayName || authUser.email,
+          createdAt:      serverTimestamp(),
+          updatedAt:      serverTimestamp(),
+        })
+        added++
+      }
+      setImportMsg(`${added} nye begivenheder importeret (${items.length} fundet i alt).`)
+    } catch (err) {
+      setImportMsg('Hentning fejlede: ' + err.message)
+    } finally { setImporting(false) }
   }
 
   async function confirmDelete() {
@@ -1310,7 +1393,7 @@ function EventsPage({ userDoc, authUser }) {
               <label className="form-label">Hold</label>
               <select className="form-control" value={form.holdId} onChange={e => setF('holdId', e.target.value)}>
                 <option value="">Alle / ikke angivet</option>
-                {visibleHolds.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
+                {visibleHolds.map(h => <option key={h.conventus_id} value={String(h.conventus_id)}>{h.titel}</option>)}
               </select>
             </div>
           </div>
@@ -1340,13 +1423,19 @@ function EventsPage({ userDoc, authUser }) {
     <>
       <div className="page-header">
         <h1 className="page-title">Begivenheder</h1>
-        <button className="btn btn-primary" onClick={startNew}>
-          <Icon name="plus" size={15} color="white" /> Ny begivenhed
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-ghost" onClick={importFromConventus} disabled={importing}>
+            <Icon name="link" size={15} color="currentColor" />
+            {importing ? 'Henter…' : 'Hent fra Conventus'}
+          </button>
+          <button className="btn btn-primary" onClick={startNew}>
+            <Icon name="plus" size={15} color="white" /> Ny begivenhed
+          </button>
+        </div>
       </div>
-      <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 16 }}>
-        Begivenheder vises i membres apps kalender under "Familie"-fanen, filtreret på holdtilknytning.
-      </p>
+      {importMsg && (
+        <div className="alert-info" style={{ marginBottom: 16, fontSize: 13 }}>{importMsg}</div>
+      )}
 
       {loading ? (
         <div className="card"><div className="loading-dots"><span/><span/><span/></div></div>

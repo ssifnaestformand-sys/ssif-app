@@ -189,6 +189,65 @@ if ($endpoint === 'grupper') {
     exit;
 }
 
+// ── KALENDER: hent begivenheder fra Conventus RSS-feed ───────────────────────
+if ($endpoint === 'kalender') {
+    header('Cache-Control: public, max-age=1800');
+    $url = 'https://www.conventus.dk/dataudv/www/kalender.php?' . http_build_query([
+        'foreningsid' => FORENING,
+        'rss'         => '1',
+    ]);
+    $raw = @file_get_contents($url, false, $ctx);
+    if ($raw === false) { http_response_code(503); echo json_encode(['error' => 'Ingen svar fra Conventus kalender']); exit; }
+    if (preg_match('/encoding=["\']ISO-8859-1["\']/i', $raw)) {
+        $raw = mb_convert_encoding($raw, 'UTF-8', 'ISO-8859-1');
+        $raw = preg_replace('/encoding=["\']ISO-8859-1["\']/i', 'encoding="UTF-8"', $raw);
+    }
+    $xml = @simplexml_load_string($raw);
+    if ($xml === false) { http_response_code(502); echo json_encode(['error' => 'XML parse-fejl fra kalender']); exit; }
+
+    $events = [];
+    $channel = $xml->channel ?? $xml;
+    foreach ($channel->item ?? [] as $item) {
+        $title    = html_entity_decode(trim((string)$item->title),       ENT_HTML5 | ENT_QUOTES, 'UTF-8');
+        $desc     = html_entity_decode(trim((string)$item->description), ENT_HTML5 | ENT_QUOTES, 'UTF-8');
+        $link     = trim((string)$item->link);
+        $location = trim((string)($item->children('georss', true)->featureName ?? $item->location ?? ''));
+        $pubDate  = trim((string)($item->pubDate ?? $item->date ?? ''));
+
+        // Prøv at parse dato fra pubDate eller <start>/<startdate> custom fields
+        $ns   = $item->getNamespaces(true);
+        $date = ''; $time = '';
+        foreach ($ns as $prefix => $uri) {
+            $ext = $item->children($uri);
+            foreach (['start', 'startdate', 'startDate', 'dtstart'] as $f) {
+                $val = trim((string)($ext->$f ?? ''));
+                if ($val) { $pubDate = $pubDate ?: $val; break 2; }
+            }
+        }
+        if ($pubDate) {
+            $ts = strtotime($pubDate);
+            if ($ts) {
+                $date = date('Y-m-d', $ts);
+                $h    = (int)date('H', $ts);
+                $time = $h > 0 ? date('H:i', $ts) : '';
+            }
+        }
+        if ($title) {
+            $events[] = [
+                'title'       => $title,
+                'description' => $desc,
+                'date'        => $date,
+                'time'        => $time,
+                'location'    => $location,
+                'link'        => $link,
+            ];
+        }
+    }
+    usort($events, fn($a, $b) => strcmp($a['date'], $b['date']));
+    echo json_encode(['events' => $events, 'count' => count($events), 'fetched' => date('c')], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 // ── Ukendt endpoint ───────────────────────────────────────────────────────────
 // Rå get_membres-data eksponeres ikke via denne proxy.
 // Brug sync-members.php (kræver Firebase-auth) til at synkronisere memberdata.
