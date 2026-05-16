@@ -124,7 +124,7 @@ foreach ($afdelinger as $afdId => $afdNavn) {
     $holdRaw = @file_get_contents(
         BASE_URL . 'get_grupper.php?' . http_build_query([
             'forening' => FORENING, 'key' => $apiKey,
-            'type' => 'hold', 'aktiv' => 'true', 'afdeling' => $afdId,
+            'type' => 'hold', 'afdeling' => $afdId,
         ]),
         false, $ctx
     );
