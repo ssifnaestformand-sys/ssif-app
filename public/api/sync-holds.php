@@ -126,29 +126,67 @@ if (!$afdelinger) {
 // Deduplicering via $seen[conventus_id] = true sikrer ingen dobbeltskrivning.
 // PATCH med updateMask bevarer admin-felter (aktiv, traener_uid, traeningstider).
 
-$allHolds = [];
-$seen     = [];
-$now      = date('c');
+$allHolds  = [];
+$seen      = [];
+$now       = date('c');
+$debugAfd  = [];   // per-afdeling debug: [afd_id => [type => [found, error]]]
+$debugGlob = [];   // globale kald debug
 
 foreach ($afdelinger as $afdId => $afdNavn) {
+    $debugAfd[$afdId] = ['navn' => $afdNavn, 'hold' => null, 'udvalg' => null];
     foreach (['hold', 'udvalg'] as $type) {
-        $raw = @file_get_contents(
-            BASE_URL . 'get_grupper.php?' . http_build_query([
-                'forening' => FORENING, 'key' => $apiKey,
-                'type'     => $type,    'afdeling' => $afdId,
-            ]),
-            false, $ctx
-        );
-        if (!$raw) continue;
+        $url = BASE_URL . 'get_grupper.php?' . http_build_query([
+            'forening' => FORENING, 'key' => $apiKey,
+            'type'     => $type,    'afdeling' => $afdId,
+        ]);
+        $raw = @file_get_contents($url, false, $ctx);
+
+        if (!$raw) {
+            $debugAfd[$afdId][$type] = ['error' => 'ingen svar', 'found' => 0];
+            continue;
+        }
         $raw = fix_encoding($raw);
+
+        // Gem rå XML-preview for 37870 til diagnose
+        $rawPreview = ($afdId === '37870')
+            ? substr($raw, 0, 500)
+            : null;
+
         $xml = @simplexml_load_string($raw);
-        if (!$xml) continue;
-        foreach (extract_holds($xml) as $h) {
+        if (!$xml) {
+            $debugAfd[$afdId][$type] = [
+                'error'      => 'xml-parse-fejl',
+                'raw_bytes'  => strlen($raw),
+                'raw_start'  => substr($raw, 0, 120),
+                'found'      => 0,
+            ];
+            continue;
+        }
+
+        // Tjek om Conventus returnerede en fejl i XML
+        $xmlError = trim((string)($xml->error ?? ''));
+        if ($xmlError) {
+            $debugAfd[$afdId][$type] = ['error' => $xmlError, 'found' => 0];
+            continue;
+        }
+
+        $extracted = extract_holds($xml);
+        $added     = 0;
+        foreach ($extracted as $h) {
             $id = (int)$h['conventus_id'];
             if (!$id || isset($seen[$id])) continue;
             $seen[$id]  = true;
             $allHolds[] = array_merge($h, ['afdeling_id' => $afdId, 'hold_type' => $type]);
+            $added++;
         }
+
+        $entry = [
+            'found'     => count($extracted),
+            'added_new' => $added,
+            'raw_bytes' => strlen($raw),
+        ];
+        if ($rawPreview !== null) $entry['raw_preview'] = $rawPreview;
+        $debugAfd[$afdId][$type] = $entry;
     }
 }
 
@@ -161,16 +199,21 @@ foreach (['hold', 'udvalg'] as $type) {
         ]),
         false, $ctx
     );
-    if (!$raw) continue;
+    if (!$raw) { $debugGlob[$type] = ['error' => 'ingen svar']; continue; }
     $raw = fix_encoding($raw);
     $xml = @simplexml_load_string($raw);
-    if (!$xml) continue;
-    foreach (extract_holds($xml) as $h) {
+    if (!$xml) { $debugGlob[$type] = ['error' => 'xml-parse-fejl', 'raw_bytes' => strlen($raw)]; continue; }
+
+    $extracted = extract_holds($xml);
+    $added     = 0;
+    foreach ($extracted as $h) {
         $id = (int)$h['conventus_id'];
         if (!$id || isset($seen[$id])) continue;
         $seen[$id]  = true;
         $allHolds[] = array_merge($h, ['afdeling_id' => '', 'hold_type' => $type]);
+        $added++;
     }
+    $debugGlob[$type] = ['found' => count($extracted), 'added_new' => $added];
 }
 
 // ── 3. Skriv afdelinger + hold individuelt med PATCH ─────────────────────────
@@ -201,19 +244,31 @@ foreach ($allHolds as $h) {
     usleep(50000); // 50ms pause → ~23s for 460 hold
 }
 
+// Find afdelinger med fejl eller 0 hold
+$afdErrors  = [];
+$afdZero    = [];
+foreach ($debugAfd as $afdId => $info) {
+    foreach (['hold', 'udvalg'] as $type) {
+        $d = $info[$type] ?? null;
+        if (!$d) continue;
+        if (isset($d['error']))       $afdErrors[]  = "$afdId ({$info['navn']}) [$type]: {$d['error']}";
+        elseif (($d['found'] ?? 0) === 0) $afdZero[] = "$afdId ({$info['navn']}) [$type]: 0 fundet";
+    }
+}
+
 echo json_encode([
     'ok'            => true,
     'afdelinger'    => count($afdelinger),
     'holds_total'   => count($allHolds),
     'holds_written' => $holdsWritten,
     'synced'        => $now,
-    'debug'         => [
-        'raw_bytes'     => $debugRawLen,
-        'xpath_nodes'   => $debugXpath,
-        'afd_sample'    => array_slice(array_values($afdelinger), 0, 3),
-        'commit_error'  => $debugCommitError ?? null,
+    'debug' => [
         'token_ok'      => !empty($token),
         'project_id'    => $projectId,
+        'afd_errors'    => $afdErrors,    // afdelinger med fejl
+        'afd_zero'      => $afdZero,      // afdelinger med 0 hold/udvalg
+        'global'        => $debugGlob,    // globale kald (type=hold/udvalg uden afd)
+        'per_afdeling'  => $debugAfd,     // fuld per-afdeling detalje
     ],
 ], JSON_UNESCAPED_UNICODE);
 
