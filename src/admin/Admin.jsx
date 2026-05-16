@@ -88,6 +88,7 @@ function Icon({ name, size = 18, color = 'currentColor', sw = 1.75 }) {
     link:     <><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></>,
     calendar: <><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></>,
     search:   <><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></>,
+    eye:      <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>,
   }
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -313,7 +314,10 @@ function Sidebar({ page, setPage, userDoc, user, onLogout }) {
     { id: 'news',      label: 'Nyheder',    icon: 'news'    },
     { id: 'teams',     label: 'Hold',       icon: 'users'   },
     { id: 'events', label: 'Begivenheder', icon: 'calendar' },
-    ...(userDoc?.role === 'admin' ? [{ id: 'users', label: 'Brugere', icon: 'shield' }] : []),
+    ...(userDoc?.role === 'admin' ? [
+      { id: 'appusers', label: 'App-brugere', icon: 'eye'    },
+      { id: 'users',    label: 'Adgang',      icon: 'shield' },
+    ] : []),
   ]
   return (
     <aside className="sidebar">
@@ -1566,6 +1570,185 @@ function EventsPage({ userDoc, authUser }) {
   )
 }
 
+// ─── App-brugere ──────────────────────────────────────────────────────────────
+
+function fmtRelative(ts) {
+  if (!ts) return '–'
+  const d    = ts?.toDate ? ts.toDate() : new Date(ts)
+  const diff = Date.now() - d.getTime()
+  const min  = Math.floor(diff / 60000)
+  const hrs  = Math.floor(diff / 3600000)
+  const days = Math.floor(diff / 86400000)
+  if (min  <  2)  return 'Lige nu'
+  if (hrs  <  1)  return `${min} min siden`
+  if (hrs  < 24)  return `${hrs} t siden`
+  if (days === 1) return 'I går'
+  if (days <  7)  return `${days} dage siden`
+  return d.toLocaleDateString('da-DK', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+function AppUsersPage() {
+  const [users,   setUsers]   = useState([])
+  const [loading, setLoading] = useState(true)
+  const [search,  setSearch]  = useState('')
+  const [sortKey, setSortKey] = useState('lastSeen')  // lastSeen | displayName | createdAt
+
+  useEffect(() => {
+    getDocs(collection(db, 'users'))
+      .then(snap => setUsers(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const ROLE_LABEL = { admin: 'Admin', trainer: 'Træner', Medlem: 'Medlem' }
+  const ROLE_COLOR = { admin: 'badge-green', trainer: 'badge-blue', Medlem: 'badge-gray' }
+
+  const q = search.trim().toLowerCase()
+  const filtered = users
+    .filter(u =>
+      !q ||
+      (u.displayName || '').toLowerCase().includes(q) ||
+      (u.email       || '').toLowerCase().includes(q) ||
+      (u.primaryEmail|| '').toLowerCase().includes(q)
+    )
+    .sort((a, b) => {
+      if (sortKey === 'displayName') return (a.displayName || '').localeCompare(b.displayName || '', 'da')
+      const tsA = a[sortKey]?.toDate?.() ?? new Date(0)
+      const tsB = b[sortKey]?.toDate?.() ?? new Date(0)
+      return tsB - tsA  // nyeste først
+    })
+
+  const total    = users.length
+  const members  = users.filter(u => !u.role || u.role === 'Medlem').length
+  const staff    = users.filter(u => u.role === 'admin' || u.role === 'trainer').length
+  const verified = users.filter(u => u.emailVerified).length
+
+  function SortTh({ k, label }) {
+    const active = sortKey === k
+    return (
+      <th style={{ cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
+          onClick={() => setSortKey(k)}>
+        {label}
+        <span style={{ marginLeft: 4, opacity: active ? 1 : .3, fontSize: 10 }}>
+          {active ? '▼' : '▼'}
+        </span>
+      </th>
+    )
+  }
+
+  return (
+    <>
+      <div className="page-header">
+        <h1 className="page-title">App-brugere</h1>
+        <span className="text-muted" style={{ fontSize: 13 }}>{total} brugere i alt</span>
+      </div>
+
+      {/* Stats */}
+      <div className="stat-grid" style={{ marginBottom: 20 }}>
+        <div className="stat-card">
+          <div className="stat-card-icon" style={{ background: '#e8f5ec' }}>
+            <Icon name="users" size={20} color="#1a5c2a" />
+          </div>
+          <div className="stat-card-value" style={{ color: '#1a5c2a' }}>{total}</div>
+          <div className="stat-card-label">Konti i alt</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-card-icon" style={{ background: '#eff6ff' }}>
+            <Icon name="person" size={20} color="#3b82f6" />
+          </div>
+          <div className="stat-card-value" style={{ color: '#3b82f6' }}>{members}</div>
+          <div className="stat-card-label">Klubmedlemmer</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-card-icon" style={{ background: '#fef9c3' }}>
+            <Icon name="shield" size={20} color="#ca8a04" />
+          </div>
+          <div className="stat-card-value" style={{ color: '#ca8a04' }}>{staff}</div>
+          <div className="stat-card-label">Trænere / admins</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-card-icon" style={{ background: '#f0fdf4' }}>
+            <Icon name="check" size={20} color="#16a34a" />
+          </div>
+          <div className="stat-card-value" style={{ color: '#16a34a' }}>{verified}</div>
+          <div className="stat-card-label">Verificeret email</div>
+        </div>
+      </div>
+
+      {/* Søg */}
+      <div style={{ position: 'relative', marginBottom: 16 }}>
+        <span style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', display: 'flex' }}>
+          <Icon name="search" size={16} color="var(--text3)" />
+        </span>
+        <input
+          className="form-control"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Søg navn eller email…"
+          style={{ paddingLeft: 36, paddingRight: search ? 36 : undefined }}
+          autoComplete="off"
+        />
+        {search && (
+          <button onClick={() => setSearch('')} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 2, display: 'flex' }}>
+            <Icon name="x" size={16} color="var(--text3)" />
+          </button>
+        )}
+      </div>
+
+      <div className="card">
+        {loading ? (
+          <div className="loading-dots"><span/><span/><span/></div>
+        ) : filtered.length === 0 ? (
+          <EmptyState icon="person" text={q ? `Ingen brugere matcher "${search}"` : 'Ingen brugere endnu'} />
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <SortTh k="displayName" label="Navn" />
+                  <th>Email</th>
+                  <th>Rolle</th>
+                  <th style={{ textAlign: 'center' }}>Email ✓</th>
+                  <SortTh k="lastSeen"  label="Sidst aktiv" />
+                  <SortTh k="createdAt" label="Oprettet" />
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(u => (
+                  <tr key={u.id}>
+                    <td style={{ fontWeight: 600, fontSize: 13 }}>
+                      {u.displayName || '–'}
+                    </td>
+                    <td style={{ fontSize: 12, color: 'var(--text2)' }}>
+                      {u.email || u.primaryEmail || '–'}
+                    </td>
+                    <td>
+                      <span className={`badge ${ROLE_COLOR[u.role] || 'badge-gray'}`}>
+                        {ROLE_LABEL[u.role] || u.role || 'Medlem'}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      {u.emailVerified
+                        ? <span style={{ color: '#16a34a', fontSize: 15 }}>✓</span>
+                        : <span style={{ color: 'var(--text3)', fontSize: 13 }}>–</span>
+                      }
+                    </td>
+                    <td style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+                      {fmtRelative(u.lastSeen)}
+                    </td>
+                    <td style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+                      {formatDate(u.createdAt)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </>
+  )
+}
+
 // ─── Users ────────────────────────────────────────────────────────────────────
 
 function UsersPage({ authUser }) {
@@ -1783,7 +1966,8 @@ const PAGE_TITLES = {
   news:      'Nyheder',
   teams:     'Hold',
   events:    'Begivenheder',
-  users:     'Brugere',
+  appusers:  'App-brugere',
+  users:     'Adgang',
 }
 
 export default function AdminApp() {
@@ -1846,6 +2030,10 @@ export default function AdminApp() {
       case 'news':      return <NewsPage       userDoc={userDoc} authUser={authUser} />
       case 'teams':     return <TeamsPage      userDoc={userDoc} authUser={authUser} />
       case 'events':    return <EventsPage     userDoc={userDoc} authUser={authUser} />
+      case 'appusers':
+        return userDoc.role === 'admin'
+          ? <AppUsersPage />
+          : <EmptyState icon="shield" text="Kun administratorer har adgang" />
       case 'users':
         return userDoc.role === 'admin'
           ? <UsersPage authUser={authUser} />

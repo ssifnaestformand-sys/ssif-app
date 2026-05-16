@@ -1781,9 +1781,9 @@ export default function App() {
       const snap = await getDoc(ref)
       if (snap.exists()) {
         profile = snap.data()
-        if (profile.emailVerified !== fbUser.emailVerified) {
-          updateDoc(ref, { emailVerified: fbUser.emailVerified }).catch(() => {})
-        }
+        const updates = { lastSeen: serverTimestamp() }
+        if (profile.emailVerified !== fbUser.emailVerified) updates.emailVerified = fbUser.emailVerified
+        updateDoc(ref, updates).catch(() => {})
       } else {
         profile = {
           primaryEmail:  fbUser.email  || '',
