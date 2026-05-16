@@ -934,18 +934,16 @@ function NewsPage({ userDoc, authUser }) {
  *   sidst_hentet (Timestamp)
  */
 function TeamsPage({ userDoc, authUser }) {
-  const [holds,          setHolds]         = useState([])
-  const [afdelinger,     setAfdelinger]    = useState([])
-  const [afdelingNavne,  setAfdelingNavne] = useState({}) // {id: titel} fra Conventus
-  const [users,          setUsers]         = useState([])
-  const [loading,        setLoading]       = useState(true)
-  const [afdelingInput,  setAfdelingInput] = useState('')
-  const [fetchingAfd,    setFetchingAfd]   = useState(null)
-  const [fetchResults,   setFetchResults]  = useState({})
-  const [saving,         setSaving]        = useState(null)
-  const [expanded,       setExpanded]      = useState(null)
-  const [editForm,       setEditForm]      = useState({ traeningstider: '', traener_uid: '' })
-  const [openGroups,     setOpenGroups]    = useState(new Set())
+  const [holds,         setHolds]        = useState([])
+  const [afdelingListe, setAfdelingListe] = useState(null) // null=loading, []=loaded — fra Conventus
+  const [users,         setUsers]        = useState([])
+  const [loading,       setLoading]      = useState(true)
+  const [syncing,       setSyncing]      = useState(false)
+  const [syncResult,    setSyncResult]   = useState(null)
+  const [saving,        setSaving]       = useState(null)
+  const [expanded,      setExpanded]     = useState(null)
+  const [editForm,      setEditForm]     = useState({ traeningstider: '', traener_uid: '' })
+  const [openAfd,       setOpenAfd]      = useState(new Set())
 
   function loadHolds() {
     setLoading(true)
@@ -962,91 +960,66 @@ function TeamsPage({ userDoc, authUser }) {
       .finally(() => setLoading(false))
   }
 
-  function loadAfdelinger() {
-    getDocs(collection(db, 'afdelinger')).then(snap => {
-      setAfdelinger(
-        snap.docs.map(d => ({ id: d.id, ...d.data() }))
-                 .sort((a, b) => (a.navn || a.id).localeCompare(b.navn || b.id, 'da'))
-      )
-    })
-  }
-
   useEffect(() => {
     loadHolds()
-    loadAfdelinger()
     getDocs(collection(db, 'users')).then(snap =>
       setUsers(snap.docs.map(d => ({ id: d.id, ...d.data() })))
     )
-    // Hent afdelings-navne fra Conventus én gang
+    // Hent afdelingsliste fra Conventus — vises direkte, ingen Firestore-mellemled
     fetch(`${BASE}api/conventus.php?endpoint=afdelinger`)
       .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (!data?.afdelinger) return
-        const map = {}
-        data.afdelinger.forEach(a => { if (a.id) map[a.id] = a.titel })
-        setAfdelingNavne(map)
-      })
-      .catch(() => {})
+      .then(data => setAfdelingListe(data?.afdelinger || []))
+      .catch(() => setAfdelingListe([]))
   }, [])
 
-  async function fetchAfdeling(id) {
-    const afdId = String(id).trim()
-    if (!afdId || !/^\d+$/.test(afdId)) return
-    setFetchingAfd(afdId)
-    setFetchResults(r => ({ ...r, [afdId]: null }))
+  async function syncAll() {
+    setSyncing(true)
+    setSyncResult(null)
     try {
-      const res = await fetch(`${BASE}api/conventus.php?endpoint=afdeling&id=${encodeURIComponent(afdId)}`)
-      if (!res.ok) throw new Error(`Serverfejl HTTP ${res.status}`)
-      const data = await res.json()
-      if (data.error) throw new Error(data.error)
-      const conventusHolds = data.holds ?? []
-      if (conventusHolds.length === 0) throw new Error('Ingen hold fundet for afdeling ' + afdId + ' – tjek at ID er korrekt')
+      const afdRes = await fetch(`${BASE}api/conventus.php?endpoint=afdelinger`)
+      if (!afdRes.ok) throw new Error(`HTTP ${afdRes.status}`)
+      const afdData = await afdRes.json()
+      const allAfd  = afdData.afdelinger ?? []
+      if (!allAfd.length) throw new Error('Ingen afdelinger fra Conventus')
+      setAfdelingListe(allAfd)
 
+      // Byg eksisterende holds-map én gang
       const existingSnap = await getDocs(collection(db, 'holds'))
-      const existingMap = {}
+      const existingMap  = {}
       existingSnap.docs.forEach(d => { existingMap[String(d.data().conventus_id)] = d.ref })
 
-      let added = 0, updated = 0
-      for (const ch of conventusHolds) {
-        const docId = String(ch.conventus_id)
-        const fields = {
-          conventus_id:        ch.conventus_id,
-          titel:               ch.titel,
-          aktivitet_titel:     ch.aktivitet_titel || '',
-          periode_fra:         ch.periode_fra     || '',
-          periode_til:         ch.periode_til     || '',
-          beskrivelse:         ch.beskrivelse     || '',
-          afdeling_id:         afdId,
-          sidst_synkroniseret: serverTimestamp(),
+      let totalAdded = 0, totalUpdated = 0
+      for (const afd of allAfd) {
+        const res  = await fetch(`${BASE}api/conventus.php?endpoint=afdeling&id=${afd.id}`)
+        if (!res.ok) continue
+        const data = await res.json()
+        for (const ch of (data.holds ?? [])) {
+          const docId = String(ch.conventus_id)
+          const fields = {
+            conventus_id:        ch.conventus_id,
+            titel:               ch.titel,
+            aktivitet_titel:     ch.aktivitet_titel || '',
+            periode_fra:         ch.periode_fra     || '',
+            periode_til:         ch.periode_til     || '',
+            beskrivelse:         ch.beskrivelse     || '',
+            afdeling_id:         afd.id,
+            sidst_synkroniseret: serverTimestamp(),
+          }
+          if (existingMap[docId]) {
+            await updateDoc(existingMap[docId], fields); totalUpdated++
+          } else {
+            await setDoc(doc(db, 'holds', docId), { ...fields, aktiv: false, traener_uid: '', traeningstider: '' }); totalAdded++
+            existingMap[docId] = doc(db, 'holds', docId)
+          }
         }
-        if (existingMap[docId]) {
-          await updateDoc(existingMap[docId], fields); updated++
-        } else {
-          await setDoc(doc(db, 'holds', docId), { ...fields, aktiv: false, traener_uid: '', traeningstider: '' }); added++
-        }
+        await setDoc(doc(db, 'afdelinger', afd.id), { navn: afd.titel, sidst_hentet: serverTimestamp() }, { merge: true })
       }
-
-      // Brug officielt navn fra Conventus get_afdelinger — fallback til aktivitet_titel
-      const afdelingNavn = afdelingNavne[afdId]
-        || conventusHolds.map(h => h.aktivitet_titel).filter(Boolean)[0]
-        || afdId
-
-      await setDoc(doc(db, 'afdelinger', afdId), {
-        navn:         afdelingNavn,
-        sidst_hentet: serverTimestamp(),
-      }, { merge: true })
-      setAfdelinger(prev => {
-        const rest = prev.filter(a => a.id !== afdId)
-        return [...rest, { id: afdId, navn: afdelingNavn, sidst_hentet: new Date() }]
-          .sort((a, b) => (a.navn || a.id).localeCompare(b.navn || b.id, 'da'))
-      })
-      setFetchResults(r => ({ ...r, [afdId]: { added, updated, total: conventusHolds.length } }))
-      setAfdelingInput('')
+      setSyncResult({ afdelinger: allAfd.length, added: totalAdded, updated: totalUpdated })
       loadHolds()
     } catch (e) {
-      setFetchResults(r => ({ ...r, [afdId]: { error: e.message } }))
+      setSyncResult({ error: e.message })
     } finally {
-      setFetchingAfd(null)
+      setSyncing(false)
     }
   }
 
@@ -1081,10 +1054,8 @@ function TeamsPage({ userDoc, authUser }) {
     setExpanded(null)
   }
 
-  const trainerLabel = uid => {
-    const u = users.find(u => u.id === uid)
-    return u ? (u.displayName || u.email) : uid
-  }
+  const trainerLabel  = uid => { const u = users.find(u => u.id === uid); return u ? (u.displayName || u.email) : uid }
+  const toggleOpenAfd = id  => setOpenAfd(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
 
   function HoldTable({ holdList }) {
     const sorted = [...holdList].sort(
@@ -1183,155 +1154,69 @@ function TeamsPage({ userDoc, authUser }) {
     )
   }
 
-  const orphanHolds = holds.filter(h => !h.afdeling_id)
+  const isReady = !loading && afdelingListe !== null
 
   return (
     <>
       <div className="page-header">
         <h1 className="page-title">Hold</h1>
+        <button className="btn btn-primary" onClick={syncAll} disabled={syncing}>
+          <Icon name="link" size={15} color="white" />
+          {syncing ? 'Synkroniserer…' : 'Sync'}
+        </button>
       </div>
 
-      {/* ── Tilføj afdeling ── */}
-      <div className="card card-pad" style={{ marginBottom: 24 }}>
-        <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Hent hold fra Conventus-afdeling</h3>
-        <p style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 12 }}>
-          Indtast afdelings-ID fra Conventus (Indstillinger → Afdelinger) for at importere alle hold i afdelingen.
-          Allerede hentede afdelinger vises nedenfor og kan opdateres individuelt.
-        </p>
-        <form onSubmit={e => { e.preventDefault(); fetchAfdeling(afdelingInput) }}
-              style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <input
-            className="form-control"
-            style={{ maxWidth: 220 }}
-            type="text"
-            inputMode="numeric"
-            pattern="\d+"
-            placeholder="Afdelings-ID (fx 4001)"
-            value={afdelingInput}
-            onChange={e => setAfdelingInput(e.target.value.replace(/\D/g, ''))}
-            disabled={fetchingAfd !== null}
-          />
-          <button className="btn btn-primary" type="submit"
-                  disabled={!afdelingInput.trim() || fetchingAfd !== null}>
-            {fetchingAfd === afdelingInput.trim() ? 'Henter…' : 'Hent hold'}
-          </button>
-        </form>
-        {fetchResults[afdelingInput.trim()]?.error && (
-          <div className="alert-warn" style={{ marginTop: 10 }}>
-            {fetchResults[afdelingInput.trim()].error}
-          </div>
-        )}
-      </div>
+      {syncResult && !syncResult.error && (
+        <div className="alert-info" style={{ marginBottom: 16 }}>
+          Synkronisering gennemført: {syncResult.afdelinger} afdelinger · {syncResult.added} nye hold · {syncResult.updated} opdaterede
+        </div>
+      )}
+      {syncResult?.error && (
+        <div className="alert-warn" style={{ marginBottom: 16 }}>Fejl: {syncResult.error}</div>
+      )}
 
-      {/* ── Per-afdeling sektioner ── */}
-      {loading ? (
+      {!isReady ? (
         <div className="card"><div className="loading-dots"><span/><span/><span/></div></div>
-      ) : afdelinger.length === 0 && orphanHolds.length === 0 ? (
-        <EmptyState icon="users" text="Ingen hold importeret endnu — tilføj et afdelings-ID ovenfor" />
+      ) : afdelingListe.length === 0 ? (
+        <EmptyState icon="users" text="Ingen afdelinger — klik Sync for at hente fra Conventus" />
       ) : (
-        <>
-          {afdelinger.map(afd => {
-            const afdHolds    = holds.filter(h => String(h.afdeling_id) === String(afd.id))
-            const result      = fetchResults[afd.id]
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {afdelingListe.map(afd => {
+            const afdHolds   = holds.filter(h => String(h.afdeling_id) === String(afd.id))
             const activeCount = afdHolds.filter(h => h.aktiv).length
-            // Prioritér: live Conventus-navn → gemt navn → afdeling-ID
-            const displayNavn = afdelingNavne[afd.id] || afd.navn || `Afdeling ${afd.id}`
-
+            const isOpen     = openAfd.has(afd.id)
             return (
-              <div key={afd.id} style={{ marginBottom: 24 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                              gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-                    <span style={{ fontWeight: 700, fontSize: 15 }}>{displayNavn}</span>
+              <div key={afd.id} className="card">
+                <button
+                  onClick={() => toggleOpenAfd(afd.id)}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center',
+                           justifyContent: 'space-between', padding: '12px 16px',
+                           background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontWeight: 600, fontSize: 14 }}>{afd.titel}</span>
                     <span style={{ fontSize: 12, color: 'var(--text3)' }}>
-                      {activeCount}/{afdHolds.length} aktive
-                      {afd.sidst_hentet && ` · ${formatDate(afd.sidst_hentet)}`}
+                      {afdHolds.length > 0 ? `${activeCount}/${afdHolds.length} aktive` : 'ikke synkroniseret'}
                     </span>
-                  </div>
-                  <button className="btn btn-ghost btn-sm" onClick={() => fetchAfdeling(afd.id)}
-                          disabled={fetchingAfd !== null}>
-                    {fetchingAfd === String(afd.id) ? 'Henter…' : '↺ Opdatér'}
-                  </button>
-                </div>
-
-                {result && !result.error && (
-                  <div className="alert-info" style={{ marginBottom: 8 }}>
-                    Opdateret: {result.added} nye · {result.updated} eksisterende · {result.total} i alt
+                  </span>
+                  <span style={{ fontSize: 12, color: 'var(--text2)', flexShrink: 0 }}>
+                    {isOpen ? '▲' : '▼'}
+                  </span>
+                </button>
+                {isOpen && (
+                  <div style={{ borderTop: '1px solid var(--border)' }}>
+                    {afdHolds.length > 0
+                      ? <HoldTable holdList={afdHolds} />
+                      : <p style={{ padding: '12px 16px', fontSize: 13, color: 'var(--text2)', margin: 0 }}>
+                          Ingen hold — klik Sync for at hente
+                        </p>
+                    }
                   </div>
                 )}
-                {result?.error && (
-                  <div className="alert-warn" style={{ marginBottom: 8 }}>{result.error}</div>
-                )}
-
-                {afdHolds.length === 0
-                  ? <div className="card card-pad" style={{ fontSize: 13, color: 'var(--text2)' }}>
-                      Ingen hold — klik Opdatér for at synkronisere.
-                    </div>
-                  : <HoldTable holdList={afdHolds} />
-                }
               </div>
             )
           })}
-
-          {/* Hold importeret uden afdelings-ID — grupperet efter aktivitet_titel */}
-          {orphanHolds.length > 0 && (() => {
-            const byAktivitet = {}
-            orphanHolds.forEach(h => {
-              const key = h.aktivitet_titel || 'Uden aktivitet'
-              if (!byAktivitet[key]) byAktivitet[key] = []
-              byAktivitet[key].push(h)
-            })
-            const groupNames = Object.keys(byAktivitet).sort((a, b) => a.localeCompare(b, 'da'))
-            const toggleGroup = name => setOpenGroups(prev => {
-              const next = new Set(prev)
-              next.has(name) ? next.delete(name) : next.add(name)
-              return next
-            })
-            return (
-              <div style={{ marginBottom: 24 }}>
-                <h3 style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase',
-                             letterSpacing: '.5px', color: 'var(--text2)', margin: '0 0 10px' }}>
-                  Øvrige hold ({orphanHolds.length}) — ikke tilknyttet en afdeling
-                </h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {groupNames.map(name => {
-                    const groupHolds = byAktivitet[name]
-                    const isOpen     = openGroups.has(name)
-                    const activeCount = groupHolds.filter(h => h.aktiv).length
-                    return (
-                      <div key={name} className="card">
-                        <button
-                          onClick={() => toggleGroup(name)}
-                          style={{
-                            width: '100%', display: 'flex', alignItems: 'center',
-                            justifyContent: 'space-between', padding: '12px 16px',
-                            background: 'none', border: 'none', cursor: 'pointer',
-                            textAlign: 'left',
-                          }}
-                        >
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <span style={{ fontWeight: 600, fontSize: 14 }}>{name}</span>
-                            <span style={{ fontSize: 12, color: 'var(--text3)' }}>
-                              {activeCount}/{groupHolds.length} aktive
-                            </span>
-                          </span>
-                          <span style={{ fontSize: 13, color: 'var(--text2)', flexShrink: 0 }}>
-                            {isOpen ? '▲' : '▼'}
-                          </span>
-                        </button>
-                        {isOpen && (
-                          <div style={{ borderTop: '1px solid var(--border)' }}>
-                            <HoldTable holdList={groupHolds} />
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )
-          })()}
-        </>
+        </div>
       )}
     </>
   )
