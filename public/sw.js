@@ -17,6 +17,8 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return
+  // Kun http/https — chrome-extension://, moz-extension:// osv. kan ikke caches
+  if (!e.request.url.startsWith('http')) return
   e.respondWith(
     caches.match(e.request).then(cached => {
       const network = fetch(e.request).then(res => {
