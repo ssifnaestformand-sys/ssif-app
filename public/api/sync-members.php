@@ -81,8 +81,8 @@ if (!$accessToken) {
     exit;
 }
 
-// ── Hent aktive hold fra Firestore (til aktiv_i_app-flag) ─────────────────────
-$aktivHolds = fetch_aktiv_holds($projectId, $accessToken);
+// ── Hent hold-titler fra Firestore (til brug ved opslag på conventus_id) ──────
+$aktivHolds = fetch_holds_map($projectId, $accessToken);
 
 // ── Hent medlemmer fra Conventus ──────────────────────────────────────────────
 $ctx = stream_context_create(['http' => ['timeout' => 60, 'ignore_errors' => true]]);
@@ -204,11 +204,9 @@ function extract_member(SimpleXMLElement $k, int $id, array $holdsMap): ?array {
                 $holdId = (int)trim((string)$child);
                 if (!$holdId || isset($seen[$holdId])) continue;
                 $seen[$holdId] = true;
-                $info  = $holdsMap[$holdId] ?? null;
                 $holds[] = [
                     'conventus_id' => $holdId,
-                    'titel'        => $info['titel'] ?? "Hold #{$holdId}",
-                    'aktiv_i_app'  => $info !== null && $info['aktiv'],
+                    'titel'        => $holdsMap[$holdId]['titel'] ?? "Hold #{$holdId}",
                 ];
             }
         }
@@ -222,32 +220,38 @@ function extract_member(SimpleXMLElement $k, int $id, array $holdsMap): ?array {
     ];
 }
 
-// ── Firestore: hent aktive hold ───────────────────────────────────────────────
+// ── Firestore: hent hold-titler (conventus_id → titel) ───────────────────────
+// Bruges til at give holds et rigtigt navn i member-dokumentet,
+// da Conventus XML kun giver ID'er på holdtilmeldinger.
+// Alle holds hentes — ingen filtrering.
 
-function fetch_aktiv_holds(string $projectId, string $token): array {
-    $url  = "https://firestore.googleapis.com/v1/projects/{$projectId}"
-          . "/databases/(default)/documents/holds?pageSize=500";
-    $resp = @file_get_contents($url, false, stream_context_create(['http' => [
-        'header'        => "Authorization: Bearer {$token}\r\n",
-        'timeout'       => 10,
-        'ignore_errors' => true,
-    ]]));
-    if (!$resp) return [];
+function fetch_holds_map(string $projectId, string $token): array {
+    $map      = [];
+    $pageToken = null;
 
-    // Returnerer [conventus_id => ['aktiv' => bool, 'titel' => string]]
-    // så extract_member kan slå hold-titler op (Conventus XML giver kun ID'er)
-    $map = [];
-    foreach ((json_decode($resp, true)['documents'] ?? []) as $doc) {
-        $f  = $doc['fields'] ?? [];
-        $id = (int)($f['conventus_id']['integerValue']
-                 ?? $f['conventus_id']['doubleValue']
-                 ?? 0);
-        if (!$id) continue;
-        $map[$id] = [
-            'aktiv' => ($f['aktiv']['booleanValue'] ?? false) === true,
-            'titel' => $f['titel']['stringValue'] ?? "Hold #{$id}",
-        ];
-    }
+    do {
+        $qs   = 'pageSize=500' . ($pageToken ? '&pageToken=' . urlencode($pageToken) : '');
+        $url  = "https://firestore.googleapis.com/v1/projects/{$projectId}"
+              . "/databases/(default)/documents/holds?{$qs}";
+        $resp = @file_get_contents($url, false, stream_context_create(['http' => [
+            'header'        => "Authorization: Bearer {$token}\r\n",
+            'timeout'       => 15,
+            'ignore_errors' => true,
+        ]]));
+        if (!$resp) break;
+
+        $data = json_decode($resp, true);
+        foreach ($data['documents'] ?? [] as $doc) {
+            $f  = $doc['fields'] ?? [];
+            $id = (int)($f['conventus_id']['integerValue']
+                     ?? $f['conventus_id']['doubleValue']
+                     ?? 0);
+            if (!$id) continue;
+            $map[$id] = ['titel' => $f['titel']['stringValue'] ?? "Hold #{$id}"];
+        }
+        $pageToken = $data['nextPageToken'] ?? null;
+    } while ($pageToken);
+
     return $map;
 }
 
