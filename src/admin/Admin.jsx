@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, Fragment } from 'react'
 import { auth, db, storage } from '../firebase.js'
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
 import {
-  GoogleAuthProvider, FacebookAuthProvider,
+  GoogleAuthProvider,
   signInWithPopup, signInWithEmailAndPassword,
   sendPasswordResetEmail,
   signOut, onAuthStateChanged,
@@ -231,14 +231,6 @@ function LoginPage({ onDemoLogin }) {
               >
                 <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
                 Fortsæt med Google
-              </button>
-              <button
-                className="btn btn-ghost"
-                style={{ width: '100%', height: 42, fontSize: 14, background: '#1877F2', color: 'white', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}
-                onClick={() => social(FacebookAuthProvider)} disabled={loading === 'social'}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
-                Fortsæt med Facebook
               </button>
             </div>
 
@@ -503,7 +495,7 @@ function MessagesPage({ userDoc, authUser }) {
   // Lyt på beskeder i real-time
   useEffect(() => {
     return onSnapshot(
-      query(collection(db, 'messages'), orderBy('createdAt', 'desc'), limit(100)),
+      query(collection(db, 'messages'), orderBy('oprettet', 'desc'), limit(100)),
       snap => { setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setMsgLoading(false) }
     )
   }, [])
@@ -516,40 +508,44 @@ function MessagesPage({ userDoc, authUser }) {
   async function send(e) {
     e.preventDefault()
     if (!text.trim() || selectedIds.length === 0) return
+    const msgText    = text.trim()
+    const msgIds     = [...selectedIds]
+    const authorName = userDoc?.displayName || authUser.email
     setSending(true)
     try {
-      const authorName = userDoc?.displayName || authUser.email
+      // Opret ét besked-dokument per hold
+      const selHolds = availableHolds.filter(h => msgIds.includes(String(h.conventus_id)))
+      for (const h of selHolds) {
+        await addDoc(collection(db, 'messages'), {
+          holdId:        String(h.conventus_id),
+          holdNavn:      h.titel,
+          afsenderNavn:  authorName,
+          afsenderUid:   authUser.uid,
+          tekst:         msgText,
+          reaktioner:    { '👍': 0, '✅': 0, '❤️': 0 },
+          userReactions: {},
+          oprettet:      serverTimestamp(),
+          createdAt:     serverTimestamp(),
+        })
+      }
+      setText('')
+      setSelectedIds([])
 
-      // targetHolds gemmes som array af {conventus_id, titel}
-      const targetHolds = availableHolds
-        .filter(h => selectedIds.includes(String(h.conventus_id)))
-        .map(h => ({ conventus_id: h.conventus_id, titel: h.titel }))
-
-      await addDoc(collection(db, 'messages'), {
-        text:        text.trim(),
-        authorUid:   authUser.uid,
-        authorName,
-        targetHolds,
-        createdAt:   serverTimestamp(),
-      })
-
-      // Push-notifikation (fejler lydløst)
-      try {
-        const idToken = await auth.currentUser?.getIdToken() ?? ''
+      // Push-notifikation: fire-and-forget (ingen await — undgår at UI hænger)
+      auth.currentUser?.getIdToken().then(idToken => {
         const fd = new FormData()
-        fd.append('idToken',  idToken)
-        fd.append('holdIds',  JSON.stringify(selectedIds))
-        fd.append('text',     text.trim())
-        fd.append('title',    `Besked fra ${authorName}`)
-        await fetch(`${BASE}api/send-push.php`, {
+        fd.append('idToken', idToken)
+        fd.append('holdIds', JSON.stringify(msgIds))
+        fd.append('text',    msgText)
+        fd.append('title',   `Besked fra ${authorName}`)
+        fetch(`${BASE}api/send-push.php`, {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${idToken}` },
           body: fd,
-        })
-      } catch {}
-
-      setText('')
-      setSelectedIds([])
+        }).catch(() => {})
+      }).catch(() => {})
+    } catch (err) {
+      alert('Besked kunne ikke sendes: ' + err.message)
     } finally {
       setSending(false)
     }
@@ -647,8 +643,8 @@ function MessagesPage({ userDoc, authUser }) {
               {messages.map(m => (
                 <div key={m.id} className="msg-item">
                   <div className="msg-meta">
-                    <span className="msg-author">{m.authorName}</span>
-                    <span className="msg-time">{formatDate(m.createdAt)}</span>
+                    <span className="msg-author">{m.afsenderNavn || m.authorName}</span>
+                    <span className="msg-time">{formatDate(m.oprettet || m.createdAt)}</span>
                     <button
                       className="btn btn-ghost btn-sm"
                       style={{ marginLeft: 'auto', color: '#dc3545', padding: '2px 6px' }}
@@ -661,9 +657,11 @@ function MessagesPage({ userDoc, authUser }) {
                       <Icon name="trash" size={13} color="#dc3545" />
                     </button>
                   </div>
-                  <p className="msg-text">{m.text}</p>
+                  <p className="msg-text">{m.tekst || m.text}</p>
                   <div className="msg-holds">
-                    {(m.targetHolds ?? []).map((h, i) => (
+                    {m.holdNavn ? (
+                      <span className="badge badge-green">{m.holdNavn}</span>
+                    ) : (m.targetHolds ?? []).map((h, i) => (
                       <HoldPill
                         key={typeof h === 'object' ? (h.conventus_id ?? i) : h}
                         holdId={h}
@@ -1591,7 +1589,7 @@ function AppUsersPage() {
   const [users,   setUsers]   = useState([])
   const [loading, setLoading] = useState(true)
   const [search,  setSearch]  = useState('')
-  const [sortKey, setSortKey] = useState('lastSeen')  // lastSeen | displayName | createdAt
+  const [sortKey, setSortKey] = useState('lastSeen')
 
   useEffect(() => {
     getDocs(collection(db, 'users'))
@@ -1599,22 +1597,37 @@ function AppUsersPage() {
       .finally(() => setLoading(false))
   }, [])
 
+  // Opbyg email → bruger-opslag (primaryEmail og login-email)
+  const emailToUser = {}
+  users.forEach(u => {
+    const e = (u.email || u.primaryEmail || '').toLowerCase()
+    if (e) emailToUser[e] = u
+  })
+
+  // Hjælper: normaliser extraEmails til [{email, verified}]
+  function getExtraEmails(u) {
+    return (u.extraEmails || []).map(e =>
+      typeof e === 'string' ? { email: e, verified: false } : e
+    )
+  }
+
   const ROLE_LABEL = { admin: 'Admin', trainer: 'Træner', Medlem: 'Medlem' }
   const ROLE_COLOR = { admin: 'badge-green', trainer: 'badge-blue', Medlem: 'badge-gray' }
 
   const q = search.trim().toLowerCase()
   const filtered = users
-    .filter(u =>
-      !q ||
-      (u.displayName || '').toLowerCase().includes(q) ||
-      (u.email       || '').toLowerCase().includes(q) ||
-      (u.primaryEmail|| '').toLowerCase().includes(q)
-    )
+    .filter(u => {
+      if (!q) return true
+      if ((u.displayName || '').toLowerCase().includes(q)) return true
+      const primary = (u.email || u.primaryEmail || '').toLowerCase()
+      if (primary.includes(q)) return true
+      return getExtraEmails(u).some(e => e.email.toLowerCase().includes(q))
+    })
     .sort((a, b) => {
       if (sortKey === 'displayName') return (a.displayName || '').localeCompare(b.displayName || '', 'da')
       const tsA = a[sortKey]?.toDate?.() ?? new Date(0)
       const tsB = b[sortKey]?.toDate?.() ?? new Date(0)
-      return tsB - tsA  // nyeste først
+      return tsB - tsA
     })
 
   const total    = users.length
@@ -1627,10 +1640,7 @@ function AppUsersPage() {
     return (
       <th style={{ cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
           onClick={() => setSortKey(k)}>
-        {label}
-        <span style={{ marginLeft: 4, opacity: active ? 1 : .3, fontSize: 10 }}>
-          {active ? '▼' : '▼'}
-        </span>
+        {label} <span style={{ opacity: active ? 1 : .25, fontSize: 10 }}>▼</span>
       </th>
     )
   }
@@ -1642,33 +1652,24 @@ function AppUsersPage() {
         <span className="text-muted" style={{ fontSize: 13 }}>{total} brugere i alt</span>
       </div>
 
-      {/* Stats */}
       <div className="stat-grid" style={{ marginBottom: 20 }}>
         <div className="stat-card">
-          <div className="stat-card-icon" style={{ background: '#e8f5ec' }}>
-            <Icon name="users" size={20} color="#1a5c2a" />
-          </div>
+          <div className="stat-card-icon" style={{ background: '#e8f5ec' }}><Icon name="users" size={20} color="#1a5c2a" /></div>
           <div className="stat-card-value" style={{ color: '#1a5c2a' }}>{total}</div>
           <div className="stat-card-label">Konti i alt</div>
         </div>
         <div className="stat-card">
-          <div className="stat-card-icon" style={{ background: '#eff6ff' }}>
-            <Icon name="person" size={20} color="#3b82f6" />
-          </div>
+          <div className="stat-card-icon" style={{ background: '#eff6ff' }}><Icon name="person" size={20} color="#3b82f6" /></div>
           <div className="stat-card-value" style={{ color: '#3b82f6' }}>{members}</div>
           <div className="stat-card-label">Klubmedlemmer</div>
         </div>
         <div className="stat-card">
-          <div className="stat-card-icon" style={{ background: '#fef9c3' }}>
-            <Icon name="shield" size={20} color="#ca8a04" />
-          </div>
+          <div className="stat-card-icon" style={{ background: '#fef9c3' }}><Icon name="shield" size={20} color="#ca8a04" /></div>
           <div className="stat-card-value" style={{ color: '#ca8a04' }}>{staff}</div>
           <div className="stat-card-label">Trænere / admins</div>
         </div>
         <div className="stat-card">
-          <div className="stat-card-icon" style={{ background: '#f0fdf4' }}>
-            <Icon name="check" size={20} color="#16a34a" />
-          </div>
+          <div className="stat-card-icon" style={{ background: '#f0fdf4' }}><Icon name="check" size={20} color="#16a34a" /></div>
           <div className="stat-card-value" style={{ color: '#16a34a' }}>{verified}</div>
           <div className="stat-card-label">Verificeret email</div>
         </div>
@@ -1683,7 +1684,7 @@ function AppUsersPage() {
           className="form-control"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="Søg navn eller email…"
+          placeholder="Søg navn, primær- eller ekstra-email…"
           style={{ paddingLeft: 36, paddingRight: search ? 36 : undefined }}
           autoComplete="off"
         />
@@ -1705,41 +1706,74 @@ function AppUsersPage() {
               <thead>
                 <tr>
                   <SortTh k="displayName" label="Navn" />
-                  <th>Email</th>
+                  <th>Email-forbindelser</th>
                   <th>Rolle</th>
-                  <th style={{ textAlign: 'center' }}>Email ✓</th>
                   <SortTh k="lastSeen"  label="Sidst aktiv" />
                   <SortTh k="createdAt" label="Oprettet" />
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(u => (
-                  <tr key={u.id}>
-                    <td style={{ fontWeight: 600, fontSize: 13 }}>
-                      {u.displayName || '–'}
-                    </td>
-                    <td style={{ fontSize: 12, color: 'var(--text2)' }}>
-                      {u.email || u.primaryEmail || '–'}
-                    </td>
-                    <td>
-                      <span className={`badge ${ROLE_COLOR[u.role] || 'badge-gray'}`}>
-                        {ROLE_LABEL[u.role] || u.role || 'Medlem'}
-                      </span>
-                    </td>
-                    <td style={{ textAlign: 'center' }}>
-                      {u.emailVerified
-                        ? <span style={{ color: '#16a34a', fontSize: 15 }}>✓</span>
-                        : <span style={{ color: 'var(--text3)', fontSize: 13 }}>–</span>
-                      }
-                    </td>
-                    <td style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
-                      {fmtRelative(u.lastSeen)}
-                    </td>
-                    <td style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
-                      {formatDate(u.createdAt)}
-                    </td>
-                  </tr>
-                ))}
+                {filtered.map(u => {
+                  const primary    = (u.email || u.primaryEmail || '').toLowerCase()
+                  const extras     = getExtraEmails(u)
+                  return (
+                    <tr key={u.id}>
+                      <td style={{ fontWeight: 600, fontSize: 13 }}>
+                        {u.displayName || '–'}
+                      </td>
+
+                      {/* Email-kolonne med relationer */}
+                      <td style={{ fontSize: 12 }}>
+                        {/* Primær email */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: extras.length ? 5 : 0 }}>
+                          <span style={{ color: u.emailVerified ? '#16a34a' : 'var(--text3)', fontWeight: 600, fontSize: 11 }}>
+                            {u.emailVerified ? '✓' : '○'}
+                          </span>
+                          <span style={{ color: 'var(--text)', fontWeight: 500 }}>{primary || '–'}</span>
+                          <span style={{ fontSize: 10, color: 'var(--text3)', background: 'var(--bg)', padding: '1px 5px', borderRadius: 4 }}>primær</span>
+                        </div>
+
+                        {/* Ekstra emails */}
+                        {extras.map((ex, i) => {
+                          const exLower    = ex.email.toLowerCase()
+                          const linkedUser = emailToUser[exLower]
+                          const isOwnUser  = linkedUser && linkedUser.id !== u.id
+                          return (
+                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 5, paddingLeft: 12, marginBottom: i < extras.length - 1 ? 3 : 0 }}>
+                              <span style={{ color: ex.verified ? '#16a34a' : '#f59e0b', fontWeight: 600, fontSize: 11 }}>
+                                {ex.verified ? '✓' : '?'}
+                              </span>
+                              <span style={{ color: ex.verified ? 'var(--text)' : 'var(--text2)' }}>{ex.email}</span>
+                              {ex.verified && (
+                                <span style={{ fontSize: 10, color: '#16a34a', background: '#f0fdf4', padding: '1px 5px', borderRadius: 4 }}>verificeret</span>
+                              )}
+                              {!ex.verified && (
+                                <span style={{ fontSize: 10, color: '#92400e', background: '#fef3c7', padding: '1px 5px', borderRadius: 4 }}>afventer</span>
+                              )}
+                              {isOwnUser && (
+                                <span style={{ fontSize: 10, color: '#5856d6', background: '#ede9fe', padding: '1px 5px', borderRadius: 4 }}>
+                                  ↔ {linkedUser.displayName || linkedUser.email || linkedUser.primaryEmail}
+                                </span>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </td>
+
+                      <td>
+                        <span className={`badge ${ROLE_COLOR[u.role] || 'badge-gray'}`}>
+                          {ROLE_LABEL[u.role] || u.role || 'Medlem'}
+                        </span>
+                      </td>
+                      <td style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+                        {fmtRelative(u.lastSeen)}
+                      </td>
+                      <td style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+                        {formatDate(u.createdAt)}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

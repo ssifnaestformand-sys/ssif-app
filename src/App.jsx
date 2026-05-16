@@ -4,7 +4,7 @@ import { auth, db, getAppMessaging } from './firebase.js'
 import { getToken, onMessage } from 'firebase/messaging'
 import {
   GoogleAuthProvider,
-  FacebookAuthProvider,
+
   signInWithPopup,
   getRedirectResult,
   signInWithEmailAndPassword,
@@ -16,7 +16,7 @@ import {
 } from 'firebase/auth'
 import {
   collection, query, where, orderBy, onSnapshot,
-  addDoc, updateDoc, arrayUnion, arrayRemove, serverTimestamp, limit,
+  addDoc, updateDoc, deleteField, arrayUnion, arrayRemove, serverTimestamp, limit, increment,
   doc, getDoc, setDoc, getDocs,
 } from 'firebase/firestore'
 
@@ -392,15 +392,7 @@ function LoginScreen({ onDemoLogin, initialError }) {
             {loading === 'google' ? <span className="spinner spinner--dark" /> : 'Log ind med Google'}
           </button>
 
-          <button className="btn btn-social btn-facebook" onClick={() => social(FacebookAuthProvider)}
-                  disabled={!!loading}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="white" style={{ flexShrink: 0 }}>
-              <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-            </svg>
-            {loading === 'facebook' ? <span className="spinner spinner--white" /> : 'Log ind med Facebook'}
-          </button>
-
-          <div className="login-divider"><span>eller</span></div>
+<div className="login-divider"><span>eller</span></div>
 
           {/* Email/adgangskode */}
           <form onSubmit={emailLogin} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -518,8 +510,8 @@ function parseSessions(traeningstider) {
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
-function DashboardScreen({ user, conversations, news, onNavigate, showPushBanner, onEnableNotifications }) {
-  const totalUnread = conversations.reduce((s, c) => s + (c.unread || 0), 0)
+function DashboardScreen({ user, unreadMsgs = 0, news, onNavigate, showPushBanner, onEnableNotifications }) {
+  const totalUnread = unreadMsgs
   const [calHolds, setCalHolds] = useState([])
 
   useEffect(() => {
@@ -953,7 +945,9 @@ function NewsDetailScreen({ article }) {
   )
 }
 
-// ─── Messages (Firestore + fallback) ─────────────────────────────────────────
+// ─── Messages (feed med emoji-reaktioner) ─────────────────────────────────────
+
+const EMOJIS = ['👍', '✅', '❤️']
 
 function fmtMsgDate(ts) {
   if (!ts) return ''
@@ -965,113 +959,343 @@ function fmtMsgDate(ts) {
   return d.toLocaleDateString('da-DK', { day: 'numeric', month: 'short' })
 }
 
-function MessagesScreen({ onSelectConversation, conversations, isLive, adminMessages, readMsgIds, onSelectAdminMsg, onEnableNotifications }) {
-  const [, rerender] = useState(0)
+function MessageCard({ msg, unread, onTap }) {
+  const total = Object.values(msg.reaktioner || {}).reduce((s, n) => s + (Number(n) || 0), 0)
+  return (
+    <div className="news-preview-card" onClick={onTap}
+         style={{ borderLeft: `3px solid ${unread ? 'var(--green)' : 'transparent'}`, cursor: 'pointer' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+        <div style={{
+          width: 36, height: 36, borderRadius: 18,
+          background: 'var(--green)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        }}>
+          <span style={{ color: 'white', fontSize: 12, fontWeight: 700 }}>
+            {(msg.afsenderNavn || msg.authorName || 'T').trim().split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+          </span>
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text)' }}>
+            {msg.afsenderNavn || msg.authorName || 'Træner'}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+            {msg.holdNavn || (msg.targetHolds?.[0]?.titel) || ''}{(msg.holdNavn || msg.targetHolds?.[0]?.titel) ? ' · ' : ''}{fmtMsgDate(msg.oprettet || msg.createdAt)}
+          </div>
+        </div>
+        {unread && <span style={{ width: 8, height: 8, borderRadius: 4, background: 'var(--green)', flexShrink: 0 }} />}
+      </div>
+      <p style={{ fontSize: 14, color: 'var(--text)', lineHeight: 1.5, margin: 0 }}>
+        {((msg.tekst || msg.text) ?? '').slice(0, 130)}{((msg.tekst || msg.text) ?? '').length > 130 ? '…' : ''}
+      </p>
+      {total > 0 && (
+        <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+          {EMOJIS.map(e => {
+            const c = Number(msg.reaktioner?.[e] || 0)
+            return c > 0 ? <span key={e} style={{ fontSize: 12, color: 'var(--text2)' }}>{e} {c}</span> : null
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
 
-  function getPermission() {
-    try { return 'Notification' in window ? Notification.permission : null }
-    catch { return null }
+function MessageDetailScreen({ msg, user, onBack }) {
+  const [reak, setReak]       = useState({ ...(msg.reaktioner || { '👍': 0, '✅': 0, '❤️': 0 }) })
+  const [userR, setUserR]     = useState({ ...(msg.userReactions || {}) })
+  const [saving, setSaving]   = useState(false)
+  const myEmoji = userR[user.uid] ?? null
+
+  async function react(emoji) {
+    if (saving || user.isDemo) return
+    setSaving(true)
+    const ref  = doc(db, 'messages', msg.id)
+    const prev = myEmoji
+    try {
+      const updates = {}
+      if (prev === emoji) {
+        updates[`userReactions.${user.uid}`] = deleteField()
+        updates[`reaktioner.${emoji}`]       = increment(-1)
+        setUserR(u => { const n = { ...u }; delete n[user.uid]; return n })
+        setReak(r  => ({ ...r, [emoji]: Math.max(0, (Number(r[emoji]) || 0) - 1) }))
+      } else {
+        if (prev) {
+          updates[`reaktioner.${prev}`] = increment(-1)
+          setReak(r => ({ ...r, [prev]: Math.max(0, (Number(r[prev]) || 0) - 1) }))
+        }
+        updates[`userReactions.${user.uid}`] = emoji
+        updates[`reaktioner.${emoji}`]       = increment(1)
+        setUserR(u => ({ ...u, [user.uid]: emoji }))
+        setReak(r  => ({ ...r, [emoji]: (Number(r[emoji]) || 0) + 1 }))
+      }
+      await updateDoc(ref, updates)
+    } catch {}
+    setSaving(false)
   }
-
-  async function handleNotifToggle() {
-    const perm = getPermission()
-    if (perm === 'granted' || perm === null) return
-    await onEnableNotifications()
-    rerender(n => n + 1)
-  }
-
-  const permission = getPermission()
-  const isGranted  = permission === 'granted'
-  const isDenied   = permission === 'denied'
 
   return (
     <div className="screen">
-      {/* Klub-beskeder fra admin */}
-      {(adminMessages ?? []).length > 0 && (
-        <>
-          <SectionHeader title="Klubbeskeder" />
-          <div className="list-group" style={{ marginTop: 0 }}>
-            {(adminMessages ?? []).map((msg, i) => {
-              const unread = !readMsgIds?.has(msg.id)
-              const preview = msg.text?.slice(0, 55) + (msg.text?.length > 55 ? '…' : '')
+      <div className="article">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
+          <div style={{ width: 48, height: 48, borderRadius: 24, background: 'var(--green)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <span style={{ color: 'white', fontSize: 16, fontWeight: 700 }}>
+              {(msg.afsenderNavn || msg.authorName || 'T').trim().split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+            </span>
+          </div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 16 }}>{msg.afsenderNavn || msg.authorName || 'Træner'}</div>
+            <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>
+              {msg.holdNavn || (msg.targetHolds?.[0]?.titel) || ''}{(msg.holdNavn || msg.targetHolds?.[0]?.titel) ? ' · ' : ''}{fmtMsgDate(msg.oprettet || msg.createdAt)}
+            </div>
+          </div>
+        </div>
+
+        <div className="article-divider" />
+
+        {(msg.tekst || msg.text || '').split('\n').filter(Boolean).map((line, i) => (
+          <p key={i} className="article-para">{line}</p>
+        ))}
+
+        {/* Reaktioner */}
+        <div style={{ marginTop: 28 }}>
+          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text3)', textAlign: 'center', marginBottom: 14, textTransform: 'uppercase', letterSpacing: '.4px' }}>
+            Reager på beskeden
+          </p>
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+            {EMOJIS.map(e => {
+              const count  = Number(reak[e] || 0)
+              const active = myEmoji === e
               return (
-                <div key={msg.id}>
-                  {i > 0 && <div className="list-separator list-separator--indent" />}
-                  <button className="conv-item" onClick={() => onSelectAdminMsg(msg)}>
-                    <Avatar initials="SS" color="var(--green)" size={48} />
-                    <div className="conv-body">
-                      <div className="conv-top">
-                        <span className="conv-name" style={{ fontWeight: unread ? 700 : 500 }}>
-                          {msg.authorName || 'SSIF'}
-                        </span>
-                        <span className={`conv-time ${unread ? 'conv-time--unread' : ''}`}>
-                          {fmtMsgDate(msg.createdAt)}
-                        </span>
-                      </div>
-                      <div className="conv-bottom">
-                        <span className="conv-last">{preview}</span>
-                        {unread && <Badge count={1} />}
-                      </div>
-                    </div>
-                  </button>
-                </div>
+                <button key={e} onClick={() => react(e)} disabled={saving}
+                  style={{
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                    padding: '12px 20px', borderRadius: 14, minWidth: 72,
+                    border: `2px solid ${active ? 'var(--green)' : 'var(--border)'}`,
+                    background: active ? 'var(--green-soft)' : 'var(--surface)',
+                    cursor: saving ? 'default' : 'pointer',
+                    transition: 'all .15s', WebkitTapHighlightColor: 'transparent',
+                  }}>
+                  <span style={{ fontSize: 26 }}>{e}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: active ? 'var(--green)' : 'var(--text2)' }}>
+                    {count}
+                  </span>
+                </button>
               )
             })}
           </div>
-        </>
+        </div>
+
+        <div style={{ marginTop: 24, padding: '10px 14px', background: 'var(--bg)', borderRadius: 8, textAlign: 'center' }}>
+          <p style={{ fontSize: 12, color: 'var(--text3)', margin: 0 }}>
+            Kun trænere kan sende beskeder
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ComposeSheet({ user, onClose }) {
+  const [holds,  setHolds]  = useState([])
+  const [holdId, setHoldId] = useState('')
+  const [tekst,  setTekst]  = useState('')
+  const [saving, setSaving] = useState(false)
+  const [done,   setDone]   = useState(false)
+
+  useEffect(() => {
+    getDocs(query(collection(db, 'holds'), where('aktiv', '==', true)))
+      .then(snap => {
+        let all = snap.docs.map(d => d.data())
+        if (user.role !== 'admin') {
+          const mine = new Set((user.holds || []).map(String))
+          all = all.filter(h => mine.has(String(h.conventus_id)))
+        }
+        all.sort((a, b) =>
+          (a.aktivitet_titel || '').localeCompare(b.aktivitet_titel || '', 'da') ||
+          (a.titel || '').localeCompare(b.titel || '', 'da')
+        )
+        setHolds(all)
+        if (all.length === 1) setHoldId(String(all[0].conventus_id))
+      })
+      .catch(() => {})
+  }, [])
+
+  async function send(e) {
+    e.preventDefault()
+    if (!holdId || !tekst.trim()) return
+    setSaving(true)
+    const hold = holds.find(h => String(h.conventus_id) === holdId)
+    try {
+      await addDoc(collection(db, 'messages'), {
+        holdId:        holdId,
+        holdNavn:      hold?.titel || holdId,
+        afsenderNavn:  user.name   || user.email,
+        afsenderUid:   user.uid,
+        tekst:         tekst.trim(),
+        reaktioner:    { '👍': 0, '✅': 0, '❤️': 0 },
+        userReactions: {},
+        oprettet:      serverTimestamp(),
+        createdAt:     serverTimestamp(),
+      })
+      setDone(true)
+      setTimeout(onClose, 1400)
+    } catch (err) {
+      alert('Fejl: ' + err.message)
+      setSaving(false)
+    }
+  }
+
+  if (done) return (
+    <div style={{ padding: '60px 24px', textAlign: 'center' }}>
+      <div style={{ fontSize: 44, marginBottom: 10 }}>✅</div>
+      <p style={{ fontSize: 17, fontWeight: 700 }}>Besked sendt!</p>
+    </div>
+  )
+
+  return (
+    <div style={{ padding: '16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+        <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)' }}>Ny besked</h2>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+          <Icon name="x" size={22} color="var(--text3)" />
+        </button>
+      </div>
+      <form onSubmit={send}>
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 6 }}>Send til hold</label>
+          <select className="form-control" value={holdId} onChange={e => setHoldId(e.target.value)} required style={{ fontSize: 15 }}>
+            <option value="">Vælg hold…</option>
+            {holds.map(h => <option key={h.conventus_id} value={String(h.conventus_id)}>{h.titel}</option>)}
+          </select>
+        </div>
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 6 }}>Besked</label>
+          <textarea className="form-control" rows={6} value={tekst} onChange={e => setTekst(e.target.value)}
+            placeholder="Skriv din besked til holdet…" required style={{ resize: 'none', fontSize: 15 }} autoFocus />
+        </div>
+        <button className="btn btn-primary" style={{ width: '100%', height: 48, fontSize: 15 }}
+                disabled={saving || !holdId || !tekst.trim()}>
+          {saving ? 'Sender…' : 'Send besked'}
+        </button>
+      </form>
+    </div>
+  )
+}
+
+function FeedScreen({ user, onSelectMsg, onMarkSeen, onEnableNotifications }) {
+  const [msgs,    setMsgs]    = useState([])
+  const [loading, setLoading] = useState(true)
+  const [compose, setCompose] = useState(false)
+  const seenTs = useRef(parseInt(localStorage.getItem('ssif_msgs_seen') || '0', 10))
+
+  const isTrainer = user.role === 'trainer' || user.role === 'admin'
+  const holdIds   = [...new Set([
+    ...(user.holdIds       || []).map(String),
+    ...(user.holds         || []).map(String),
+    ...(user.familyMembers || []).filter(m => m.holdId).map(m => String(m.holdId)),
+  ])]
+
+  useEffect(() => {
+    const q = query(collection(db, 'messages'), orderBy('oprettet', 'desc'), limit(60))
+    return onSnapshot(q, snap => {
+      const all = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      const filtered = isTrainer
+        ? all
+        : all.filter(m => {
+            if (!m.holdId) {
+              // Gammel format med targetHolds
+              return (m.targetHolds || []).some(h => {
+                const id = typeof h === 'object' ? String(h.conventus_id) : String(h)
+                return holdIds.includes(id)
+              })
+            }
+            return holdIds.includes(String(m.holdId))
+          })
+      setMsgs(filtered)
+      setLoading(false)
+    }, () => setLoading(false))
+  }, [])
+
+  useEffect(() => {
+    // Mark as seen when entering messages tab
+    const now = Date.now()
+    seenTs.current = now
+    localStorage.setItem('ssif_msgs_seen', String(now))
+    onMarkSeen()
+  }, [])
+
+  function isUnread(msg) {
+    const ts = (msg.oprettet || msg.createdAt)?.toDate?.().getTime() ?? 0
+    return ts > seenTs.current
+  }
+
+  function getPermission() {
+    try { return 'Notification' in window ? Notification.permission : null } catch { return null }
+  }
+  const perm      = getPermission()
+  const isGranted = perm === 'granted'
+  const isDenied  = perm === 'denied'
+
+  if (compose) {
+    return (
+      <div className="screen">
+        <ComposeSheet user={user} onClose={() => setCompose(false)} />
+      </div>
+    )
+  }
+
+  return (
+    <div className="screen">
+      {/* Compose knap for trænere */}
+      {isTrainer && (
+        <div style={{ padding: '12px 16px 4px' }}>
+          <button className="btn btn-primary" style={{ width: '100%', height: 46, fontSize: 15, gap: 8 }}
+                  onClick={() => setCompose(true)}>
+            <Icon name="send" size={17} color="white" />
+            Send besked til hold
+          </button>
+        </div>
       )}
 
-      {/* Direkte samtaler */}
       <div className="section-header-row">
-        <span className="section-header-text">Samtaler</span>
-        <FirestoreDot live={isLive} />
-      </div>
-      <div className="list-group" style={{ marginTop: 0 }}>
-        {conversations.map((conv, i) => (
-          <div key={conv.id}>
-            {i > 0 && <div className="list-separator list-separator--indent" />}
-            <button className="conv-item" onClick={() => onSelectConversation(conv)}>
-              <div style={{ position: 'relative' }}>
-                <Avatar initials={conv.avatar || conv.name?.slice(0,2).toUpperCase()} color={conv.avatarColor || '#1a5c2a'} size={48} />
-                {conv.isGroup && (
-                  <span className="group-indicator">
-                    <Icon name="users" size={9} color="white" />
-                  </span>
-                )}
-              </div>
-              <div className="conv-body">
-                <div className="conv-top">
-                  <span className="conv-name">{conv.name}</span>
-                  <span className={`conv-time ${conv.unread ? 'conv-time--unread' : ''}`}>{conv.time}</span>
-                </div>
-                <div className="conv-bottom">
-                  <span className="conv-last">{conv.lastMessage}</span>
-                  {conv.unread > 0 && <Badge count={conv.unread} />}
-                </div>
-              </div>
-            </button>
-          </div>
-        ))}
+        <span className="section-header-text">Beskeder</span>
       </div>
 
+      {loading ? (
+        <div style={{ padding: '48px', textAlign: 'center' }}>
+          <div className="loading-dots"><span/><span/><span/></div>
+        </div>
+      ) : msgs.length === 0 ? (
+        <div style={{ padding: '48px 28px', textAlign: 'center' }}>
+          <Icon name="message" size={44} color="var(--text3)" />
+          <p style={{ marginTop: 14, fontSize: 15, color: 'var(--text2)', fontWeight: 600 }}>Ingen beskeder endnu</p>
+          <p style={{ fontSize: 13, color: 'var(--text3)', marginTop: 6, lineHeight: 1.5 }}>
+            Trænere sender beskeder til holdet her.{'\n'}Du kan reagere med emoji.
+          </p>
+        </div>
+      ) : (
+        <div className="card-list">
+          {msgs.map(msg => (
+            <MessageCard key={msg.id} msg={msg} unread={isUnread(msg)} onTap={() => onSelectMsg(msg)} />
+          ))}
+        </div>
+      )}
+
+      {/* Notifikationsindstillinger */}
       <SectionHeader title="Indstillinger" />
       <div className="list-group">
-        <button
-          className="list-item"
-          onClick={handleNotifToggle}
-          disabled={isGranted || isDenied}
-          style={{ cursor: isGranted || isDenied ? 'default' : 'pointer' }}
-        >
+        <button className="list-item"
+          onClick={() => { if (!isGranted && !isDenied && perm !== null) onEnableNotifications() }}
+          disabled={isGranted || isDenied || perm === null}
+          style={{ cursor: (isGranted || isDenied || perm === null) ? 'default' : 'pointer' }}>
           <div className="list-item-icon" style={{ background: isGranted ? 'var(--green-soft)' : 'var(--bg)' }}>
             <Icon name="bell" size={17} color={isGranted ? 'var(--green)' : 'var(--text3)'} />
           </div>
           <div className="list-item-body">
             <span className="list-item-title">Notifikationer</span>
             <span className="list-item-detail">
-              {isGranted  ? 'Aktiveret – du modtager beskeder'
-             : isDenied   ? 'Blokeret – tillad i telefonens indstillinger'
-             : permission === null ? 'Ikke understøttet i denne browser'
-             : 'Tryk for at modtage notifikationer'}
+              {isGranted ? 'Aktiveret – du modtager beskeder'
+             : isDenied  ? 'Blokeret – tillad i telefonens indstillinger'
+             : perm === null ? 'Ikke understøttet'
+             : 'Tryk for at modtage notifikationer fra trænerne'}
             </span>
           </div>
           <div className={`notif-checkbox ${isGranted ? 'notif-checkbox--checked' : ''}`}>
@@ -1079,172 +1303,7 @@ function MessagesScreen({ onSelectConversation, conversations, isLive, adminMess
           </div>
         </button>
       </div>
-
       <div style={{ height: 8 }} />
-    </div>
-  )
-}
-
-// ─── Broadcast (admin-besked, read-only) ─────────────────────────────────────
-
-function BroadcastScreen({ message }) {
-  const holds = (message.targetHolds ?? []).map(h =>
-    typeof h === 'object' ? h.titel : h
-  )
-  return (
-    <div className="screen">
-      <div className="article">
-        <div className="article-meta">
-          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
-            {message.authorName || 'SSIF'}
-          </span>
-          <span style={{ fontSize: 12, color: 'var(--text3)' }}>
-            {fmtMsgDate(message.createdAt)}
-          </span>
-        </div>
-        <div className="article-divider" />
-        {message.text?.split('\n').filter(Boolean).map((line, i) => (
-          <p key={i} className="article-para">{line}</p>
-        ))}
-        {holds.length > 0 && (
-          <div style={{ marginTop: 20, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-            <span style={{ fontSize: 12, color: 'var(--text2)' }}>Sendt til:</span>
-            {holds.map((name, i) => (
-              <span key={i} className="category-pill"
-                    style={{ background: 'var(--green-soft)', color: 'var(--green)' }}>
-                {name}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ─── Chat (Firestore real-time messages) ─────────────────────────────────────
-
-function ChatScreen({ conversation, user }) {
-  const isDemo = !!user?.isDemo
-  const [messages, setMessages] = useState(isDemo ? (conversation.messages || []) : [])
-  const [text, setText]         = useState('')
-  const [sending, setSending]   = useState(false)
-  const bottomRef               = useRef(null)
-
-  // Subscribe to Firestore messages (skipped in demo mode)
-  useEffect(() => {
-    if (isDemo) {
-      setMessages(conversation.messages || [])
-      return
-    }
-    const q = query(
-      collection(db, 'conversations', String(conversation.id), 'messages'),
-      orderBy('timestamp', 'asc'),
-      limit(100)
-    )
-    const unsub = onSnapshot(q,
-      snap => {
-        if (!snap.empty) {
-          setMessages(snap.docs.map(d => {
-            const data = d.data()
-            return {
-              id: d.id,
-              sender: data.sender || '',
-              text: data.text || '',
-              time: data.timestamp?.toDate().toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' }) || '',
-              isMe: data.senderId === user.uid,
-            }
-          }))
-        } else {
-          setMessages(conversation.messages || [])
-        }
-      },
-      () => setMessages(conversation.messages || [])
-    )
-    return unsub
-  }, [conversation.id, isDemo, user.uid])
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
-
-  async function send(e) {
-    e.preventDefault()
-    const msg = text.trim()
-    if (!msg) return
-    setText('')
-
-    if (isDemo) {
-      setMessages(prev => [...prev, {
-        id: Date.now(),
-        sender: user.name,
-        text: msg,
-        time: new Date().toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' }),
-        isMe: true,
-      }])
-      return
-    }
-
-    setSending(true)
-    try {
-      const convRef = doc(db, 'conversations', String(conversation.id))
-      await addDoc(collection(convRef, 'messages'), {
-        sender:    user.name,
-        senderId:  user.uid,
-        text:      msg,
-        timestamp: serverTimestamp(),
-      })
-      // Opdatér parent-dokument så liste-visningen viser seneste besked og sortering passer
-      await updateDoc(convRef, {
-        lastMessage: `${user.name}: ${msg}`,
-        updatedAt:   serverTimestamp(),
-      }).catch(() => {})
-    } catch {
-      setMessages(prev => [...prev, {
-        id:     Date.now(),
-        sender: user.name,
-        text:   msg,
-        time:   new Date().toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' }),
-        isMe:   true,
-      }])
-    } finally {
-      setSending(false)
-    }
-  }
-
-  return (
-    <div className="chat-screen">
-      <div className="chat-messages">
-        {messages.map((msg, i) => {
-          const showName = !msg.isMe && conversation.isGroup &&
-            (i === 0 || messages[i - 1].sender !== msg.sender)
-          return (
-            <div key={msg.id} className={`bubble-row ${msg.isMe ? 'bubble-row--me' : ''}`}>
-              {!msg.isMe && (
-                <Avatar
-                  initials={msg.sender.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
-                  color={conversation.avatarColor || '#1a5c2a'}
-                  size={28}
-                />
-              )}
-              <div className="bubble-wrap">
-                {showName && <span className="bubble-sender">{msg.sender}</span>}
-                <div className={`bubble ${msg.isMe ? 'bubble--me' : 'bubble--them'}`}>{msg.text}</div>
-                <span className="bubble-time">{msg.time}</span>
-              </div>
-            </div>
-          )
-        })}
-        <div ref={bottomRef} />
-      </div>
-
-      <form className="chat-input-bar" onSubmit={send}>
-        <input className="chat-input" value={text} onChange={e => setText(e.target.value)}
-          placeholder={isDemo ? 'Demo – besked sendes ikke…' : 'Besked…'} />
-        <button className="chat-send" type="submit" disabled={!text.trim() || sending}>
-          <Icon name="send" size={18} color="white" />
-        </button>
-      </form>
     </div>
   )
 }
@@ -1733,17 +1792,10 @@ export default function App() {
   const [activeTab, setActiveTab]                 = useState('dashboard')
   const [selectedTeam, setSelectedTeam]           = useState(null)
   const [selectedArticle, setSelectedArticle]     = useState(null)
-  const [selectedConv, setSelectedConv]           = useState(null)
-  const [selectedAdminMsg, setSelectedAdminMsg]   = useState(null)
+  const [selectedMsg,  setSelectedMsg]            = useState(null)
+  const [msgUnread,    setMsgUnread]              = useState(0)
   const [news, setNews]                           = useState([])
   const [newsLive, setNewsLive]                   = useState(false)
-  const [convos, setConvos]                       = useState([])
-  const [convosLive, setConvosLive]               = useState(false)
-  const [adminMsgs, setAdminMsgs]                 = useState([])
-  const [readMsgIds, setReadMsgIds]               = useState(() => {
-    try { return new Set(JSON.parse(localStorage.getItem('ssif-read') || '[]')) }
-    catch { return new Set() }
-  })
   const [loginError, setLoginError]               = useState('')
   const [pushGranted, setPushGranted]             = useState(false)
   const [verifyMsg, setVerifyMsg]                 = useState('')
@@ -1781,9 +1833,6 @@ export default function App() {
       const snap = await getDoc(ref)
       if (snap.exists()) {
         profile = snap.data()
-        const updates = { lastSeen: serverTimestamp() }
-        if (profile.emailVerified !== fbUser.emailVerified) updates.emailVerified = fbUser.emailVerified
-        updateDoc(ref, updates).catch(() => {})
       } else {
         profile = {
           primaryEmail:  fbUser.email  || '',
@@ -1798,7 +1847,6 @@ export default function App() {
       }
 
       // Hent hold-IDs fra members-samlingen (synkroniseret fra Conventus).
-      // Bruges til filtrering af admin-beskeder og push-notifikationer.
       if (fbUser.email) {
         const mSnap = await getDocs(query(
           collection(db, 'members'),
@@ -1809,6 +1857,16 @@ export default function App() {
             if (h.conventus_id) memberHoldIds.push(String(h.conventus_id))
           })
         )
+      }
+
+      // Skriv lastSeen + sammenslåede holdIds til Firestore (bruges af push-notifikationer)
+      if (snap.exists()) {
+        const updates = { lastSeen: serverTimestamp() }
+        if (profile.emailVerified !== fbUser.emailVerified) updates.emailVerified = fbUser.emailVerified
+        if (memberHoldIds.length > 0) {
+          updates.holdIds = [...new Set([...(profile.holdIds || []).map(String), ...memberHoldIds])]
+        }
+        updateDoc(ref, updates).catch(() => {})
       }
     } catch {}
 
@@ -1885,25 +1943,27 @@ export default function App() {
     return unsub
   }, [user?.uid])
 
-  // ── Firestore: conversations ─────────────────────────────────────────────
+  // ── Ulæste beskeder (til tab-badge) ─────────────────────────────────────
   useEffect(() => {
     if (!user) return
-    const q = query(collection(db, 'conversations'), orderBy('updatedAt', 'desc'))
-    const unsub = onSnapshot(q,
-      snap => { if (!snap.empty) { setConvos(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setConvosLive(true) } },
-      () => setConvosLive(false)
-    )
-    return unsub
-  }, [user?.uid])
-
-  // ── Firestore: admin-beskeder (messages-collection) ─────────────────────
-  useEffect(() => {
-    if (!user) return
-    return onSnapshot(
-      query(collection(db, 'messages'), orderBy('createdAt', 'desc'), limit(50)),
-      snap => setAdminMsgs(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
-      () => {}
-    )
+    const seenTs = parseInt(localStorage.getItem('ssif_msgs_seen') || '0', 10)
+    const userHoldIds = new Set([
+      ...(user.holdIds       || []).map(String),
+      ...(user.holds         || []).map(String),
+      ...(user.familyMembers || []).filter(m => m.holdId).map(m => String(m.holdId)),
+    ])
+    const q = query(collection(db, 'messages'), orderBy('oprettet', 'desc'), limit(60))
+    return onSnapshot(q, snap => {
+      const count = snap.docs.filter(d => {
+        const data = d.data()
+        const ts   = (data.oprettet || data.createdAt)?.toDate?.().getTime() ?? 0
+        const inHold = data.holdId
+          ? userHoldIds.has(String(data.holdId))
+          : (data.targetHolds || []).some(h => userHoldIds.has(typeof h === 'object' ? String(h.conventus_id) : String(h)))
+        return ts > seenTs && inHold
+      }).length
+      setMsgUnread(count)
+    }, () => {})
   }, [user?.uid])
 
   // ── FCM: knappen vises/skjules via synkron check (ingen useEffect-timing) ─
@@ -1955,27 +2015,7 @@ export default function App() {
 
   // ── Navigation ────────────────────────────────────────────────────────────
   function switchTab(tab) {
-    setActiveTab(tab); setSelectedTeam(null); setSelectedArticle(null); setSelectedConv(null); setSelectedAdminMsg(null)
-  }
-
-  // Åbn samtale og nulstil ulæst-tæller (lokalt + Firestore)
-  function handleSelectConversation(conv) {
-    setSelectedConv(conv)
-    if (conv.unread) {
-      setConvos(prev => prev.map(c => c.id === conv.id ? { ...c, unread: 0 } : c))
-      updateDoc(doc(db, 'conversations', String(conv.id)), { unread: 0 }).catch(() => {})
-    }
-  }
-
-  // Åbn admin-besked og marker som læst
-  function handleSelectAdminMsg(msg) {
-    setSelectedAdminMsg(msg)
-    setReadMsgIds(prev => {
-      const next = new Set(prev)
-      next.add(msg.id)
-      localStorage.setItem('ssif-read', JSON.stringify([...next]))
-      return next
-    })
+    setActiveTab(tab); setSelectedTeam(null); setSelectedArticle(null); setSelectedMsg(null)
   }
 
   function navigateFromDashboard(dest, data) {
@@ -1987,9 +2027,9 @@ export default function App() {
   async function handleLogout() {
     isDemoRef.current = false
     setUser(null); setActiveTab('dashboard')
-    setSelectedTeam(null); setSelectedArticle(null); setSelectedConv(null)
-    setNewsLive(false); setConvosLive(false)
-    setNews([]); setConvos([])
+    setSelectedTeam(null); setSelectedArticle(null); setSelectedMsg(null)
+    setNewsLive(false)
+    setNews([])
     try { await signOut(auth) } catch {}
   }
 
@@ -2021,30 +2061,11 @@ export default function App() {
     headerTitle = selectedTeam.name; onBack = () => setSelectedTeam(null); backLabel = 'Hold'
   } else if (activeTab === 'news' && selectedArticle) {
     headerTitle = 'Nyhed'; onBack = () => setSelectedArticle(null); backLabel = 'Nyheder'
-  } else if (activeTab === 'messages' && selectedConv) {
-    headerTitle = selectedConv.name; onBack = () => setSelectedConv(null); backLabel = 'Beskeder'
-  } else if (activeTab === 'messages' && selectedAdminMsg) {
-    headerTitle = 'Besked'; onBack = () => setSelectedAdminMsg(null); backLabel = 'Beskeder'
+  } else if (activeTab === 'messages' && selectedMsg) {
+    headerTitle = 'Besked'; onBack = () => setSelectedMsg(null); backLabel = 'Beskeder'
   }
 
-  // Admin-beskeder filtreret til brugerens hold
-  const _userHoldIds = new Set([
-    ...(user.holds         ?? []).map(String),
-    ...(user.holdIds       ?? []).map(String),
-    ...(user.familyMembers ?? []).map(m => String(m.holdId)).filter(Boolean),
-  ])
-  const relevantAdminMsgs = user.isDemo
-    ? adminMsgs
-    : _userHoldIds.size > 0
-      ? adminMsgs.filter(m => (m.targetHolds ?? []).some(h => {
-          const id = typeof h === 'object' ? String(h.conventus_id) : String(h)
-          return _userHoldIds.has(id)
-        }))
-      : []
-
-  const unreadConvos = convos.reduce((s, c) => s + (c.unread || 0), 0)
-  const unreadAdmin  = relevantAdminMsgs.filter(m => !readMsgIds.has(m.id)).length
-  const totalUnread  = unreadConvos + unreadAdmin
+  const totalUnread = msgUnread
 
   return (
     <div className="app">
@@ -2052,7 +2073,7 @@ export default function App() {
 
       <main className="app-content">
         {activeTab === 'dashboard' && (
-          <DashboardScreen user={user} conversations={convos} news={news} onNavigate={navigateFromDashboard}
+          <DashboardScreen user={user} unreadMsgs={msgUnread} news={news} onNavigate={navigateFromDashboard}
             showPushBanner={canRequestPush()} onEnableNotifications={handleEnableNotifications} />
         )}
         {activeTab === 'profil' && (
@@ -2074,20 +2095,15 @@ export default function App() {
         )}
         {activeTab === 'messages' && !user.emailVerified ? (
           <UnverifiedScreen user={user} onLogout={handleLogout} />
-        ) : activeTab === 'messages' && !selectedConv && !selectedAdminMsg ? (
-          <MessagesScreen
-            conversations={convos}
-            isLive={convosLive}
-            adminMessages={relevantAdminMsgs}
-            readMsgIds={readMsgIds}
-            onSelectConversation={handleSelectConversation}
-            onSelectAdminMsg={handleSelectAdminMsg}
+        ) : activeTab === 'messages' && !selectedMsg ? (
+          <FeedScreen
+            user={user}
+            onSelectMsg={setSelectedMsg}
+            onMarkSeen={() => setMsgUnread(0)}
             onEnableNotifications={handleEnableNotifications}
           />
-        ) : activeTab === 'messages' && selectedConv ? (
-          <ChatScreen conversation={selectedConv} user={user} />
-        ) : activeTab === 'messages' && selectedAdminMsg ? (
-          <BroadcastScreen message={selectedAdminMsg} />
+        ) : activeTab === 'messages' && selectedMsg ? (
+          <MessageDetailScreen msg={selectedMsg} user={user} onBack={() => setSelectedMsg(null)} />
         ) : null}
       </main>
 

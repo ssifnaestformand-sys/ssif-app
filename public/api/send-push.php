@@ -168,8 +168,17 @@ function getFcmTokens(string $projectId, string $accessToken, array $holdIds): a
                 continue;
             }
 
-            // Tjek users.holds array
+            // Tjek users.holds array (trænere og backoffice-brugere)
             foreach ($fields['holds']['arrayValue']['values'] ?? [] as $v) {
+                $id = (string)($v['stringValue'] ?? $v['integerValue'] ?? '');
+                if ($id !== '' && in_array($id, $holdSet, true)) {
+                    $tokens[] = $fcmToken;
+                    continue 2;
+                }
+            }
+
+            // Tjek users.holdIds array (synkroniseret fra Conventus via members-collection)
+            foreach ($fields['holdIds']['arrayValue']['values'] ?? [] as $v) {
                 $id = (string)($v['stringValue'] ?? $v['integerValue'] ?? '');
                 if ($id !== '' && in_array($id, $holdSet, true)) {
                     $tokens[] = $fcmToken;
