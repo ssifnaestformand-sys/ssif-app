@@ -1,29 +1,27 @@
-name: Synkronisér Conventus-medlemmer (timesvis)
+name: Daglig Conventus-synkronisering
 
 on:
   schedule:
-    - cron: '0 * * * *'   # Hver time
+    - cron: '0 4 * * *'   # Kl. 04:00 UTC hver nat
 
 jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger synkronisering
+      - name: Synkronisér hold og afdelinger
         run: |
-          # --max-time 30: vi venter kun på at serveren bekræfter modtagelse.
-          # PHP kører videre med ignore_user_abort(true) selv om curl afbryder.
-          # Exit code 28 (timeout) er forventet og acceptabelt.
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+            https://app.sejssvejbaek-if.dk/api/sync-holds.php \
+            -H "X-Sync-Secret: ${{ secrets.SYNC_SECRET }}" \
+            --max-time 120 || echo "timeout")
+          echo "sync-holds HTTP: $HTTP"
+          [[ "$HTTP" =~ ^[45] ]] && echo "Hold-sync fejlede" && exit 1 || true
+
+      - name: Synkronisér medlemmer
+        run: |
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
             https://app.sejssvejbaek-if.dk/api/sync-members.php \
             -H "X-Sync-Secret: ${{ secrets.SYNC_SECRET }}" \
             --max-time 30 || echo "timeout")
-
-          echo "HTTP: $HTTP_CODE"
-
-          # Fejl kun hvis serveren svarer med en reel HTTP-fejl (4xx/5xx)
-          if [[ "$HTTP_CODE" =~ ^[45] ]]; then
-            echo "Serverfejl: HTTP $HTTP_CODE"
-            exit 1
-          fi
-
-          echo "Synkronisering igangsat (PHP kører videre på serveren)"
+          echo "sync-members HTTP: $HTTP"
+          [[ "$HTTP" =~ ^[45] ]] && echo "Member-sync fejlede" && exit 1 || true

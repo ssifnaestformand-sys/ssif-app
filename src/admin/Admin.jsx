@@ -935,11 +935,9 @@ function NewsPage({ userDoc, authUser }) {
  */
 function TeamsPage({ userDoc, authUser }) {
   const [holds,         setHolds]        = useState([])
-  const [afdelingListe, setAfdelingListe] = useState(null) // null=loading, []=loaded — fra Conventus
+  const [afdelinger,    setAfdelinger]   = useState(null) // null=loading — fra Firestore
   const [users,         setUsers]        = useState([])
   const [loading,       setLoading]      = useState(true)
-  const [syncing,       setSyncing]      = useState(false)
-  const [syncResult,    setSyncResult]   = useState(null)
   const [saving,        setSaving]       = useState(null)
   const [expanded,      setExpanded]     = useState(null)
   const [editForm,      setEditForm]     = useState({ traeningstider: '', traener_uid: '' })
@@ -965,63 +963,14 @@ function TeamsPage({ userDoc, authUser }) {
     getDocs(collection(db, 'users')).then(snap =>
       setUsers(snap.docs.map(d => ({ id: d.id, ...d.data() })))
     )
-    // Hent afdelingsliste fra Conventus — vises direkte, ingen Firestore-mellemled
-    fetch(`${BASE}api/conventus.php?endpoint=afdelinger`)
-      .then(r => r.ok ? r.json() : null)
-      .then(data => setAfdelingListe(data?.afdelinger || []))
-      .catch(() => setAfdelingListe([]))
+    // Afdelinger hentes fra Firestore — populeres af sync-holds.php (daglig cron)
+    getDocs(collection(db, 'afdelinger'))
+      .then(snap => setAfdelinger(
+        snap.docs.map(d => ({ id: d.id, ...d.data() }))
+                 .sort((a, b) => (a.navn || a.id).localeCompare(b.navn || b.id, 'da'))
+      ))
+      .catch(() => setAfdelinger([]))
   }, [])
-
-  async function syncAll() {
-    setSyncing(true)
-    setSyncResult(null)
-    try {
-      const afdRes = await fetch(`${BASE}api/conventus.php?endpoint=afdelinger`)
-      if (!afdRes.ok) throw new Error(`HTTP ${afdRes.status}`)
-      const afdData = await afdRes.json()
-      const allAfd  = afdData.afdelinger ?? []
-      if (!allAfd.length) throw new Error('Ingen afdelinger fra Conventus')
-      setAfdelingListe(allAfd)
-
-      // Byg eksisterende holds-map én gang
-      const existingSnap = await getDocs(collection(db, 'holds'))
-      const existingMap  = {}
-      existingSnap.docs.forEach(d => { existingMap[String(d.data().conventus_id)] = d.ref })
-
-      let totalAdded = 0, totalUpdated = 0
-      for (const afd of allAfd) {
-        const res  = await fetch(`${BASE}api/conventus.php?endpoint=afdeling&id=${afd.id}`)
-        if (!res.ok) continue
-        const data = await res.json()
-        for (const ch of (data.holds ?? [])) {
-          const docId = String(ch.conventus_id)
-          const fields = {
-            conventus_id:        ch.conventus_id,
-            titel:               ch.titel,
-            aktivitet_titel:     ch.aktivitet_titel || '',
-            periode_fra:         ch.periode_fra     || '',
-            periode_til:         ch.periode_til     || '',
-            beskrivelse:         ch.beskrivelse     || '',
-            afdeling_id:         afd.id,
-            sidst_synkroniseret: serverTimestamp(),
-          }
-          if (existingMap[docId]) {
-            await updateDoc(existingMap[docId], fields); totalUpdated++
-          } else {
-            await setDoc(doc(db, 'holds', docId), { ...fields, aktiv: false, traener_uid: '', traeningstider: '' }); totalAdded++
-            existingMap[docId] = doc(db, 'holds', docId)
-          }
-        }
-        await setDoc(doc(db, 'afdelinger', afd.id), { navn: afd.titel, sidst_hentet: serverTimestamp() }, { merge: true })
-      }
-      setSyncResult({ afdelinger: allAfd.length, added: totalAdded, updated: totalUpdated })
-      loadHolds()
-    } catch (e) {
-      setSyncResult({ error: e.message })
-    } finally {
-      setSyncing(false)
-    }
-  }
 
   async function toggleAktiv(hold) {
     setSaving(hold.conventus_id + '-aktiv')
@@ -1154,37 +1103,24 @@ function TeamsPage({ userDoc, authUser }) {
     )
   }
 
-  const isReady = !loading && afdelingListe !== null
+  const isReady = !loading && afdelinger !== null
 
   return (
     <>
       <div className="page-header">
         <h1 className="page-title">Hold</h1>
-        <button className="btn btn-primary" onClick={syncAll} disabled={syncing}>
-          <Icon name="link" size={15} color="white" />
-          {syncing ? 'Synkroniserer…' : 'Sync'}
-        </button>
       </div>
-
-      {syncResult && !syncResult.error && (
-        <div className="alert-info" style={{ marginBottom: 16 }}>
-          Synkronisering gennemført: {syncResult.afdelinger} afdelinger · {syncResult.added} nye hold · {syncResult.updated} opdaterede
-        </div>
-      )}
-      {syncResult?.error && (
-        <div className="alert-warn" style={{ marginBottom: 16 }}>Fejl: {syncResult.error}</div>
-      )}
 
       {!isReady ? (
         <div className="card"><div className="loading-dots"><span/><span/><span/></div></div>
-      ) : afdelingListe.length === 0 ? (
-        <EmptyState icon="users" text="Ingen afdelinger — klik Sync for at hente fra Conventus" />
+      ) : afdelinger.length === 0 ? (
+        <EmptyState icon="users" text="Ingen afdelinger — data synkroniseres automatisk én gang i døgnet" />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {afdelingListe.map(afd => {
-            const afdHolds   = holds.filter(h => String(h.afdeling_id) === String(afd.id))
+          {afdelinger.map(afd => {
+            const afdHolds    = holds.filter(h => String(h.afdeling_id) === String(afd.id))
             const activeCount = afdHolds.filter(h => h.aktiv).length
-            const isOpen     = openAfd.has(afd.id)
+            const isOpen      = openAfd.has(afd.id)
             return (
               <div key={afd.id} className="card">
                 <button
@@ -1194,9 +1130,9 @@ function TeamsPage({ userDoc, authUser }) {
                            background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
                 >
                   <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontWeight: 600, fontSize: 14 }}>{afd.titel}</span>
+                    <span style={{ fontWeight: 600, fontSize: 14 }}>{afd.navn || afd.id}</span>
                     <span style={{ fontSize: 12, color: 'var(--text3)' }}>
-                      {afdHolds.length > 0 ? `${activeCount}/${afdHolds.length} aktive` : 'ikke synkroniseret'}
+                      {afdHolds.length > 0 ? `${activeCount}/${afdHolds.length} aktive` : '–'}
                     </span>
                   </span>
                   <span style={{ fontSize: 12, color: 'var(--text2)', flexShrink: 0 }}>
@@ -1208,7 +1144,7 @@ function TeamsPage({ userDoc, authUser }) {
                     {afdHolds.length > 0
                       ? <HoldTable holdList={afdHolds} />
                       : <p style={{ padding: '12px 16px', fontSize: 13, color: 'var(--text2)', margin: 0 }}>
-                          Ingen hold — klik Sync for at hente
+                          Ingen hold importeret endnu
                         </p>
                     }
                   </div>

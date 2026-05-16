@@ -57,6 +57,13 @@ jobs:
           local-dir: ./dist/
           server-dir: /customers/7/8/f/sejssvejbaek-if.dk/httpd.www/app/
 
+      - name: Synkronisér Conventus-hold
+        continue-on-error: true
+        run: |
+          curl -s -X POST https://app.sejssvejbaek-if.dk/api/sync-holds.php \
+            -H "X-Sync-Secret: ${{ secrets.SYNC_SECRET }}" \
+            --max-time 120
+
       - name: Synkronisér Conventus-medlemmer
         continue-on-error: true
         run: |
