@@ -184,6 +184,31 @@ echo json_encode([
 
 // ── Hjælpefunktioner ─────────────────────────────────────────────────────────
 
+function xml_to_array(SimpleXMLElement $node): array {
+    $result = [];
+    $attrs  = (array)$node->attributes();
+    if (!empty($attrs['@attributes'])) $result['@attributes'] = $attrs['@attributes'];
+    foreach ($node->children() as $tag => $child) {
+        $val = xml_to_array($child);
+        if (isset($result[$tag])) {
+            if (!is_array($result[$tag]) || !array_key_exists(0, $result[$tag])) $result[$tag] = [$result[$tag]];
+            $result[$tag][] = $val;
+        } else {
+            $result[$tag] = $val;
+        }
+    }
+    return empty($result) ? trim((string)$node) : $result;
+}
+
+function get_field($node, string ...$keys): string {
+    if (!is_array($node)) return '';
+    foreach ($keys as $key) {
+        if (isset($node['@attributes'][$key]) && (string)$node['@attributes'][$key] !== '') return (string)$node['@attributes'][$key];
+        if (isset($node[$key]) && is_string($node[$key]) && $node[$key] !== '')              return $node[$key];
+    }
+    return '';
+}
+
 function fix_encoding(string $raw): string {
     if (preg_match('/encoding=["\']ISO-8859-1["\']/i', $raw)) {
         $raw = mb_convert_encoding($raw, 'UTF-8', 'ISO-8859-1');
@@ -192,22 +217,42 @@ function fix_encoding(string $raw): string {
     return $raw;
 }
 
+// Samme parsing-logik som extractHolds() i conventus.php — håndterer
+// både attributter og child-elementer, da Conventus bruger begge formater.
 function extract_holds(SimpleXMLElement $xml): array {
+    $arr  = xml_to_array($xml);
+    $seen = [];
+    return extract_holds_recursive($arr, $seen);
+}
+
+function extract_holds_recursive($node, array &$seen): array {
+    if (!is_array($node)) return [];
     $result = [];
-    $seen   = [];
-    foreach ($xml->xpath('//*[@id]') ?: [] as $node) {
-        $id    = (int)($node['id'] ?? 0);
-        $titel = trim((string)($node['titel'] ?? $node['navn'] ?? ''));
-        if (!$id || !$titel || isset($seen[$id])) continue;
-        $seen[$id] = true;
-        $result[] = [
-            'conventus_id'    => $id,
-            'titel'           => html_entity_decode($titel, ENT_HTML5 | ENT_QUOTES, 'UTF-8'),
-            'aktivitet_titel' => html_entity_decode(trim((string)($node['aktivitet_titel'] ?? $node['aktivitet'] ?? '')), ENT_HTML5 | ENT_QUOTES, 'UTF-8'),
-            'periode_fra'     => trim((string)($node['periode_fra']  ?? '')),
-            'periode_til'     => trim((string)($node['periode_til']  ?? '')),
-            'beskrivelse'     => html_entity_decode(trim((string)($node['om_holdet'] ?? $node['beskrivelse'] ?? '')), ENT_HTML5 | ENT_QUOTES, 'UTF-8'),
-        ];
+    $id     = get_field($node, 'id');
+    if ($id && !isset($seen[$id])) {
+        $titel          = get_field($node, 'titel', 'navn', 'name');
+        $aktivitetTitel = get_field($node, 'aktivitet_titel', 'aktivitet');
+        $periodeFra     = get_field($node, 'periode_fra', 'periodeStart', 'start');
+        $periodeTil     = get_field($node, 'periode_til', 'periodeslut', 'slut');
+        $beskrivelse    = get_field($node, 'om_holdet', 'beskrivelse', 'omholdet');
+        if ($titel) {
+            $seen[$id] = true;
+            $result[]  = [
+                'conventus_id'    => (int)$id,
+                'titel'           => html_entity_decode($titel,          ENT_HTML5 | ENT_QUOTES, 'UTF-8'),
+                'aktivitet_titel' => html_entity_decode($aktivitetTitel, ENT_HTML5 | ENT_QUOTES, 'UTF-8'),
+                'periode_fra'     => $periodeFra,
+                'periode_til'     => $periodeTil,
+                'beskrivelse'     => html_entity_decode($beskrivelse,    ENT_HTML5 | ENT_QUOTES, 'UTF-8'),
+            ];
+        }
+    }
+    foreach ($node as $key => $child) {
+        if ($key === '@attributes') continue;
+        $items = (is_array($child) && isset($child[0])) ? $child : [$child];
+        foreach ($items as $item) {
+            foreach (extract_holds_recursive($item, $seen) as $h) $result[] = $h;
+        }
     }
     return $result;
 }
