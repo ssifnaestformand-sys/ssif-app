@@ -203,7 +203,7 @@ echo json_encode([
 
 // ── Hjælpefunktioner ─────────────────────────────────────────────────────────
 
-function xml_to_array(SimpleXMLElement $node): array {
+function xml_to_array(SimpleXMLElement $node) {
     $result = [];
     $attrs  = (array)$node->attributes();
     if (!empty($attrs['@attributes'])) $result['@attributes'] = $attrs['@attributes'];
