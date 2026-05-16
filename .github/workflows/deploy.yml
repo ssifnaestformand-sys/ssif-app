@@ -70,4 +70,5 @@ jobs:
         run: |
           curl -s -X POST https://app.sejssvejbaek-if.dk/api/sync-members.php \
             -H "X-Sync-Secret: ${{ secrets.SYNC_SECRET }}" \
-            --max-time 300
+            --max-time 30 || true
+          echo "sync-members startet (kører i baggrunden)"
