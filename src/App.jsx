@@ -490,10 +490,76 @@ function BottomNav({ activeTab, onChange, unreadCount }) {
   )
 }
 
+// ─── Dashboard helpers ────────────────────────────────────────────────────────
+
+const _DAY_MAP = {
+  'mandag':0,'man':0,'tirsdag':1,'tir':1,'tirsd':1,
+  'onsdag':2,'ons':2,'torsdag':3,'tor':3,'tors':3,
+  'fredag':4,'fre':4,'lørdag':5,'lör':5,'søndag':6,'søn':6,'son':6,
+}
+const DAY_SHORT = ['Man','Tir','Ons','Tor','Fre','Lør','Søn']
+
+function parseSessions(traeningstider) {
+  if (!traeningstider) return []
+  const out = []
+  traeningstider.split(/[,;\n]+/).forEach(seg => {
+    const s = seg.trim().toLowerCase()
+    if (!s) return
+    let dayIdx = -1, best = ''
+    for (const [k, v] of Object.entries(_DAY_MAP)) {
+      if (s.startsWith(k) && k.length > best.length) { dayIdx = v; best = k }
+    }
+    if (dayIdx < 0) return
+    const m = seg.match(/(\d{1,2})[.:h](\d{2})/)
+    out.push({ dayIdx, time: m ? `${m[1].padStart(2,'0')}:${m[2]}` : '' })
+  })
+  return out
+}
+
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 function DashboardScreen({ user, conversations, news, onNavigate, showPushBanner, onEnableNotifications }) {
   const totalUnread = conversations.reduce((s, c) => s + (c.unread || 0), 0)
+  const [calHolds, setCalHolds] = useState([])
+
+  useEffect(() => {
+    const ids = new Set((user.holdIds || []).map(String))
+    ;(user.familyMembers || []).forEach(m => m.holdId && ids.add(String(m.holdId)))
+    if (!ids.size) return
+    getDocs(collection(db, 'holds'))
+      .then(snap => {
+        setCalHolds(
+          snap.docs.map(d => d.data())
+            .filter(h => ids.has(String(h.conventus_id)) && h.traeningstider)
+        )
+      })
+      .catch(() => {})
+  }, [JSON.stringify(user.holdIds), JSON.stringify(user.familyMembers)])
+
+  // Byg person-label map: conventus_id → navn (fra familyMembers)
+  const personLabel = {}
+  ;(user.familyMembers || []).forEach(m => {
+    if (m.holdId) personLabel[String(m.holdId)] = m.name
+  })
+
+  // Bygger ugeoversigt: sessions per dag
+  const today    = new Date()
+  const todayIdx = (today.getDay() + 6) % 7  // 0=Man … 6=Søn
+  const monday   = new Date(today)
+  monday.setDate(today.getDate() - todayIdx)
+  const weekDates = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(monday); d.setDate(monday.getDate() + i); return d
+  })
+
+  const byDay = [[], [], [], [], [], [], []]
+  calHolds.forEach(hold => {
+    parseSessions(hold.traeningstider).forEach(({ dayIdx, time }) => {
+      byDay[dayIdx].push({ hold, time })
+    })
+  })
+  byDay.forEach(day => day.sort((a, b) => a.time.localeCompare(b.time)))
+
+  const hasSessions = byDay.some(d => d.length > 0)
 
   return (
     <div className="screen">
@@ -540,6 +606,70 @@ function DashboardScreen({ user, conversations, news, onNavigate, showPushBanner
         </div>
       </div>
 
+      {/* ── Ugeoversigt ────────────────────────────── */}
+      <SectionHeader title="Ugeoversigt – træning" />
+      <div style={{ padding: '0 16px 4px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+          {weekDates.map((date, i) => {
+            const isToday    = i === todayIdx
+            const isPast     = i < todayIdx
+            const sessions   = byDay[i]
+            return (
+              <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                {/* Dag-label */}
+                <span style={{
+                  fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.3px',
+                  color: isToday ? 'var(--green)' : 'var(--text3)',
+                }}>
+                  {DAY_SHORT[i]}
+                </span>
+                {/* Dato-cirkel */}
+                <div style={{
+                  width: 26, height: 26, borderRadius: 13,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: isToday ? 'var(--green)' : 'transparent',
+                  color: isToday ? 'white' : isPast ? 'var(--text3)' : 'var(--text)',
+                  fontSize: 12, fontWeight: isToday ? 700 : 400,
+                }}>
+                  {date.getDate()}
+                </div>
+                {/* Træningssessioner */}
+                {sessions.map((s, j) => {
+                  const label = personLabel[String(s.hold.conventus_id)]
+                    || s.hold.titel?.split(/\s+/)[0]
+                    || '?'
+                  return (
+                    <button key={j}
+                      onClick={() => onNavigate('team-detail', s.hold)}
+                      style={{
+                        width: '100%', border: 'none', borderRadius: 5, padding: '3px 1px',
+                        background: isPast ? '#d1d5db' : 'var(--green)',
+                        color: 'white', fontSize: 9, fontWeight: 600,
+                        cursor: 'pointer', textAlign: 'center', lineHeight: 1.35,
+                        WebkitTapHighlightColor: 'transparent',
+                      }}
+                    >
+                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 2px' }}>
+                        {label}
+                      </div>
+                      {s.time && (
+                        <div style={{ opacity: .85, fontSize: 8 }}>{s.time}</div>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            )
+          })}
+        </div>
+        {!hasSessions && (
+          <p style={{ textAlign: 'center', fontSize: 12, color: 'var(--text3)', padding: '10px 0 4px' }}>
+            Ingen træningstider — tilføjes af trænerne i backoffice
+          </p>
+        )}
+      </div>
+
+      {/* ── Seneste nyheder ────────────────────────── */}
       <SectionHeader title="Seneste nyheder" />
       <div className="card-list">
         {news.slice(0, 2).map(article => (
@@ -653,6 +783,7 @@ function TeamsScreen({ onSelectTeam, user }) {
                                ?? fsHold?.aktivitet_titel
                                ?? null
                 const brugerApp = fsHold?.aktiv === true
+                const tappable  = !!fsHold
                 const detalje  = [
                   afdNavn,
                   fsHold?.traeningstider
@@ -672,14 +803,14 @@ function TeamsScreen({ onSelectTeam, user }) {
                         ? <span className="list-item-detail">{detalje}</span>
                         : null}
                     </div>
-                    {brugerApp && <Chevron />}
+                    {tappable && <Chevron />}
                   </>
                 )
 
                 return (
                   <div key={h.conventus_id ?? hi}>
                     {hi > 0 && <div className="list-separator" />}
-                    {brugerApp
+                    {tappable
                       ? <button className="list-item" onClick={() => onSelectTeam(fsHold)}>{inner}</button>
                       : <div className="list-item" style={{ cursor: 'default' }}>{inner}</div>
                     }
@@ -1848,7 +1979,8 @@ export default function App() {
   }
 
   function navigateFromDashboard(dest, data) {
-    if (dest === 'news-detail') { setActiveTab('news'); setSelectedArticle(data) }
+    if (dest === 'news-detail')  { setActiveTab('news');  setSelectedArticle(data) }
+    else if (dest === 'team-detail') { setActiveTab('teams'); setSelectedTeam(data) }
     else switchTab(dest)
   }
 

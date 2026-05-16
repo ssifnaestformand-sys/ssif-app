@@ -87,6 +87,7 @@ function Icon({ name, size = 18, color = 'currentColor', sw = 1.75 }) {
     x:        <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>,
     link:     <><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></>,
     calendar: <><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></>,
+    search:   <><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></>,
   }
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -993,19 +994,12 @@ function TeamsPage({ userDoc, authUser }) {
   const [expanded,      setExpanded]     = useState(null)
   const [editForm,      setEditForm]     = useState({ traeningstider: '', traener_uid: '' })
   const [openAfd,       setOpenAfd]      = useState(new Set())
+  const [search,        setSearch]       = useState('')
 
   function loadHolds() {
     setLoading(true)
     getDocs(collection(db, 'holds'))
-      .then(snap => {
-        const all = snap.docs.map(d => ({ _docId: d.id, ...d.data() }))
-        if (userDoc?.role !== 'admin' && userDoc?.holds?.length) {
-          const mine = new Set(userDoc.holds.map(String))
-          setHolds(all.filter(h => mine.has(String(h.conventus_id))))
-        } else {
-          setHolds(all)
-        }
-      })
+      .then(snap => setHolds(snap.docs.map(d => ({ _docId: d.id, ...d.data() }))))
       .finally(() => setLoading(false))
   }
 
@@ -1206,14 +1200,64 @@ function TeamsPage({ userDoc, authUser }) {
     )
   }
 
+  const searchQ       = search.trim().toLowerCase()
+  const searchActive  = searchQ.length > 0
+  const filteredHolds = searchActive
+    ? holds.filter(h =>
+        (h.titel           || '').toLowerCase().includes(searchQ) ||
+        (h.aktivitet_titel || '').toLowerCase().includes(searchQ)
+      )
+    : []
+
   return (
     <>
       <div className="page-header">
         <h1 className="page-title">Hold</h1>
       </div>
 
+      {/* Søgefelt */}
+      <div style={{ position: 'relative', marginBottom: 16 }}>
+        <span style={{
+          position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)',
+          pointerEvents: 'none', display: 'flex',
+        }}>
+          <Icon name="search" size={16} color="var(--text3)" />
+        </span>
+        <input
+          className="form-control"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Søg holdnavn eller sport…"
+          style={{ paddingLeft: 36, paddingRight: search ? 36 : undefined }}
+          autoComplete="off"
+        />
+        {search && (
+          <button
+            onClick={() => setSearch('')}
+            style={{
+              position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+              background: 'none', border: 'none', cursor: 'pointer', padding: 2,
+              display: 'flex', color: 'var(--text3)',
+            }}
+          >
+            <Icon name="x" size={16} color="var(--text3)" />
+          </button>
+        )}
+      </div>
+
       {!isReady ? (
         <div className="card"><div className="loading-dots"><span/><span/><span/></div></div>
+      ) : searchActive ? (
+        filteredHolds.length === 0 ? (
+          <EmptyState icon="users" text={`Ingen hold matcher "${search}"`} />
+        ) : (
+          <>
+            <p style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 8 }}>
+              {filteredHolds.length} hold fundet
+            </p>
+            <HoldTable holdList={filteredHolds} />
+          </>
+        )
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {afdelinger.length === 0 && holds.length === 0 && (
@@ -1228,8 +1272,8 @@ function TeamsPage({ userDoc, authUser }) {
             />
           ))}
           {(() => {
-            const afdIds    = new Set(afdelinger.map(a => String(a.id)))
-            const orphans   = holds.filter(h => !afdIds.has(String(h.afdeling_id)))
+            const afdIds  = new Set(afdelinger.map(a => String(a.id)))
+            const orphans = holds.filter(h => !afdIds.has(String(h.afdeling_id)))
             if (!orphans.length) return null
             return (
               <AfdSection
