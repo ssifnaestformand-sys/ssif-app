@@ -515,22 +515,23 @@ function DashboardScreen({ user, conversations, news, onNavigate, showPushBanner
           <p className="greeting-sub">God dag</p>
           <h2 className="greeting-name">{user.firstName || user.name} 👋</h2>
         </div>
-        <Avatar initials={user.initials || user.name.slice(0, 2).toUpperCase()} size={44} />
+        <button
+          onClick={() => onNavigate('profil')}
+          style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
+          aria-label="Gå til profil"
+        >
+          <Avatar initials={user.initials || user.name.slice(0, 2).toUpperCase()} size={44} />
+        </button>
       </div>
 
-      <div className="stat-row">
-        <div className="stat-card" onClick={() => onNavigate('teams')}>
-          <Icon name="calendar" size={22} color="var(--green)" />
-          <p className="stat-value">Søn 11.</p>
-          <p className="stat-label">Næste kamp</p>
-        </div>
+      <div className="stat-row" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
         <div className="stat-card" onClick={() => onNavigate('messages')}>
           <div style={{ position: 'relative', display: 'inline-flex' }}>
             <Icon name="message" size={22} color="#5856d6" />
             {totalUnread > 0 && <span className="stat-badge">{totalUnread}</span>}
           </div>
           <p className="stat-value" style={{ color: '#5856d6' }}>{totalUnread}</p>
-          <p className="stat-label">Beskeder</p>
+          <p className="stat-label">Ulæste beskeder</p>
         </div>
         <div className="stat-card" onClick={() => onNavigate('news')}>
           <Icon name="news" size={22} color="#ff9500" />
@@ -539,34 +540,28 @@ function DashboardScreen({ user, conversations, news, onNavigate, showPushBanner
         </div>
       </div>
 
-      <SectionHeader title="Kommende kampe" />
-      <div className="card-list">
-        {MATCHES.map(m => (
-          <div className="match-card" key={m.id}>
-            <div className="match-team-badge">
-              <Icon name="shirt" size={14} color="white" />
-            </div>
-            <div className="match-info">
-              <p className="match-teams"><strong>{m.team}</strong> vs. {m.opponent}</p>
-              <p className="match-meta">
-                {m.date} · {m.time} ·{' '}
-                <span style={{ color: m.isHome ? 'var(--green)' : 'var(--text2)' }}>
-                  {m.isHome ? 'Hjemmebane' : 'Udebane'}
-                </span>
-              </p>
-            </div>
-            <Icon name="location" size={16} color={m.isHome ? 'var(--green)' : 'var(--text3)'} />
-          </div>
-        ))}
-      </div>
-
       <SectionHeader title="Seneste nyheder" />
       <div className="card-list">
-        {news.slice(0, 3).map(article => (
+        {news.slice(0, 2).map(article => (
           <div className="news-preview-card" key={article.id} onClick={() => onNavigate('news-detail', article)}>
-            <CategoryPill label={article.category} color={article.categoryColor || '#1a5c2a'} />
+            {article.imageUrl && (
+              <img
+                src={article.imageUrl} alt=""
+                style={{ width: '100%', height: 150, objectFit: 'cover', borderRadius: 6, display: 'block' }}
+                onError={e => { e.target.style.display = 'none' }}
+              />
+            )}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <CategoryPill label={article.category} color={article.categoryColor || '#1a5c2a'} />
+              <span className="news-preview-date">{article.date}</span>
+            </div>
             <p className="news-preview-title">{article.title}</p>
-            <p className="news-preview-date">{article.date}</p>
+            {article.excerpt && (
+              <p style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.45, margin: 0 }}>
+                {article.excerpt.length > 90 ? article.excerpt.slice(0, 90) + '…' : article.excerpt}
+              </p>
+            )}
+            <span style={{ fontSize: 13, color: 'var(--green)', fontWeight: 600 }}>Læs mere →</span>
           </div>
         ))}
       </div>
