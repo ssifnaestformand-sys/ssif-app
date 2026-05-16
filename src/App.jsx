@@ -1060,20 +1060,25 @@ function ChatScreen({ conversation, user }) {
 
     setSending(true)
     try {
-      await addDoc(collection(db, 'conversations', String(conversation.id), 'messages'), {
-        sender: user.name,
-        senderId: user.uid,
-        text: msg,
+      const convRef = doc(db, 'conversations', String(conversation.id))
+      await addDoc(collection(convRef, 'messages'), {
+        sender:    user.name,
+        senderId:  user.uid,
+        text:      msg,
         timestamp: serverTimestamp(),
       })
+      // Opdatér parent-dokument så liste-visningen viser seneste besked og sortering passer
+      await updateDoc(convRef, {
+        lastMessage: `${user.name}: ${msg}`,
+        updatedAt:   serverTimestamp(),
+      }).catch(() => {})
     } catch {
-      // Firestore write failed – vis besked lokalt som fallback
       setMessages(prev => [...prev, {
-        id: Date.now(),
+        id:     Date.now(),
         sender: user.name,
-        text: msg,
-        time: new Date().toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' }),
-        isMe: true,
+        text:   msg,
+        time:   new Date().toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' }),
+        isMe:   true,
       }])
     } finally {
       setSending(false)
@@ -1812,10 +1817,13 @@ export default function App() {
     setActiveTab(tab); setSelectedTeam(null); setSelectedArticle(null); setSelectedConv(null); setSelectedAdminMsg(null)
   }
 
-  // Åbn samtale og nulstil ulæst-tæller lokalt
+  // Åbn samtale og nulstil ulæst-tæller (lokalt + Firestore)
   function handleSelectConversation(conv) {
     setSelectedConv(conv)
-    if (conv.unread) setConvos(prev => prev.map(c => c.id === conv.id ? { ...c, unread: 0 } : c))
+    if (conv.unread) {
+      setConvos(prev => prev.map(c => c.id === conv.id ? { ...c, unread: 0 } : c))
+      updateDoc(doc(db, 'conversations', String(conv.id)), { unread: 0 }).catch(() => {})
+    }
   }
 
   // Åbn admin-besked og marker som læst
