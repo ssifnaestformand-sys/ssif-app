@@ -970,6 +970,18 @@ function TeamsPage({ userDoc, authUser }) {
     })
   }
 
+  async function nulstilAfdelinger() {
+    if (!window.confirm('Slet alle afdelinger og fjern afdeling-tilknytning fra alle hold? Holdene beholdes men skal hentes igen.')) return
+    // Slet alle afdelinger-dokumenter
+    const afdSnap  = await getDocs(collection(db, 'afdelinger'))
+    await Promise.all(afdSnap.docs.map(d => deleteDoc(d.ref)))
+    // Fjern afdeling_id fra alle hold så de ikke hænger som forældreløse
+    const holdSnap = await getDocs(collection(db, 'holds'))
+    await Promise.all(holdSnap.docs.map(d => updateDoc(d.ref, { afdeling_id: '' })))
+    setAfdelinger([])
+    loadHolds()
+  }
+
   useEffect(() => {
     loadHolds()
     loadAfdelinger()
@@ -1177,6 +1189,10 @@ function TeamsPage({ userDoc, authUser }) {
     <>
       <div className="page-header">
         <h1 className="page-title">Hold</h1>
+        <button className="btn btn-ghost btn-sm" style={{ color: '#dc3545' }}
+                onClick={nulstilAfdelinger}>
+          Nulstil alle afdelinger
+        </button>
       </div>
 
       {/* ── Tilføj afdeling ── */}
