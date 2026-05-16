@@ -124,6 +124,7 @@ $now          = date('c');
 foreach ($afdelinger as $afdId => $afdNavn) {
     // Skriv altid afdeling — uanset om hold-fetch lykkes
     firestore_patch($projectId, $token, "afdelinger/{$afdId}", [
+        'id'           => $afdId,
         'navn'         => $afdNavn,
         'sidst_hentet' => $now,
     ]);
@@ -185,7 +186,12 @@ foreach (array_chunk($allHolds, 200) as $chunk) {
         ]])
     );
     $data = json_decode($resp ?: '', true);
-    if (isset($data['writeResults'])) $holdsWritten += count($data['writeResults']);
+    if (isset($data['writeResults'])) {
+        $holdsWritten += count($data['writeResults']);
+    } else {
+        // Gem første fejlsvar til debug
+        if (!isset($debugCommitError)) $debugCommitError = substr($resp ?: 'tom svar', 0, 500);
+    }
 }
 
 echo json_encode([
@@ -195,9 +201,12 @@ echo json_encode([
     'holds_written' => $holdsWritten,
     'synced'        => $now,
     'debug'         => [
-        'raw_bytes'    => $debugRawLen,
-        'xpath_nodes'  => $debugXpath,
-        'afd_sample'   => array_slice(array_values($afdelinger), 0, 3),
+        'raw_bytes'     => $debugRawLen,
+        'xpath_nodes'   => $debugXpath,
+        'afd_sample'    => array_slice(array_values($afdelinger), 0, 3),
+        'commit_error'  => $debugCommitError ?? null,
+        'token_ok'      => !empty($token),
+        'project_id'    => $projectId,
     ],
 ], JSON_UNESCAPED_UNICODE);
 
