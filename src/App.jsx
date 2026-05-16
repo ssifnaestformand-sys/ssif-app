@@ -594,16 +594,18 @@ function relevantHoldIds(user) {
 
 function TeamsScreen({ onSelectTeam, user }) {
   const [holds,         setHolds]         = useState([])
+  const [afdelinger,    setAfdelinger]    = useState([])
   const [loading,       setLoading]       = useState(true)
   const [linkedMembers, setLinkedMembers] = useState(null) // null=loading, []=ingen
 
   useEffect(() => {
-    // Hent ALLE hold fra Firestore (ikke kun aktiv: true) for at kunne slå
-    // holdnavne op for alle grupper — også dem der endnu ikke er aktiveret i appen
     getDocs(collection(db, 'holds'))
       .then(snap => setHolds(snap.docs.map(d => ({ _id: d.id, ...d.data() }))))
       .catch(() => {})
       .finally(() => setLoading(false))
+    getDocs(collection(db, 'afdelinger'))
+      .then(snap => setAfdelinger(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
+      .catch(() => {})
   }, [])
 
   // Hent Conventus-tilmeldinger for brugerens emails (primær + verificerede extra)
@@ -620,9 +622,12 @@ function TeamsScreen({ onSelectTeam, user }) {
       .catch(() => setLinkedMembers([]))
   }, [user.email, JSON.stringify(user.extraEmails)])
 
-  // Slå op på alle Firestore-hold for at rette navne og afgøre klikbarhed/app-status
+  // Opslag: holds og afdelinger fra Firestore
   const holdById = {}
   holds.forEach(h => { holdById[String(h.conventus_id)] = h })
+
+  const afdById = {}
+  afdelinger.forEach(a => { afdById[String(a.id)] = a })
 
   if (loading || linkedMembers === null) return (
     <div className="screen" style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text2)', fontSize: 13 }}>
@@ -654,12 +659,24 @@ function TeamsScreen({ onSelectTeam, user }) {
           {m.holds?.length > 0 ? (
             <div className="list-group" style={{ marginTop: 0 }}>
               {m.holds.map((h, hi) => {
-                const fsHold   = holdById[String(h.conventus_id)]
-                const navn     = fsHold?.titel || h.titel || `Hold #${h.conventus_id}`
-                // Holdet bruger appen til kommunikation hvis det er importeret OG aktivt
+                const fsHold    = holdById[String(h.conventus_id)]
+                // Brug fsHold.titel (fra Firestore) som kilde til sandheden.
+                // h.titel fra members kan indeholde forældet "Hold #ID".
+                const isIdOnly  = !fsHold?.titel || fsHold.titel.startsWith('Hold #')
+                const titel     = isIdOnly
+                  ? (h.titel?.startsWith('Hold #') ? null : h.titel) ?? null
+                  : fsHold.titel
+
+                // Afdelingsnavn fra afdelinger-samlingen
+                const afdNavn   = afdById[String(fsHold?.afdeling_id)]?.navn
+                  || fsHold?.aktivitet_titel
+                  || null
+
                 const brugerApp = fsHold?.aktiv === true
-                const detalje  = fsHold?.traeningstider
-                  || (fsHold?.periode_fra ? `${fsHold.periode_fra} – ${fsHold.periode_til}` : '')
+                const detalje   = [
+                  afdNavn,
+                  fsHold?.traeningstider || (fsHold?.periode_fra ? `${fsHold.periode_fra} – ${fsHold.periode_til}` : null),
+                ].filter(Boolean).join(' · ')
 
                 const inner = (
                   <>
@@ -669,11 +686,11 @@ function TeamsScreen({ onSelectTeam, user }) {
                       <Icon name="users" size={17} color={brugerApp ? 'var(--green)' : 'var(--text3)'} />
                     </div>
                     <div className="list-item-body">
-                      <span className="list-item-title">{navn}</span>
+                      <span className="list-item-title">
+                        {titel || `Conventus hold #${h.conventus_id}`}
+                      </span>
                       <span className="list-item-detail" style={{ color: brugerApp ? 'var(--green)' : 'var(--text3)' }}>
-                        {brugerApp
-                          ? `Bruger appen til kommunikation${detalje ? ' · ' + detalje : ''}`
-                          : 'Bruger ikke appen til kommunikation'}
+                        {detalje || (brugerApp ? 'Aktiv i appen' : 'Ikke aktiv i appen')}
                       </span>
                     </div>
                     {brugerApp && <Chevron />}
