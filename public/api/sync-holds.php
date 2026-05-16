@@ -171,15 +171,17 @@ foreach ($allHolds as $h) {
     ];
 }
 
-// Chunk på 400 — under Firestore-grænsen på 500, med luft til rate-limiting
-foreach (array_chunk($allWrites, 400) as $chunk) {
+// batchWrite (ikke commit) — ikke-transaktionel, designet til bulk-skriv
+// Chunk på 100 med 1s pause mellem kald for at undgå rate-limiting
+$chunks = array_chunk($allWrites, 100);
+foreach ($chunks as $i => $chunk) {
     $resp = @file_get_contents(
-        "https://firestore.googleapis.com/v1/{$base}:commit",
+        "https://firestore.googleapis.com/v1/projects/{$projectId}/databases/(default)/documents:batchWrite",
         false, stream_context_create(['http' => [
             'method'        => 'POST',
             'header'        => "Authorization: Bearer {$token}\r\nContent-Type: application/json\r\n",
             'content'       => json_encode(['writes' => $chunk]),
-            'timeout'       => 90,
+            'timeout'       => 60,
             'ignore_errors' => true,
         ]])
     );
@@ -189,7 +191,7 @@ foreach (array_chunk($allWrites, 400) as $chunk) {
     } else {
         if (!isset($debugCommitError)) $debugCommitError = substr($resp ?: 'tom svar', 0, 500);
     }
-    if (count($allWrites) > 400) usleep(500000); // 0.5s pause hvis flere chunks
+    if ($i < count($chunks) - 1) sleep(1); // 1s pause mellem kald
 }
 
 echo json_encode([
