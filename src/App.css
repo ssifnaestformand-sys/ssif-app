@@ -45,7 +45,7 @@ body {
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding-top: var(--header-h);
+  padding-top: calc(var(--header-h) + env(safe-area-inset-top, 0));
   padding-bottom: var(--tab-h);
 }
 
@@ -57,7 +57,7 @@ body {
   transform: translateX(-50%);
   width: 100%;
   max-width: 430px;
-  height: var(--header-h);
+  height: calc(var(--header-h) + env(safe-area-inset-top, 0));
   padding: 0 8px;
   padding-top: env(safe-area-inset-top, 0);
   display: flex;
@@ -170,7 +170,7 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 32px 24px 48px;
+  padding: max(env(safe-area-inset-top, 32px), 32px) 24px max(env(safe-area-inset-bottom, 48px), 48px);
   background: var(--surface);
   max-width: 430px;
   margin: 0 auto;
@@ -868,6 +868,8 @@ body {
   background: var(--green);
   max-width: 430px;
   margin: 0 auto;
+  padding-top: env(safe-area-inset-top, 0);
+  padding-bottom: env(safe-area-inset-bottom, 0);
 }
 .splash-logo {
   color: white;
