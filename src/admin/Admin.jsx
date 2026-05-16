@@ -2,7 +2,9 @@ import { useState, useEffect, useRef, useCallback, Fragment } from 'react'
 import { auth, db, storage } from '../firebase.js'
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
 import {
-  sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink,
+  GoogleAuthProvider, FacebookAuthProvider,
+  signInWithPopup, signInWithEmailAndPassword,
+  sendPasswordResetEmail,
   signOut, onAuthStateChanged,
 } from 'firebase/auth'
 import {
@@ -157,29 +159,53 @@ function HoldPill({ holdId, name }) {
 
 // ─── Login ────────────────────────────────────────────────────────────────────
 
-function LoginPage({ onDemoLogin }) {
-  const [email, setEmail] = useState('')
-  const [sent, setSent] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+const ADMIN_AUTH_ERRORS = {
+  'auth/invalid-email':            'Ugyldig email-adresse.',
+  'auth/user-not-found':           'Ingen bruger med denne email.',
+  'auth/wrong-password':           'Forkert adgangskode.',
+  'auth/invalid-credential':       'Forkert email eller adgangskode.',
+  'auth/too-many-requests':        'For mange forsøg. Prøv igen senere.',
+  'auth/popup-closed-by-user':     '',
+  'auth/cancelled-popup-request':  '',
+}
 
-  async function sendLink(e) {
-    e.preventDefault()
-    if (!email.trim()) return
-    setLoading(true)
-    setError('')
+function LoginPage({ onDemoLogin }) {
+  const [email,    setEmail]    = useState('')
+  const [password, setPassword] = useState('')
+  const [mode,     setMode]     = useState('main') // 'main' | 'forgot'
+  const [loading,  setLoading]  = useState(null)
+  const [error,    setError]    = useState('')
+  const [info,     setInfo]     = useState('')
+
+  async function social(ProviderClass) {
+    setLoading('social'); setError('')
     try {
-      await sendSignInLinkToEmail(auth, email.trim(), {
-        url: window.location.href,
-        handleCodeInApp: true,
-      })
-      localStorage.setItem('adminSignInEmail', email.trim())
-      setSent(true)
-    } catch (err) {
-      setError('Kunne ikke sende link: ' + err.message)
-    } finally {
-      setLoading(false)
-    }
+      await signInWithPopup(auth, new ProviderClass())
+    } catch (e) {
+      const msg = ADMIN_AUTH_ERRORS[e.code]
+      if (msg) setError(msg)
+      else if (e.code && !e.code.includes('cancelled') && !e.code.includes('closed')) setError(e.message)
+    } finally { setLoading(null) }
+  }
+
+  async function emailLogin(e) {
+    e.preventDefault(); setLoading('email'); setError('')
+    try {
+      await signInWithEmailAndPassword(auth, email.trim(), password)
+    } catch (e) {
+      setError(ADMIN_AUTH_ERRORS[e.code] || 'Login fejlede.')
+    } finally { setLoading(null) }
+  }
+
+  async function resetPassword(e) {
+    e.preventDefault(); setLoading('reset'); setError('')
+    try {
+      await sendPasswordResetEmail(auth, email.trim())
+      setInfo('Nulstillingsmail sendt til ' + email.trim())
+      setMode('main')
+    } catch (e) {
+      setError(ADMIN_AUTH_ERRORS[e.code] || 'Kunne ikke sende mail.')
+    } finally { setLoading(null) }
   }
 
   return (
@@ -188,48 +214,73 @@ function LoginPage({ onDemoLogin }) {
         <div className="login-logo-admin"><span>SSIF</span></div>
         <h1 className="login-title">Backoffice</h1>
         <p className="login-sub">Sejs-Svejbæk IF · Administrationsportal</p>
-        {sent ? (
-          <div className="alert-info">
-            <strong>Link sendt til {email}</strong><br />
-            Tjek din indbakke og klik på login-linket for at fortsætte.
-          </div>
-        ) : (
-          <form onSubmit={sendLink}>
-            <div className="form-group">
-              <label className="form-label">Email-adresse</label>
-              <input
-                className="form-control"
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="din@email.dk"
-                autoFocus
-                required
-              />
+
+        {info && <div className="alert-info" style={{ marginBottom: 16 }}>{info}</div>}
+        {error && <p style={{ color: '#dc3545', fontSize: 13, marginBottom: 12, textAlign: 'center' }}>{error}</p>}
+
+        {mode === 'main' && (
+          <>
+            {/* Sociale knapper */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
+              <button
+                className="btn btn-ghost"
+                style={{ width: '100%', height: 42, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, border: '1.5px solid var(--border)' }}
+                onClick={() => social(GoogleAuthProvider)} disabled={loading === 'social'}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                Fortsæt med Google
+              </button>
+              <button
+                className="btn btn-ghost"
+                style={{ width: '100%', height: 42, fontSize: 14, background: '#1877F2', color: 'white', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}
+                onClick={() => social(FacebookAuthProvider)} disabled={loading === 'social'}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+                Fortsæt med Facebook
+              </button>
             </div>
-            {error && <p style={{ color: '#dc3545', fontSize: 13, marginBottom: 12 }}>{error}</p>}
-            <button className="btn btn-primary" style={{ width: '100%', height: 42, fontSize: 14 }} disabled={loading}>
-              {loading ? 'Sender…' : 'Send magic link'}
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '4px 0 16px', color: 'var(--text3)', fontSize: 12 }}>
+              <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+              eller med email
+              <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+            </div>
+
+            <form onSubmit={emailLogin} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <input className="form-control" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="email@ssif.dk" required autoFocus />
+              <input className="form-control" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Adgangskode" required />
+              <button className="btn btn-primary" style={{ width: '100%', height: 42, fontSize: 14 }} disabled={loading === 'email'}>
+                {loading === 'email' ? 'Logger ind…' : 'Log ind'}
+              </button>
+            </form>
+
+            <button onClick={() => { setMode('forgot'); setError('') }} style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: 13, cursor: 'pointer', marginTop: 12, width: '100%', textAlign: 'center' }}>
+              Glemt adgangskode?
+            </button>
+
+            <div style={{ marginTop: 20, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+              <button className="btn btn-ghost" style={{ width: '100%', height: 38, fontSize: 13 }} onClick={onDemoLogin}>
+                Demo-adgang (admin)
+              </button>
+            </div>
+          </>
+        )}
+
+        {mode === 'forgot' && (
+          <form onSubmit={resetPassword} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 4 }}>Indtast din email — vi sender et nulstillingslink.</p>
+            <input className="form-control" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="email@ssif.dk" required autoFocus />
+            <button className="btn btn-primary" style={{ width: '100%', height: 42, fontSize: 14 }} disabled={loading === 'reset'}>
+              {loading === 'reset' ? 'Sender…' : 'Send nulstillingslink'}
+            </button>
+            <button type="button" onClick={() => { setMode('main'); setError('') }} style={{ background: 'none', border: 'none', color: 'var(--text2)', fontSize: 13, cursor: 'pointer' }}>
+              ← Tilbage til login
             </button>
           </form>
         )}
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '18px 0', color: 'var(--text3)', fontSize: 12 }}>
-          <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-          eller
-          <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-        </div>
-
-        <button
-          className="btn btn-ghost"
-          style={{ width: '100%', height: 42, fontSize: 14 }}
-          onClick={onDemoLogin}
-        >
-          Demo adgang (admin)
-        </button>
-
-        <p style={{ marginTop: 16, fontSize: 12, color: 'var(--text3)', textAlign: 'center' }}>
-          Demo-tilstand bruger ikke rigtige data og gemmer ingenting.
+        <p style={{ marginTop: 16, fontSize: 11, color: 'var(--text3)', textAlign: 'center', lineHeight: 1.5 }}>
+          Kun brugere tildelt en rolle af en administrator kan logge ind.
         </p>
       </div>
     </div>
@@ -1575,35 +1626,13 @@ function UsersPage({ authUser }) {
         </div>
 
         <div className="card card-pad">
-          <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>Inviter ny bruger</h3>
-          <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 14 }}>
-            Brugeren modtager et magic link og kan logge ind med det samme.
-          </p>
-          {inviteSent && (
-            <div className="alert-info" style={{ marginBottom: 12 }}>
-              Invitation sendt!
-            </div>
-          )}
-          <form onSubmit={sendInvite}>
-            <div className="form-group">
-              <label className="form-label">Email</label>
-              <input
-                className="form-control"
-                type="email"
-                value={inviteEmail}
-                onChange={e => setInviteEmail(e.target.value)}
-                placeholder="træner@email.dk"
-                required
-              />
-            </div>
-            <button className="btn btn-primary" style={{ width: '100%', height: 38 }} disabled={inviting}>
-              <Icon name="mail" size={14} color="white" />
-              {inviting ? 'Sender…' : 'Send invitation'}
-            </button>
-          </form>
-          <div className="alert-warn" style={{ marginTop: 16, marginBottom: 0 }}>
-            Nye brugere får ingen rolle automatisk. Husk at tildele <strong>Træner</strong> eller <strong>Admin</strong>-rolle herover.
-          </div>
+          <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>Sådan tilføjes en ny bruger</h3>
+          <ol style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.8, paddingLeft: 18, margin: 0 }}>
+            <li>Bed brugeren logge ind på backoffice med Google, Facebook eller email/adgangskode</li>
+            <li>De vil se "Ingen adgang" — det er korrekt</li>
+            <li>Deres konto vises nu i listen til venstre</li>
+            <li>Tildel dem rollen <strong>Træner</strong> eller <strong>Admin</strong></li>
+          </ol>
         </div>
       </div>
     </>
@@ -1643,20 +1672,6 @@ export default function AdminApp() {
     signOut(auth).catch(() => {})
   }
 
-  useEffect(() => {
-    if (isSignInWithEmailLink(auth, window.location.href)) {
-      let email = localStorage.getItem('adminSignInEmail')
-      if (!email) email = window.prompt('Bekræft din email-adresse for at logge ind:')
-      if (email) {
-        signInWithEmailLink(auth, email, window.location.href)
-          .then(() => {
-            localStorage.removeItem('adminSignInEmail')
-            window.history.replaceState({}, '', window.location.pathname)
-          })
-          .catch(err => console.error('Magic link fejl:', err))
-      }
-    }
-  }, [])
 
   useEffect(() => {
     return onAuthStateChanged(auth, async fbUser => {
