@@ -137,61 +137,35 @@ foreach ($afdelinger as $afdId => $afdNavn) {
     }
 }
 
-// ── 3. Én samlet batch-commit: afdelinger + hold ──────────────────────────────
-// 460 holds + 37 afdelinger = ~500 → passer i ét kald og undgår rate-limiting
-// fra 37 individuelle PATCH-kald + multiple batch-commits.
-$allWrites   = [];
-$holdsWritten = 0;
+// ── 3. Skriv afdelinger + hold individuelt med PATCH ─────────────────────────
+// Batch-endpoints rammer 429-kvoten. Individuelle PATCH-kald er langsommere
+// men pålidelige. PHP kører videre i baggrunden (ignore_user_abort = true)
+// selv efter curl afbryder ved --max-time 30.
 $base        = "projects/{$projectId}/databases/(default)/documents";
+$holdsWritten = 0;
 
+// Afdelinger
 foreach ($afdelinger as $afdId => $afdNavn) {
-    $allWrites[] = [
-        'update' => [
-            'name'   => "{$base}/afdelinger/{$afdId}",
-            'fields' => [
-                'id'           => to_fs($afdId),
-                'navn'         => to_fs($afdNavn),
-                'sidst_hentet' => to_fs($now),
-            ],
-        ],
-    ];
+    fs_patch($token, "{$base}/afdelinger/{$afdId}", [
+        'id'           => to_fs($afdId),
+        'navn'         => to_fs($afdNavn),
+        'sidst_hentet' => to_fs($now),
+    ]);
+    usleep(50000); // 50ms
 }
 
+// Hold — updateMask bevarer admin-felter (aktiv, traener_uid, traeningstider)
+$holdKeys = ['conventus_id','titel','aktivitet_titel','periode_fra','periode_til','beskrivelse','afdeling_id','sidst_synkroniseret'];
 foreach ($allHolds as $h) {
     $docId    = (string)$h['conventus_id'];
-    $holdKeys = ['conventus_id','titel','aktivitet_titel','periode_fra','periode_til','beskrivelse','afdeling_id','sidst_synkroniseret'];
     $fsFields = [];
     foreach ($holdKeys as $k) {
-        $v = $k === 'sidst_synkroniseret' ? $now : ($h[$k] ?? '');
-        $fsFields[$k] = to_fs($v);
+        $fsFields[$k] = to_fs($k === 'sidst_synkroniseret' ? $now : ($h[$k] ?? ''));
     }
-    $allWrites[] = [
-        'update'     => ['name' => "{$base}/holds/{$docId}", 'fields' => $fsFields],
-        'updateMask' => ['fieldPaths' => $holdKeys],
-    ];
-}
-
-// batchWrite (ikke commit) — ikke-transaktionel, designet til bulk-skriv
-// Chunk på 100 med 1s pause mellem kald for at undgå rate-limiting
-$chunks = array_chunk($allWrites, 100);
-foreach ($chunks as $i => $chunk) {
-    $resp = @file_get_contents(
-        "https://firestore.googleapis.com/v1/projects/{$projectId}/databases/(default)/documents:batchWrite",
-        false, stream_context_create(['http' => [
-            'method'        => 'POST',
-            'header'        => "Authorization: Bearer {$token}\r\nContent-Type: application/json\r\n",
-            'content'       => json_encode(['writes' => $chunk]),
-            'timeout'       => 60,
-            'ignore_errors' => true,
-        ]])
-    );
-    $data = json_decode($resp ?: '', true);
-    if (isset($data['writeResults'])) {
-        $holdsWritten += count($data['writeResults']);
-    } else {
-        if (!isset($debugCommitError)) $debugCommitError = substr($resp ?: 'tom svar', 0, 500);
-    }
-    if ($i < count($chunks) - 1) sleep(1); // 1s pause mellem kald
+    $mask = implode('&', array_map(fn($k) => 'updateMask.fieldPaths=' . urlencode($k), $holdKeys));
+    $ok   = fs_patch($token, "{$base}/holds/{$docId}?{$mask}", $fsFields);
+    if ($ok) $holdsWritten++;
+    usleep(50000); // 50ms pause → ~23s for 460 hold
 }
 
 echo json_encode([
@@ -285,11 +259,12 @@ function extract_holds_recursive($node, array &$seen): array {
     return $result;
 }
 
-function firestore_patch(string $projectId, string $token, string $path, array $data): void {
-    $fields = [];
-    foreach ($data as $k => $v) $fields[$k] = to_fs($v);
-    @file_get_contents(
-        "https://firestore.googleapis.com/v1/projects/{$projectId}/databases/(default)/documents/{$path}",
+// fs_patch: PATCH til Firestore-dokument, returnerer true ved succes
+// $url er fuld resource-path inkl. evt. ?updateMask.fieldPaths=...
+// $fields er allerede konverteret til Firestore-format via to_fs()
+function fs_patch(string $token, string $url, array $fields): bool {
+    $resp = @file_get_contents(
+        "https://firestore.googleapis.com/v1/{$url}",
         false, stream_context_create(['http' => [
             'method'        => 'PATCH',
             'header'        => "Authorization: Bearer {$token}\r\nContent-Type: application/json\r\n",
@@ -298,6 +273,7 @@ function firestore_patch(string $projectId, string $token, string $path, array $
             'ignore_errors' => true,
         ]])
     );
+    return $resp !== false && isset(json_decode($resp, true)['name']);
 }
 
 function to_fs($v): array {
