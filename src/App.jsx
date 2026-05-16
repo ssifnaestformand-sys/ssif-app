@@ -598,7 +598,9 @@ function TeamsScreen({ onSelectTeam, user }) {
   const [linkedMembers, setLinkedMembers] = useState(null) // null=loading, []=ingen
 
   useEffect(() => {
-    getDocs(query(collection(db, 'holds'), where('aktiv', '==', true)))
+    // Hent ALLE hold fra Firestore (ikke kun aktiv: true) for at kunne slå
+    // holdnavne op for alle grupper — også dem der endnu ikke er aktiveret i appen
+    getDocs(collection(db, 'holds'))
       .then(snap => setHolds(snap.docs.map(d => ({ _id: d.id, ...d.data() }))))
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -618,126 +620,82 @@ function TeamsScreen({ onSelectTeam, user }) {
       .catch(() => setLinkedMembers([]))
   }, [user.email, JSON.stringify(user.extraEmails)])
 
-  // Slå hold op efter conventus_id — bruges til at rette navne og klikbarhed
+  // Slå op på alle Firestore-hold for at rette navne og afgøre klikbarhed/app-status
   const holdById = {}
   holds.forEach(h => { holdById[String(h.conventus_id)] = h })
 
-  const userIds = relevantHoldIds(user)
-  const visible = userIds.size > 0
-    ? holds.filter(h => userIds.has(String(h.conventus_id)))
-    : holds
-
-  const byType = {}
-  visible.forEach(h => {
-    const t = h.aktivitet_titel || 'Hold'
-    if (!byType[t]) byType[t] = []
-    byType[t].push(h)
-  })
-  const types = Object.keys(byType).sort()
-
-  if (loading) return (
+  if (loading || linkedMembers === null) return (
     <div className="screen" style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text2)', fontSize: 13 }}>
       Henter hold…
     </div>
   )
 
-  if (visible.length === 0 && !linkedMembers?.length) return (
+  if (!linkedMembers.length) return (
     <div className="screen" style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text2)', fontSize: 14 }}>
-      {holds.length === 0
-        ? 'Ingen hold er aktiveret endnu. Kontakt en administrator.'
-        : 'Ingen hold fundet.'}
+      Ingen holdtilmeldinger fundet. Tilføj din email under Profil for at se dine hold.
     </div>
   )
 
   return (
     <div className="screen">
-
-      {/* ── Dine tilmeldinger (fra Conventus) ─────────────────────────────── */}
-      {linkedMembers !== null && linkedMembers.length > 0 && (
-        <>
-          <SectionHeader title="Dine tilmeldinger" />
-          {linkedMembers.map(m => (
-            <div key={m.conventus_id} style={{ marginBottom: 4 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px 6px' }}>
-                <div style={{
-                  width: 32, height: 32, borderRadius: '50%', background: 'var(--green-soft)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                }}>
-                  <Icon name="person-circle" size={16} color="var(--green)" />
-                </div>
-                <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)' }}>{m.name}</span>
-              </div>
-
-              {m.holds?.length > 0 ? (
-                <div className="list-group" style={{ marginTop: 0 }}>
-                  {m.holds.map((h, hi) => {
-                    // Brug Firestore-hold-navn hvis tilgængeligt (retter "Hold #ID")
-                    const fsHold    = holdById[String(h.conventus_id)]
-                    const navn      = fsHold?.titel || h.titel || `Hold #${h.conventus_id}`
-                    const aktivIApp = !!fsHold  // er i appen hvis holdet findes i Firestore
-                    const detalje   = fsHold?.traeningstider
-                      || (fsHold?.periode_fra ? `${fsHold.periode_fra} – ${fsHold.periode_til}` : '')
-
-                    const inner = (
-                      <>
-                        <div className="list-item-icon" style={{ background: aktivIApp ? 'var(--green-soft)' : 'var(--bg)' }}>
-                          <Icon name="users" size={17} color={aktivIApp ? 'var(--green)' : 'var(--text3)'} />
-                        </div>
-                        <div className="list-item-body">
-                          <span className="list-item-title">{navn}</span>
-                          <span className="list-item-detail" style={{ color: aktivIApp ? 'var(--green)' : 'var(--text3)' }}>
-                            {aktivIApp ? `Aktiv i appen${detalje ? ' · ' + detalje : ''}` : 'Ikke tilknyttet appen endnu'}
-                          </span>
-                        </div>
-                        {aktivIApp && <Chevron />}
-                      </>
-                    )
-
-                    return (
-                      <div key={h.conventus_id ?? hi}>
-                        {hi > 0 && <div className="list-separator" />}
-                        {fsHold
-                          ? <button className="list-item" onClick={() => onSelectTeam(fsHold)}>{inner}</button>
-                          : <div className="list-item" style={{ cursor: 'default' }}>{inner}</div>
-                        }
-                      </div>
-                    )
-                  })}
-                </div>
-              ) : (
-                <p style={{ fontSize: 13, color: 'var(--text3)', padding: '0 16px 8px 58px' }}>
-                  Ingen holdtilmeldinger
-                </p>
-              )}
+      {linkedMembers.map(m => (
+        <div key={m.conventus_id} style={{ marginBottom: 4 }}>
+          {/* Person-header */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px 6px' }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: '50%', background: 'var(--green-soft)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}>
+              <Icon name="person-circle" size={16} color="var(--green)" />
             </div>
-          ))}
-          <div style={{ height: 8 }} />
-        </>
-      )}
-
-      {/* ── Alle aktive hold ───────────────────────────────────────────────── */}
-      {types.map(type => (
-        <div key={type}>
-          <SectionHeader title={type} />
-          <div className="list-group">
-            {byType[type].map((hold, i) => (
-              <div key={hold.conventus_id ?? hold._id}>
-                {i > 0 && <div className="list-separator" />}
-                <button className="list-item" onClick={() => onSelectTeam(hold)}>
-                  <div className="list-item-icon" style={{ background: 'var(--green-soft)' }}>
-                    <Icon name="users" size={17} color="var(--green)" />
-                  </div>
-                  <div className="list-item-body">
-                    <span className="list-item-title">{hold.titel}</span>
-                    <span className="list-item-detail" style={{ color: 'var(--green)' }}>
-                      Aktiv i appen{hold.traeningstider ? ' · ' + hold.traeningstider : hold.periode_fra ? ' · ' + hold.periode_fra + ' – ' + hold.periode_til : ''}
-                    </span>
-                  </div>
-                  <Chevron />
-                </button>
-              </div>
-            ))}
+            <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)' }}>{m.name}</span>
           </div>
+
+          {m.holds?.length > 0 ? (
+            <div className="list-group" style={{ marginTop: 0 }}>
+              {m.holds.map((h, hi) => {
+                const fsHold   = holdById[String(h.conventus_id)]
+                const navn     = fsHold?.titel || h.titel || `Hold #${h.conventus_id}`
+                // Holdet bruger appen til kommunikation hvis det er importeret OG aktivt
+                const brugerApp = fsHold?.aktiv === true
+                const detalje  = fsHold?.traeningstider
+                  || (fsHold?.periode_fra ? `${fsHold.periode_fra} – ${fsHold.periode_til}` : '')
+
+                const inner = (
+                  <>
+                    <div className="list-item-icon" style={{
+                      background: brugerApp ? 'var(--green-soft)' : 'var(--bg)',
+                    }}>
+                      <Icon name="users" size={17} color={brugerApp ? 'var(--green)' : 'var(--text3)'} />
+                    </div>
+                    <div className="list-item-body">
+                      <span className="list-item-title">{navn}</span>
+                      <span className="list-item-detail" style={{ color: brugerApp ? 'var(--green)' : 'var(--text3)' }}>
+                        {brugerApp
+                          ? `Bruger appen til kommunikation${detalje ? ' · ' + detalje : ''}`
+                          : 'Bruger ikke appen til kommunikation'}
+                      </span>
+                    </div>
+                    {brugerApp && <Chevron />}
+                  </>
+                )
+
+                return (
+                  <div key={h.conventus_id ?? hi}>
+                    {hi > 0 && <div className="list-separator" />}
+                    {brugerApp
+                      ? <button className="list-item" onClick={() => onSelectTeam(fsHold)}>{inner}</button>
+                      : <div className="list-item" style={{ cursor: 'default' }}>{inner}</div>
+                    }
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <p style={{ fontSize: 13, color: 'var(--text3)', padding: '0 16px 8px 58px' }}>
+              Ingen holdtilmeldinger
+            </p>
+          )}
         </div>
       ))}
       <div style={{ height: 8 }} />
