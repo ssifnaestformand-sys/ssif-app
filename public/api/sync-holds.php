@@ -116,19 +116,11 @@ if (!$afdelinger) {
     exit;
 }
 
-// ── 2. Skriv afdelinger til Firestore + hent hold ────────────────────────────
-$allHolds     = [];
-$holdsWritten = 0;
-$now          = date('c');
+// ── 2. Hent hold for alle afdelinger ─────────────────────────────────────────
+$allHolds = [];
+$now      = date('c');
 
 foreach ($afdelinger as $afdId => $afdNavn) {
-    // Skriv altid afdeling — uanset om hold-fetch lykkes
-    firestore_patch($projectId, $token, "afdelinger/{$afdId}", [
-        'id'           => $afdId,
-        'navn'         => $afdNavn,
-        'sidst_hentet' => $now,
-    ]);
-
     $holdRaw = @file_get_contents(
         BASE_URL . 'get_grupper.php?' . http_build_query([
             'forening' => FORENING, 'key' => $apiKey,
@@ -140,48 +132,54 @@ foreach ($afdelinger as $afdId => $afdNavn) {
     $holdRaw = fix_encoding($holdRaw);
     $holdXml = @simplexml_load_string($holdRaw);
     if (!$holdXml) continue;
-
     foreach (extract_holds($holdXml) as $h) {
         $allHolds[] = array_merge($h, ['afdeling_id' => $afdId]);
     }
 }
 
-// ── 3. Batch-skriv hold til Firestore (bevarer admin-felter) ──────────────────
-foreach (array_chunk($allHolds, 200) as $chunk) {
-    $writes = [];
-    foreach ($chunk as $h) {
-        $docId  = (string)$h['conventus_id'];
-        $fields = [
-            'conventus_id'        => $h['conventus_id'],
-            'titel'               => $h['titel'],
-            'aktivitet_titel'     => $h['aktivitet_titel'],
-            'periode_fra'         => $h['periode_fra'],
-            'periode_til'         => $h['periode_til'],
-            'beskrivelse'         => $h['beskrivelse'],
-            'afdeling_id'         => $h['afdeling_id'],
-            'sidst_synkroniseret' => $now,
-        ];
-        $fsFields = [];
-        foreach ($fields as $k => $v) $fsFields[$k] = to_fs($v);
+// ── 3. Én samlet batch-commit: afdelinger + hold ──────────────────────────────
+// 460 holds + 37 afdelinger = ~500 → passer i ét kald og undgår rate-limiting
+// fra 37 individuelle PATCH-kald + multiple batch-commits.
+$allWrites   = [];
+$holdsWritten = 0;
+$base        = "projects/{$projectId}/databases/(default)/documents";
 
-        // updateMask: kun Conventus-felterne — admin-felter (aktiv, traener_uid...) bevares
-        $writes[] = [
-            'update'     => [
-                'name'   => "projects/{$projectId}/databases/(default)/documents/holds/{$docId}",
-                'fields' => $fsFields,
+foreach ($afdelinger as $afdId => $afdNavn) {
+    $allWrites[] = [
+        'update' => [
+            'name'   => "{$base}/afdelinger/{$afdId}",
+            'fields' => [
+                'id'           => to_fs($afdId),
+                'navn'         => to_fs($afdNavn),
+                'sidst_hentet' => to_fs($now),
             ],
-            'updateMask' => ['fieldPaths' => array_keys($fields)],
-        ];
-    }
-    if (!$writes) continue;
+        ],
+    ];
+}
 
+foreach ($allHolds as $h) {
+    $docId    = (string)$h['conventus_id'];
+    $holdKeys = ['conventus_id','titel','aktivitet_titel','periode_fra','periode_til','beskrivelse','afdeling_id','sidst_synkroniseret'];
+    $fsFields = [];
+    foreach ($holdKeys as $k) {
+        $v = $k === 'sidst_synkroniseret' ? $now : ($h[$k] ?? '');
+        $fsFields[$k] = to_fs($v);
+    }
+    $allWrites[] = [
+        'update'     => ['name' => "{$base}/holds/{$docId}", 'fields' => $fsFields],
+        'updateMask' => ['fieldPaths' => $holdKeys],
+    ];
+}
+
+// Chunk på 400 — under Firestore-grænsen på 500, med luft til rate-limiting
+foreach (array_chunk($allWrites, 400) as $chunk) {
     $resp = @file_get_contents(
-        "https://firestore.googleapis.com/v1/projects/{$projectId}/databases/(default)/documents:commit",
+        "https://firestore.googleapis.com/v1/{$base}:commit",
         false, stream_context_create(['http' => [
             'method'        => 'POST',
             'header'        => "Authorization: Bearer {$token}\r\nContent-Type: application/json\r\n",
-            'content'       => json_encode(['writes' => $writes]),
-            'timeout'       => 60,
+            'content'       => json_encode(['writes' => $chunk]),
+            'timeout'       => 90,
             'ignore_errors' => true,
         ]])
     );
@@ -189,9 +187,9 @@ foreach (array_chunk($allHolds, 200) as $chunk) {
     if (isset($data['writeResults'])) {
         $holdsWritten += count($data['writeResults']);
     } else {
-        // Gem første fejlsvar til debug
         if (!isset($debugCommitError)) $debugCommitError = substr($resp ?: 'tom svar', 0, 500);
     }
+    if (count($allWrites) > 400) usleep(500000); // 0.5s pause hvis flere chunks
 }
 
 echo json_encode([
