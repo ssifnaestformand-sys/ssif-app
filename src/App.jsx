@@ -1648,12 +1648,12 @@ export default function App() {
   // ── Load + merge Firestore profile ───────────────────────────────────────
   async function loadAndSetUser(fbUser) {
     let profile = {}
+    let memberHoldIds = []
     try {
       const ref  = doc(db, 'users', fbUser.uid)
       const snap = await getDoc(ref)
       if (snap.exists()) {
         profile = snap.data()
-        // Opdatér emailVerified status synkront
         if (profile.emailVerified !== fbUser.emailVerified) {
           updateDoc(ref, { emailVerified: fbUser.emailVerified }).catch(() => {})
         }
@@ -1669,6 +1669,20 @@ export default function App() {
         }
         setDoc(ref, profile).catch(() => {})
       }
+
+      // Hent hold-IDs fra members-samlingen (synkroniseret fra Conventus).
+      // Bruges til filtrering af admin-beskeder og push-notifikationer.
+      if (fbUser.email) {
+        const mSnap = await getDocs(query(
+          collection(db, 'members'),
+          where('allEmails', 'array-contains', fbUser.email.toLowerCase())
+        ))
+        mSnap.docs.forEach(d =>
+          (d.data().holds || []).forEach(h => {
+            if (h.conventus_id) memberHoldIds.push(String(h.conventus_id))
+          })
+        )
+      }
     } catch {}
 
     const displayName = profile.displayName || fbUser.displayName || fbUser.email?.split('@')[0] || 'Bruger'
@@ -1683,7 +1697,7 @@ export default function App() {
                      || (fbUser.email?.slice(0,2).toUpperCase() ?? 'SS'),
       role:          profile.role          || 'Medlem',
       holds:         profile.holds         || [],
-      holdIds:       profile.holdIds        || [],
+      holdIds:       [...new Set([...(profile.holdIds || []).map(String), ...memberHoldIds])],
       familyMembers: profile.familyMembers  || [],
       primaryEmail:  profile.primaryEmail   || fbUser.email || '',
       extraEmails:   profile.extraEmails    || [],

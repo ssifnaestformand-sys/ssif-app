@@ -115,10 +115,11 @@ if ($endpoint === 'afdelinger') {
     // xpath finder alle <afdeling>-noder uanset dybde — PHP 7.4 kompatibelt
     $afdelinger = [];
     $seen       = [];
-    $nodes      = $xml->xpath('//*[local-name()="afdeling"]') ?: [];
-    foreach ($nodes as $node) {
-        $id    = trim((string)($node['id']    ?? ''));
-        $titel = trim((string)($node['titel'] ?? $node['navn'] ?? $node['name'] ?? $node));
+    foreach ($xml->xpath('//*[local-name()="afdeling"]') ?: [] as $node) {
+        $id    = trim((string)($node['id']    ?? (isset($node->id)    ? $node->id    : '')));
+        $titel = trim((string)($node['titel'] ?? (isset($node->titel) ? $node->titel :
+                 (isset($node->navn)          ? $node->navn           :
+                 (isset($node->name)          ? $node->name           : '')))));
         if ($id && ctype_digit($id) && !isset($seen[$id])) {
             $seen[$id]    = true;
             $afdelinger[] = [
