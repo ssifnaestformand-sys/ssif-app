@@ -86,13 +86,12 @@ if (!$afdXml) {
     exit;
 }
 
+// XML-struktur: <afdeling><id>4001</id><titel>...</titel></afdeling>
+// id og titel er child-elementer, ikke attributter — brug $node->id, ikke $node['id']
 $afdelinger = [];
-foreach ($afdXml->xpath('//*[local-name()="afdeling"]') ?: [] as $node) {
-    // id kan være attribut (<afdeling id="4001">) ELLER child-element (<id>4001</id>)
-    $id    = trim((string)($node['id']    ?? (isset($node->id)    ? $node->id    : '')));
-    $titel = trim((string)($node['titel'] ?? (isset($node->titel) ? $node->titel :
-             (isset($node->navn)          ? $node->navn           :
-             (isset($node->name)          ? $node->name           : '')))));
+foreach ($afdXml->xpath('//afdelinger/afdeling') ?: [] as $node) {
+    $id    = trim((string)$node->id);
+    $titel = trim((string)($node->titel ?: $node->navn ?: $node->name ?: ''));
     if ($id && ctype_digit($id) && !isset($afdelinger[$id])) {
         $afdelinger[$id] = html_entity_decode($titel, ENT_HTML5 | ENT_QUOTES, 'UTF-8');
     }

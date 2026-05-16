@@ -113,13 +113,12 @@ if ($endpoint === 'afdelinger') {
     if ($xml === false) { http_response_code(502); echo json_encode(['error' => 'XML parse-fejl']); exit; }
 
     // xpath finder alle <afdeling>-noder uanset dybde — PHP 7.4 kompatibelt
+    // XML-struktur: <afdeling><id>4001</id><titel>...</titel></afdeling>
     $afdelinger = [];
     $seen       = [];
-    foreach ($xml->xpath('//*[local-name()="afdeling"]') ?: [] as $node) {
-        $id    = trim((string)($node['id']    ?? (isset($node->id)    ? $node->id    : '')));
-        $titel = trim((string)($node['titel'] ?? (isset($node->titel) ? $node->titel :
-                 (isset($node->navn)          ? $node->navn           :
-                 (isset($node->name)          ? $node->name           : '')))));
+    foreach ($xml->xpath('//afdelinger/afdeling') ?: [] as $node) {
+        $id    = trim((string)$node->id);
+        $titel = trim((string)($node->titel ?: $node->navn ?: $node->name ?: ''));
         if ($id && ctype_digit($id) && !isset($seen[$id])) {
             $seen[$id]    = true;
             $afdelinger[] = [
