@@ -659,23 +659,17 @@ function TeamsScreen({ onSelectTeam, user }) {
           {m.holds?.length > 0 ? (
             <div className="list-group" style={{ marginTop: 0 }}>
               {m.holds.map((h, hi) => {
-                const fsHold    = holdById[String(h.conventus_id)]
-                // Brug fsHold.titel (fra Firestore) som kilde til sandheden.
-                // h.titel fra members kan indeholde forældet "Hold #ID".
-                const isIdOnly  = !fsHold?.titel || fsHold.titel.startsWith('Hold #')
-                const titel     = isIdOnly
-                  ? (h.titel?.startsWith('Hold #') ? null : h.titel) ?? null
-                  : fsHold.titel
-
-                // Afdelingsnavn fra afdelinger-samlingen
-                const afdNavn   = afdById[String(fsHold?.afdeling_id)]?.navn
-                  || fsHold?.aktivitet_titel
-                  || null
-
+                // Kilde til sandheden: holds/{conventus_id} i Firestore
+                const fsHold   = holdById[String(h.conventus_id)]
+                const titel    = fsHold?.titel    ?? `Hold #${h.conventus_id}`
+                const afdNavn  = afdById[String(fsHold?.afdeling_id)]?.navn
+                               ?? fsHold?.aktivitet_titel
+                               ?? null
                 const brugerApp = fsHold?.aktiv === true
-                const detalje   = [
+                const detalje  = [
                   afdNavn,
-                  fsHold?.traeningstider || (fsHold?.periode_fra ? `${fsHold.periode_fra} – ${fsHold.periode_til}` : null),
+                  fsHold?.traeningstider
+                    || (fsHold?.periode_fra ? `${fsHold.periode_fra} – ${fsHold.periode_til}` : null),
                 ].filter(Boolean).join(' · ')
 
                 const inner = (
@@ -686,12 +680,10 @@ function TeamsScreen({ onSelectTeam, user }) {
                       <Icon name="users" size={17} color={brugerApp ? 'var(--green)' : 'var(--text3)'} />
                     </div>
                     <div className="list-item-body">
-                      <span className="list-item-title">
-                        {titel || `Conventus hold #${h.conventus_id}`}
-                      </span>
-                      <span className="list-item-detail" style={{ color: brugerApp ? 'var(--green)' : 'var(--text3)' }}>
-                        {detalje || (brugerApp ? 'Aktiv i appen' : 'Ikke aktiv i appen')}
-                      </span>
+                      <span className="list-item-title">{titel}</span>
+                      {detalje
+                        ? <span className="list-item-detail">{detalje}</span>
+                        : null}
                     </div>
                     {brugerApp && <Chevron />}
                   </>
