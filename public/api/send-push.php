@@ -133,74 +133,104 @@ function getAccessToken(array $sa): string {
 }
 
 /**
- * Henter Firestore-dokumentet for alle brugere og returnerer
- * FCM-tokens for dem der tilhører mindst ét af de angivne hold.
- * Matcher på: users.holds (array) og users.familyMembers[].holdId
+ * Henter FCM-tokens fra Firestore for brugere der er tilmeldt de givne hold.
+ *
+ * Problemet: FCM-token og holdIds kan ligge på FORSKELLIGE brugerdokumenter.
+ * Eksempel: "lars@ssif.dk" (hoved) har holdIds men ingen token.
+ *           "ole@gmail.com" (extra email på lars) har token men ingen holdIds.
+ *
+ * Løsning — to-pas lookup:
+ *  Pas 1: Indlæs ALLE brugerdokumenter. Byg email → token map.
+ *  Pas 2: For hver bruger med matchende holdIds:
+ *          a) Tilføj brugerens eget fcmToken (hvis det findes)
+ *          b) Slå brugerens extraEmails op i email→token map og tilføj
+ *             tokens fra tilknyttede konti (der er logget ind med extra email)
  */
 function getFcmTokens(string $projectId, string $accessToken, array $holdIds): array {
-    $holdSet = array_map('strval', $holdIds);  // normaliser til strings til sammenligning
+    $holdSet = array_map('strval', $holdIds);
 
     $ctx = stream_context_create(['http' => [
         'method'  => 'GET',
         'header'  => "Authorization: Bearer $accessToken",
-        'timeout' => 10,
+        'timeout' => 15,
     ]]);
 
-    $tokens  = [];
+    // ── Pas 1: hent alle brugerdokumenter ────────────────────────────────────
+    $allDocs   = [];
     $pageToken = null;
-
     do {
         $url = "https://firestore.googleapis.com/v1/projects/$projectId/databases/(default)/documents/users?pageSize=300";
-        if ($pageToken) $url .= "&pageToken=" . urlencode($pageToken);
-
-        $res = @file_get_contents($url, false, $ctx);
+        if ($pageToken) $url .= '&pageToken=' . urlencode($pageToken);
+        $res  = @file_get_contents($url, false, $ctx);
         if (!$res) break;
         $data = json_decode($res, true);
+        foreach ($data['documents'] ?? [] as $doc) $allDocs[] = $doc;
+        $pageToken = $data['nextPageToken'] ?? null;
+    } while ($pageToken);
 
-        foreach ($data['documents'] ?? [] as $doc) {
-            $fields = $doc['fields'] ?? [];
-            $fcmToken = $fields['fcmToken']['stringValue'] ?? '';
-            if (!$fcmToken) continue;
+    // Byg email → fcmToken map (for cross-account opslag)
+    $emailToToken = [];
+    foreach ($allDocs as $doc) {
+        $f     = $doc['fields'] ?? [];
+        $token = $f['fcmToken']['stringValue'] ?? '';
+        if (!$token) continue;
+        $email = strtolower($f['email']['stringValue'] ?? $f['primaryEmail']['stringValue'] ?? '');
+        if ($email) $emailToToken[$email] = $token;
+    }
 
-            if (empty($holdIds)) {
-                // Ingen hold-filter: send til alle
-                $tokens[] = $fcmToken;
-                continue;
-            }
+    // ── Pas 2: find brugere med matchende hold og saml tokens ────────────────
+    $tokens = [];
 
-            // Tjek users.holds array (trænere og backoffice-brugere)
-            foreach ($fields['holds']['arrayValue']['values'] ?? [] as $v) {
+    foreach ($allDocs as $doc) {
+        $f = $doc['fields'] ?? [];
+
+        // ── Hold-matching ─────────────────────────────────────────────────────
+        $matched = empty($holdIds);  // ingen filter = alle
+
+        if (!$matched) {
+            // users.holds (trænere tildelt fra backoffice)
+            foreach ($f['holds']['arrayValue']['values'] ?? [] as $v) {
                 $id = (string)($v['stringValue'] ?? $v['integerValue'] ?? '');
-                if ($id !== '' && in_array($id, $holdSet, true)) {
-                    $tokens[] = $fcmToken;
-                    continue 2;
-                }
+                if ($id !== '' && in_array($id, $holdSet, true)) { $matched = true; break; }
             }
-
-            // Tjek users.holdIds array (synkroniseret fra Conventus via members-collection)
-            foreach ($fields['holdIds']['arrayValue']['values'] ?? [] as $v) {
+        }
+        if (!$matched) {
+            // users.holdIds (synkroniseret fra Conventus)
+            foreach ($f['holdIds']['arrayValue']['values'] ?? [] as $v) {
                 $id = (string)($v['stringValue'] ?? $v['integerValue'] ?? '');
-                if ($id !== '' && in_array($id, $holdSet, true)) {
-                    $tokens[] = $fcmToken;
-                    continue 2;
-                }
+                if ($id !== '' && in_array($id, $holdSet, true)) { $matched = true; break; }
             }
-
-            // Tjek familyMembers[].holdId
-            foreach ($fields['familyMembers']['arrayValue']['values'] ?? [] as $member) {
-                $mFields  = $member['mapValue']['fields'] ?? [];
-                $memberHoldId = (string)($mFields['holdId']['stringValue']
-                                       ?? $mFields['holdId']['integerValue']
-                                       ?? '');
-                if ($memberHoldId !== '' && in_array($memberHoldId, $holdSet, true)) {
-                    $tokens[] = $fcmToken;
-                    continue 2;
-                }
+        }
+        if (!$matched) {
+            // users.familyMembers[].holdId
+            foreach ($f['familyMembers']['arrayValue']['values'] ?? [] as $member) {
+                $mf  = $member['mapValue']['fields'] ?? [];
+                $mid = (string)($mf['holdId']['stringValue'] ?? $mf['holdId']['integerValue'] ?? '');
+                if ($mid !== '' && in_array($mid, $holdSet, true)) { $matched = true; break; }
             }
         }
 
-        $pageToken = $data['nextPageToken'] ?? null;
-    } while ($pageToken);
+        if (!$matched) continue;
+
+        // ── Token-indsamling ──────────────────────────────────────────────────
+        // A) Brugerens eget token (normalt tilfælde)
+        $own = $f['fcmToken']['stringValue'] ?? '';
+        if ($own) $tokens[] = $own;
+
+        // B) Tokens på konti der er logget ind med brugerens extraEmails
+        //    (løser problemet: token på ekstra-email-konto, holdIds på hoved-konto)
+        foreach ($f['extraEmails']['arrayValue']['values'] ?? [] as $ev) {
+            $extraEmail = null;
+            if (isset($ev['stringValue'])) {
+                $extraEmail = strtolower($ev['stringValue']);
+            } elseif (isset($ev['mapValue']['fields']['email']['stringValue'])) {
+                $extraEmail = strtolower($ev['mapValue']['fields']['email']['stringValue']);
+            }
+            if ($extraEmail && isset($emailToToken[$extraEmail])) {
+                $tokens[] = $emailToToken[$extraEmail];
+            }
+        }
+    }
 
     return array_unique($tokens);
 }

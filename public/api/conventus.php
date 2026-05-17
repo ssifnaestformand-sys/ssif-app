@@ -174,7 +174,7 @@ if ($endpoint === 'kalender') {
     header('Cache-Control: no-cache');
 
     $urls = [
-        'https://www.conventus.dk/dataudv/www/kalender_rss.php?type_ikon=1&mos=1&dato=1&dato_tidspunkt=1&titel=1&sted=1&klikbar=1&tid=2&niveau=1&gruppe_type=2&rss=1&maaneder=12&foreningsid=' . FORENING,
+        'https://www.conventus.dk/dataudv/www/kalender_rss.php?type_ikon=1&mos=1&dato=1&dato_tidspunkt=1&titel=1&sted=1&klikbar=1&tid=5&niveau=1&gruppe_type=2&rss=1&foreningsid=' . FORENING,
     ];
 
     $raw = false;
