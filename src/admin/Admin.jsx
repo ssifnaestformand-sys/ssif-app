@@ -2101,11 +2101,46 @@ function fmtRelative(ts) {
 }
 
 function AppUsersPage() {
-  const [users,   setUsers]   = useState([])
-  const [holdMap, setHoldMap] = useState({})   // conventus_id → titel
-  const [loading, setLoading] = useState(true)
-  const [search,  setSearch]  = useState('')
-  const [sortKey, setSortKey] = useState('lastSeen')
+  const [users,      setUsers]      = useState([])
+  const [holdMap,    setHoldMap]    = useState({})
+  const [loading,    setLoading]    = useState(true)
+  const [search,     setSearch]     = useState('')
+  const [sortKey,    setSortKey]    = useState('lastSeen')
+  const [actionMsg,  setActionMsg]  = useState({})  // uid → { ok, msg }
+  const [actionBusy, setActionBusy] = useState({})  // uid+type → true
+  const [toDelete,   setToDelete]   = useState(null) // bruger-obj til sletbekræftelse
+
+  async function adminAction(uid, action) {
+    const key = uid + action
+    setActionBusy(b => ({ ...b, [key]: true }))
+    setActionMsg(m => ({ ...m, [uid]: null }))
+    try {
+      const idToken = await auth.currentUser?.getIdToken() ?? ''
+      const res  = await fetch('https://app.sejssvejbaek-if.dk/api/admin-verify-user.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ uid, action, idToken }),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        if (action === 'verify') {
+          setActionMsg(m => ({ ...m, [uid]: { ok: true, msg: 'Verificeret!' } }))
+          setUsers(us => us.map(u => u.id === uid ? { ...u, emailVerified: true } : u))
+        } else if (action === 'resend') {
+          setActionMsg(m => ({ ...m, [uid]: { ok: true, msg: `Mail sendt til ${data.email || ''}` } }))
+        } else if (action === 'delete') {
+          setUsers(us => us.filter(u => u.id !== uid))
+        }
+      } else {
+        setActionMsg(m => ({ ...m, [uid]: { ok: false, msg: data.error || 'Fejl' } }))
+      }
+    } catch (err) {
+      setActionMsg(m => ({ ...m, [uid]: { ok: false, msg: err.message } }))
+    } finally {
+      setActionBusy(b => ({ ...b, [key]: false }))
+      setTimeout(() => setActionMsg(m => ({ ...m, [uid]: null })), 5000)
+    }
+  }
 
   useEffect(() => {
     Promise.all([
@@ -2252,6 +2287,7 @@ function AppUsersPage() {
                   <th>Rolle</th>
                   <SortTh k="lastSeen"  label="Sidst aktiv" />
                   <SortTh k="createdAt" label="Oprettet" />
+                  <th style={{ width: 120 }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -2342,6 +2378,43 @@ function AppUsersPage() {
                       <td style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
                         {formatDate(u.createdAt)}
                       </td>
+                      <td>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                          {!u.emailVerified && (
+                            <>
+                              <button
+                                className="btn btn-primary btn-sm"
+                                disabled={actionBusy[u.id + 'verify']}
+                                onClick={() => adminAction(u.id, 'verify')}
+                                title="Sæt emailVerified=true direkte i Firebase Auth og Firestore"
+                              >
+                                {actionBusy[u.id + 'verify'] ? '…' : '✓ Verificér'}
+                              </button>
+                              <button
+                                className="btn btn-ghost btn-sm"
+                                disabled={actionBusy[u.id + 'resend']}
+                                onClick={() => adminAction(u.id, 'resend')}
+                                title="Send ny verifikationsmail til brugerens email"
+                              >
+                                {actionBusy[u.id + 'resend'] ? 'Sender…' : '✉ Send mail'}
+                              </button>
+                            </>
+                          )}
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            style={{ color: '#dc3545' }}
+                            onClick={() => setToDelete(u)}
+                            title="Slet bruger fra Firebase Auth og Firestore"
+                          >
+                            <Icon name="trash" size={12} color="#dc3545" /> Slet
+                          </button>
+                          {actionMsg[u.id] && (
+                            <span style={{ fontSize: 11, color: actionMsg[u.id].ok ? '#16a34a' : '#dc3545', fontWeight: 600 }}>
+                              {actionMsg[u.id].msg}
+                            </span>
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   )
                 })}
@@ -2350,6 +2423,16 @@ function AppUsersPage() {
           </div>
         )}
       </div>
+
+      {toDelete && (
+        <ConfirmDialog
+          title="Slet bruger"
+          body={`Slet "${toDelete.displayName || toDelete.email || toDelete.id}" permanent fra Firebase Auth og Firestore? Handlingen kan ikke fortrydes.`}
+          danger
+          onConfirm={() => { adminAction(toDelete.id, 'delete'); setToDelete(null) }}
+          onCancel={() => setToDelete(null)}
+        />
+      )}
     </>
   )
 }
