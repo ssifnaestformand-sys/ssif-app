@@ -1638,14 +1638,24 @@ function fmtRelative(ts) {
 
 function AppUsersPage() {
   const [users,   setUsers]   = useState([])
+  const [holdMap, setHoldMap] = useState({})   // conventus_id → titel
   const [loading, setLoading] = useState(true)
   const [search,  setSearch]  = useState('')
   const [sortKey, setSortKey] = useState('lastSeen')
 
   useEffect(() => {
-    getDocs(collection(db, 'users'))
-      .then(snap => setUsers(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
-      .finally(() => setLoading(false))
+    Promise.all([
+      getDocs(collection(db, 'users')),
+      getDocs(collection(db, 'holds')),
+    ]).then(([uSnap, hSnap]) => {
+      setUsers(uSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+      const map = {}
+      hSnap.docs.forEach(d => {
+        const h = d.data()
+        if (h.conventus_id) map[String(h.conventus_id)] = h.titel || d.id
+      })
+      setHoldMap(map)
+    }).finally(() => setLoading(false))
   }, [])
 
   // Opbyg email → bruger-opslag (primaryEmail og login-email)
@@ -1655,15 +1665,24 @@ function AppUsersPage() {
     if (e) emailToUser[e] = u
   })
 
-  // Hjælper: normaliser extraEmails til [{email, verified}]
+  // Normaliser extraEmails til [{email, verified}]
   function getExtraEmails(u) {
     return (u.extraEmails || []).map(e =>
       typeof e === 'string' ? { email: e, verified: false } : e
     )
   }
 
+  // Hold-IDs som brugeren ser i appen (alle kilder)
+  function getUserHoldIds(u) {
+    return [...new Set([
+      ...(u.holdIds       || []).map(String),
+      ...(u.holds         || []).map(String),
+      ...(u.familyMembers || []).filter(m => m.holdId).map(m => String(m.holdId)),
+    ])]
+  }
+
   const ROLE_LABEL = { admin: 'Admin', trainer: 'Træner', Medlem: 'Medlem' }
-  const ROLE_COLOR = { admin: 'badge-green', trainer: 'badge-blue', Medlem: 'badge-gray' }
+  const ROLE_COLOR = { admin: 'badge-green', trainer: 'badge-blue', Член: 'badge-gray' }
 
   const q = search.trim().toLowerCase()
   const filtered = users
@@ -1672,7 +1691,9 @@ function AppUsersPage() {
       if ((u.displayName || '').toLowerCase().includes(q)) return true
       const primary = (u.email || u.primaryEmail || '').toLowerCase()
       if (primary.includes(q)) return true
-      return getExtraEmails(u).some(e => e.email.toLowerCase().includes(q))
+      if (getExtraEmails(u).some(e => e.email.toLowerCase().includes(q))) return true
+      // Søg også i holdnavne
+      return getUserHoldIds(u).some(id => (holdMap[id] || '').toLowerCase().includes(q))
     })
     .sort((a, b) => {
       if (sortKey === 'displayName') return (a.displayName || '').localeCompare(b.displayName || '', 'da')
@@ -1746,6 +1767,11 @@ function AppUsersPage() {
         )}
       </div>
 
+      {/* Note om manglende brugere */}
+      <div className="alert-info" style={{ marginBottom: 16, fontSize: 12 }}>
+        <strong>Listen viser kun brugere med et Firestore-dokument.</strong> Hvis en bruger loggede ind da Firebase-kvoten var overskredet, kan deres konto mangle her — bed dem logge ind igen for at gendanne dokumentet.
+      </div>
+
       <div className="card">
         {loading ? (
           <div className="loading-dots"><span/><span/><span/></div>
@@ -1758,6 +1784,7 @@ function AppUsersPage() {
                 <tr>
                   <SortTh k="displayName" label="Navn" />
                   <th>Email-forbindelser</th>
+                  <th>Hold i appen</th>
                   <th>Rolle</th>
                   <SortTh k="lastSeen"  label="Sidst aktiv" />
                   <SortTh k="createdAt" label="Oprettet" />
@@ -1811,9 +1838,38 @@ function AppUsersPage() {
                         })}
                       </td>
 
+                      {/* Hold i appen */}
+                      <td style={{ fontSize: 12, maxWidth: 220 }}>
+                        {(() => {
+                          const ids   = getUserHoldIds(u)
+                          if (!ids.length) return <span style={{ color: 'var(--text3)' }}>–</span>
+                          const named = ids.map(id => holdMap[id]).filter(Boolean)
+                          const unknown = ids.length - named.length
+                          return (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                              {named.slice(0, 6).map((titel, i) => (
+                                <span key={i} className="badge badge-gray"
+                                      style={{ fontSize: 10, padding: '1px 5px', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                      title={titel}>
+                                  {titel}
+                                </span>
+                              ))}
+                              {named.length > 6 && (
+                                <span className="badge badge-gray" style={{ fontSize: 10 }}>+{named.length - 6}</span>
+                              )}
+                              {unknown > 0 && (
+                                <span style={{ fontSize: 10, color: 'var(--text3)', alignSelf: 'center' }}>
+                                  ({unknown} uden navn)
+                                </span>
+                              )}
+                            </div>
+                          )
+                        })()}
+                      </td>
+
                       <td>
                         <span className={`badge ${ROLE_COLOR[u.role] || 'badge-gray'}`}>
-                          {ROLE_LABEL[u.role] || u.role || 'Medlem'}
+                          {ROLE_LABEL[u.role] || u.role || 'Член'}
                         </span>
                       </td>
                       <td style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
