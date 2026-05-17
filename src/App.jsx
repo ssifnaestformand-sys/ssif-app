@@ -1091,35 +1091,36 @@ function TeamsScreen({ onSelectTeam, user }) {
         </div>
       ))}
       {/* Tilmeldingslink */}
-      <div style={{ margin: '8px 16px 0' }}>
+      <div style={{ margin: '20px 16px 0' }}>
         <a href="https://www.sejssvejbaek-if.dk/tilmelding"
            target="_blank" rel="noopener noreferrer"
-           style={{ textDecoration: 'none' }}>
+           style={{ textDecoration: 'none', display: 'block' }}>
           <div style={{
-            display: 'flex', alignItems: 'center', gap: 14,
-            background: 'var(--surface)', borderRadius: 'var(--radius)',
-            padding: '14px 16px', boxShadow: 'var(--shadow)',
+            background: 'var(--green)',
+            borderRadius: 'var(--radius)',
+            padding: '18px 20px',
+            display: 'flex', alignItems: 'center', gap: 16,
+            boxShadow: '0 4px 14px rgba(26,92,42,.35)',
           }}>
             <div style={{
-              width: 40, height: 40, borderRadius: 12,
-              background: 'var(--green-soft)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+              width: 48, height: 48, borderRadius: 14, flexShrink: 0,
+              background: 'rgba(255,255,255,.18)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-              <Icon name="user-plus" size={20} color="var(--green)" />
+              <Icon name="user-plus" size={24} color="white" />
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--text)' }}>
+              <div style={{ fontWeight: 800, fontSize: 16, color: 'white', lineHeight: 1.2 }}>
                 Tilmeld dig selv eller dit barn
               </div>
-              <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 1 }}>
-                Åbner tilmeldingsside på sejssvejbaek-if.dk
+              <div style={{ fontSize: 13, color: 'rgba(255,255,255,.75)', marginTop: 3 }}>
+                Tilmelding til hold på sejssvejbaek-if.dk →
               </div>
             </div>
-            <Icon name="chevron" size={18} color="var(--text3)" sw={2.5} />
           </div>
         </a>
       </div>
-      <div style={{ height: 16 }} />
+      <div style={{ height: 20 }} />
     </div>
   )
 }
