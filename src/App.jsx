@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import DOMPurify from 'dompurify'
 import './App.css'
 import { auth, db, getAppMessaging } from './firebase.js'
 import { getToken, onMessage } from 'firebase/messaging'
@@ -1193,7 +1194,7 @@ function TeamDetailScreen({ team: hold }) {
           <SectionHeader title="Om holdet" />
           <div style={{ margin: '0 16px' }}>
             <div className="hold-beskrivelse"
-                 dangerouslySetInnerHTML={{ __html: hold.beskrivelse }} />
+                 dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(hold.beskrivelse) }} />
           </div>
         </>
       ) : null}
@@ -1904,10 +1905,11 @@ function ProfileScreen({ user, onLogout, onUserUpdate, verifyMsg, onEnableNotifi
       const current = snap.data()?.extraEmails || []
       await updateDoc(ref, { extraEmails: [...current, entry] })
 
+      const idToken = await auth.currentUser?.getIdToken() ?? ''
       const res = await fetch('api/send-verification.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: emailLower, uid: user.uid, token }),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ email: emailLower, uid: user.uid, token, idToken }),
       })
 
       onUserUpdate(prev => ({ ...prev, extraEmails: [...current, entry] }))
@@ -1945,10 +1947,11 @@ function ProfileScreen({ user, onLogout, onUserUpdate, verifyMsg, onEnableNotifi
         return em === emailStr ? { email: em, verified: false, token } : e
       })
       await updateDoc(ref, { extraEmails: updated })
+      const idToken2 = await auth.currentUser?.getIdToken() ?? ''
       await fetch('api/send-verification.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: emailStr, uid: user.uid, token }),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken2}` },
+        body: JSON.stringify({ email: emailStr, uid: user.uid, token, idToken: idToken2 }),
       })
       onUserUpdate(prev => ({ ...prev, extraEmails: updated }))
       setInfo('Ny verifikationsmail sendt')

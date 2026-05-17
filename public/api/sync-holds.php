@@ -12,8 +12,6 @@
  *    Admin-felterne (aktiv, traener_uid, traeningstider) bevares.
  */
 
-ini_set('display_errors', '1');
-error_reporting(E_ALL);
 set_time_limit(300);
 ignore_user_abort(true);
 ini_set('memory_limit', '128M');
@@ -244,15 +242,11 @@ foreach ($allHolds as $h) {
     usleep(50000); // 50ms pause → ~23s for 460 hold
 }
 
-// Find afdelinger med fejl eller 0 hold
-$afdErrors  = [];
-$afdZero    = [];
-foreach ($debugAfd as $afdId => $info) {
+// Tæl fejl (logges ikke i svar — undgår informationslæk, fix M-3)
+$afdErrors = 0;
+foreach ($debugAfd as $info) {
     foreach (['hold', 'udvalg'] as $type) {
-        $d = $info[$type] ?? null;
-        if (!$d) continue;
-        if (isset($d['error']))       $afdErrors[]  = "$afdId ({$info['navn']}) [$type]: {$d['error']}";
-        elseif (($d['found'] ?? 0) === 0) $afdZero[] = "$afdId ({$info['navn']}) [$type]: 0 fundet";
+        if (isset(($info[$type] ?? [])['error'])) $afdErrors++;
     }
 }
 
@@ -261,15 +255,8 @@ echo json_encode([
     'afdelinger'    => count($afdelinger),
     'holds_total'   => count($allHolds),
     'holds_written' => $holdsWritten,
+    'afd_errors'    => $afdErrors,
     'synced'        => $now,
-    'debug' => [
-        'token_ok'      => !empty($token),
-        'project_id'    => $projectId,
-        'afd_errors'    => $afdErrors,    // afdelinger med fejl
-        'afd_zero'      => $afdZero,      // afdelinger med 0 hold/udvalg
-        'global'        => $debugGlob,    // globale kald (type=hold/udvalg uden afd)
-        'per_afdeling'  => $debugAfd,     // fuld per-afdeling detalje
-    ],
 ], JSON_UNESCAPED_UNICODE);
 
 // ── Hjælpefunktioner ─────────────────────────────────────────────────────────

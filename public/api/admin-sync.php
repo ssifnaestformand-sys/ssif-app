@@ -10,15 +10,14 @@
  *   what = "holds" | "members" | "all"  (default: "all")
  */
 
+require_once __DIR__ . '/_auth.php';
 header('Content-Type: application/json; charset=utf-8');
-header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
 header('Access-Control-Allow-Headers: Authorization, Content-Type');
+set_cors_headers();
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(200); exit; }
 if ($_SERVER['REQUEST_METHOD'] !== 'POST')    { http_response_code(405); echo json_encode(['error' => 'Kun POST']); exit; }
-
-require_once __DIR__ . '/_auth.php';
 
 // ── Firebase ID-token verifikation ────────────────────────────────────────────
 $bearerToken = bearer_token();
@@ -37,10 +36,12 @@ if (!file_exists($saPath)) {
 $sa        = json_decode(file_get_contents($saPath), true);
 $projectId = $sa['project_id'] ?? '';
 if (!$projectId || !verify_firebase_id_token($bearerToken, $projectId)) {
-    http_response_code(401);
-    echo json_encode(['error' => 'Uautoriseret']);
-    exit;
+    http_response_code(401); echo json_encode(['error' => 'Uautoriseret']); exit;
 }
+
+// Rolle-tjek: kun admins må trigge synkronisering (fix H-2)
+$accessToken = google_access_token($sa);
+require_role(uid_from_token($bearerToken), $projectId, $accessToken, ['admin']);
 
 // ── SYNC_SECRET hentes fra servermiljøet (aldrig eksponeret til browseren) ────
 $syncSecret = getenv('SYNC_SECRET') ?: '';
@@ -76,3 +77,13 @@ if ($what === 'members' || $what === 'all') {
 }
 
 echo json_encode(['ok' => true, 'results' => $results, 'synced' => date('c')], JSON_UNESCAPED_UNICODE);
+
+function google_access_token(array $sa): string {
+    $now  = time();
+    $hdr  = rtrim(strtr(base64_encode(json_encode(['alg'=>'RS256','typ'=>'JWT'])),'+/','-_'),'=');
+    $pay  = rtrim(strtr(base64_encode(json_encode(['iss'=>$sa['client_email'],'scope'=>'https://www.googleapis.com/auth/datastore','aud'=>'https://oauth2.googleapis.com/token','iat'=>$now,'exp'=>$now+3600])),'+/','-_'),'=');
+    openssl_sign("$hdr.$pay", $sig, $sa['private_key'], OPENSSL_ALGO_SHA256);
+    $jwt  = "$hdr.$pay." . rtrim(strtr(base64_encode($sig),'+/','-_'),'=');
+    $resp = @file_get_contents('https://oauth2.googleapis.com/token', false, stream_context_create(['http'=>['method'=>'POST','header'=>"Content-Type: application/x-www-form-urlencoded\r\n",'content'=>http_build_query(['grant_type'=>'urn:ietf:params:oauth:grant-type:jwt-bearer','assertion'=>$jwt]),'timeout'=>10,'ignore_errors'=>true]]));
+    return json_decode($resp ?: '', true)['access_token'] ?? '';
+}

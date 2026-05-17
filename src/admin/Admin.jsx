@@ -1639,7 +1639,13 @@ function EventsPage({ userDoc, authUser }) {
   async function importFromConventus() {
     setImporting(true); setImportMsg('')
     try {
-      const res  = await fetch(`${BASE}api/conventus.php?endpoint=kalender`)
+      const idToken = await auth.currentUser?.getIdToken() ?? ''
+      const fd = new FormData(); fd.append('idToken', idToken)
+      const res  = await fetch(`${BASE}api/conventus.php?endpoint=kalender`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}` },
+        body: fd,
+      })
       const data = await res.json()
       if (data.error) {
         let msg = 'Fejl: ' + data.error

@@ -9,14 +9,13 @@
  */
 
 header('Content-Type: application/json; charset=utf-8');
-header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
 header('Access-Control-Allow-Headers: Authorization, Content-Type');
+require_once __DIR__ . '/_auth.php';
+set_cors_headers();
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(200); exit; }
 if ($_SERVER['REQUEST_METHOD'] !== 'POST')    { http_response_code(405); echo json_encode(['error' => 'Kun POST']); exit; }
-
-require_once __DIR__ . '/_auth.php';
 
 // ── Autentificering via Firebase ID-token ─────────────────────────────────────
 $bearerToken = bearer_token();
@@ -52,11 +51,9 @@ if (empty($sa['project_id']) || empty($sa['private_key']) || empty($sa['client_e
 
 $projectId = $sa['project_id'];
 
-// Fuld token-verifikation nu hvor project_id kendes
+// Fuld token-verifikation
 if (!verify_firebase_id_token($bearerToken, $projectId)) {
-    http_response_code(401);
-    echo json_encode(['error' => 'Uautoriseret']);
-    exit;
+    http_response_code(401); echo json_encode(['error' => 'Uautoriseret']); exit;
 }
 
 // ── OAuth access token via service account ────────────────────────────────────
@@ -66,6 +63,11 @@ if (!$accessToken) {
     echo json_encode(['error' => 'Kunne ikke hente OAuth token']);
     exit;
 }
+
+// Rolle-tjek: kun admins og trænere må sende push-notifikationer (fix H-1)
+// Placeret efter $accessToken er hentet da require_role() bruger den til Firestore-opslag.
+$callerUid = uid_from_token($bearerToken);
+require_role($callerUid, $projectId, $accessToken);
 
 // ── Hent alle brugere fra Firestore og filtrer på holdId ─────────────────────
 $tokens = getFcmTokens($projectId, $accessToken, $holdIds);

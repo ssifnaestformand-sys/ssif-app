@@ -11,10 +11,29 @@
  */
 
 header('Content-Type: application/json; charset=utf-8');
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, OPTIONS');
+header('Access-Control-Allow-Methods: POST, GET, OPTIONS');
+header('Access-Control-Allow-Headers: Authorization, Content-Type');
+require_once __DIR__ . '/_auth.php';
+set_cors_headers();
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(200); exit; }
+
+// ── Firebase auth (fix H-5: forhindrer åben proxy-misbrug) ───────────────────
+$saPath = __DIR__ . '/firebase-service-account.json';
+if (file_exists($saPath)) {
+    $token = bearer_token();
+    if ($token) {
+        $saTmp = json_decode(file_get_contents($saPath), true);
+        $pid   = $saTmp['project_id'] ?? '';
+        if ($pid && !verify_firebase_id_token($token, $pid)) {
+            http_response_code(401); echo json_encode(['error' => 'Uautoriseret']); exit;
+        }
+    }
+    // Ingen token → tillad kun adgang hvis kald er fra serveren selv (ingen HTTP_ORIGIN)
+    elseif (!empty($_SERVER['HTTP_ORIGIN'])) {
+        http_response_code(401); echo json_encode(['error' => 'Uautoriseret']); exit;
+    }
+}
 
 // ── API-nøgle ────────────────────────────────────────────────────────────────
 $apiKey = getenv('CONVENTUS_KEY');

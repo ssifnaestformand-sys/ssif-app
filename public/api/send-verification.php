@@ -10,13 +10,33 @@
  */
 
 header('Content-Type: application/json; charset=utf-8');
-header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
+require_once __DIR__ . '/_auth.php';
+set_cors_headers();
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(200); exit; }
 if ($_SERVER['REQUEST_METHOD'] !== 'POST')    { http_response_code(405); echo json_encode(['error' => 'Kun POST']); exit; }
 
-$input = json_decode(file_get_contents('php://input'), true) ?: [];
+// Læs body én gang — bearer_token() og $input deler samme buffer
+$_rawBody = file_get_contents('php://input');
+$input    = json_decode($_rawBody, true) ?: [];
+
+// ── Firebase auth (fix M-1: forhindrer åben email-relay) ─────────────────────
+$saPath = __DIR__ . '/firebase-service-account.json';
+if (file_exists($saPath)) {
+    // Hent token fra header (foretrukket) eller fra allerede-læst body
+    $h = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
+    if (!$h && function_exists('getallheaders')) { $all = getallheaders(); $h = $all['Authorization'] ?? $all['authorization'] ?? ''; }
+    $bearerToken = strpos($h, 'Bearer ') === 0 ? trim(substr($h, 7)) : ($input['idToken'] ?? '');
+    if (!$bearerToken) {
+        http_response_code(401); echo json_encode(['error' => 'Login krævet']); exit;
+    }
+    $saTmp = json_decode(file_get_contents($saPath), true);
+    $pid   = $saTmp['project_id'] ?? '';
+    if ($pid && !verify_firebase_id_token($bearerToken, $pid)) {
+        http_response_code(401); echo json_encode(['error' => 'Uautoriseret']); exit;
+    }
+}
 $to    = trim($input['email'] ?? '');
 $uid   = trim($input['uid']   ?? '');
 $token = trim($input['token'] ?? '');
