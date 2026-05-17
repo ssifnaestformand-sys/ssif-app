@@ -1434,7 +1434,16 @@ function EventsPage({ userDoc, authUser }) {
         return
       }
       const items = data.events ?? []
-      if (!items.length) { setImportMsg('Ingen begivenheder fundet i Conventus-kalenderen.'); return }
+      if (!items.length) {
+        const d = data.debug || {}
+        setImportMsg(
+          `Ingen begivenheder fundet (${d.items_in_xml ?? 0} items i XML).\n` +
+          `Root-tags: ${(d.root_tags || []).join(', ')}\n` +
+          `Channel-tags: ${(d.channel_tags || []).join(', ')}\n` +
+          (d.first_item ? `Første item: ${JSON.stringify(d.first_item, null, 2)}` : 'Ingen items')
+        )
+        return
+      }
 
       // Skriv til Firestore — upsert baseret på titel+dato
       const existingKeys = new Set(events.map(e => e.title + '|' + e.date))

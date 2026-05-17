@@ -174,7 +174,7 @@ if ($endpoint === 'kalender') {
     header('Cache-Control: no-cache');
 
     $urls = [
-        'https://www.conventus.dk/dataudv/www/kalender_rss.php?type_ikon=1&mos=1&dato=1&dato_tidspunkt=1&titel=1&sted=1&klikbar=1&tid=2&niveau=1&gruppe_type=2&rss=1&foreningsid=' . FORENING,
+        'https://www.conventus.dk/dataudv/www/kalender_rss.php?type_ikon=1&mos=1&dato=1&dato_tidspunkt=1&titel=1&sted=1&klikbar=1&tid=2&niveau=1&gruppe_type=2&rss=1&maaneder=12&foreningsid=' . FORENING,
     ];
 
     $raw = false;
@@ -211,13 +211,32 @@ if ($endpoint === 'kalender') {
     $events  = [];
     $channel = $xml->channel ?? $xml;
 
+    // Saml alle top-level element-navne for debug
+    $rootChildren = [];
+    foreach ($xml->children() as $tag => $child) $rootChildren[] = $tag;
+    $channelChildren = [];
+    foreach ($channel->children() as $tag => $child) $channelChildren[] = $tag;
+
+    $itemCount = 0;
+    $firstItemDebug = null;
+
     foreach ($channel->item ?? [] as $item) {
+        $itemCount++;
+
+        // Gem første item's rå struktur til debug
+        if ($itemCount === 1) {
+            $firstItemDebug = [];
+            foreach ($item->children() as $tag => $child) {
+                $firstItemDebug[$tag] = trim((string)$child);
+            }
+        }
+
         $title   = html_entity_decode(trim((string)($item->title   ?? '')), ENT_HTML5 | ENT_QUOTES, 'UTF-8');
         $desc    = html_entity_decode(trim((string)($item->description ?? '')), ENT_HTML5 | ENT_QUOTES, 'UTF-8');
         $link    = trim((string)($item->link    ?? ''));
         $pubDate = trim((string)($item->pubDate ?? $item->date ?? ''));
 
-        // Søg i namespace-udvidelser efter startdato (eventkalender-formater)
+        // Søg i namespace-udvidelser efter startdato
         if (!$pubDate) {
             foreach ($item->getNamespaces(true) as $prefix => $uri) {
                 $ext = $item->children($uri);
@@ -225,6 +244,13 @@ if ($endpoint === 'kalender') {
                     $v = trim((string)($ext->$f ?? ''));
                     if ($v) { $pubDate = $v; break 2; }
                 }
+            }
+        }
+
+        // Prøv også at parse dato fra description (Conventus kan indlejre dato der)
+        if (!$pubDate && $desc) {
+            if (preg_match('/(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{4})/', $desc, $m)) {
+                $pubDate = "{$m[3]}-{$m[2]}-{$m[1]}";
             }
         }
 
@@ -255,7 +281,14 @@ if ($endpoint === 'kalender') {
         'events'  => $events,
         'count'   => count($events),
         'fetched' => date('c'),
-        'debug'   => ['url' => $usedUrl, 'raw_bytes' => strlen($raw), 'items_found' => count($events)],
+        'debug'   => [
+            'url'              => $usedUrl,
+            'raw_bytes'        => strlen($raw),
+            'items_in_xml'     => $itemCount,
+            'root_tags'        => $rootChildren,
+            'channel_tags'     => array_unique($channelChildren),
+            'first_item'       => $firstItemDebug,
+        ],
     ], JSON_UNESCAPED_UNICODE);
     exit;
 }
