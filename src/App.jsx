@@ -824,130 +824,82 @@ function DashboardScreen({ user, unreadMsgs = 0, news, onNavigate, showPushBanne
       {/* ── Ugeoversigt ────────────────────────────── */}
       <SectionHeader title="Træning denne uge" />
       <div style={{ padding: '0 16px 4px' }}>
+        <div style={{ background: 'var(--surface)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', overflow: 'hidden' }}>
 
-        {/* Kompakt ugestrip — viser hvilke dage der er træning */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-          {weekDates.map((date, i) => {
-            const isToday  = i === todayIdx
-            const isPast   = i < todayIdx
-            const hasSess  = byDay[i].length > 0
-            return (
-              <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flex: 1 }}>
-                <span style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', color: isToday ? 'var(--green)' : 'var(--text3)' }}>
-                  {DAY_SHORT[i]}
-                </span>
-                <div style={{
-                  width: 28, height: 28, borderRadius: 14,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: isToday ? 'var(--green)' : 'transparent',
-                  color: isToday ? 'white' : isPast ? 'var(--text3)' : 'var(--text)',
-                  fontSize: 13, fontWeight: isToday ? 700 : 400,
-                }}>
-                  {date.getDate()}
-                </div>
-                <div style={{
-                  width: 5, height: 5, borderRadius: '50%',
-                  background: hasSess ? (isPast ? '#d1d5db' : 'var(--green)') : 'transparent',
-                }} />
-              </div>
-            )
-          })}
-        </div>
-
-        {/* Træningskort per dag */}
-        {hasSessions ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* Ugestrip */}
+          <div style={{ display: 'flex', borderBottom: '1px solid var(--sep)', padding: '10px 4px 6px' }}>
             {weekDates.map((date, i) => {
-              const sessions = byDay[i]
-              if (!sessions.length) return null
               const isToday = i === todayIdx
               const isPast  = i < todayIdx
-              const dayName = isToday
-                ? 'I dag'
-                : date.toLocaleDateString('da-DK', { weekday: 'long', day: 'numeric', month: 'long' })
-                    .replace(/^./, c => c.toUpperCase())
+              const hasSess = byDay[i].length > 0
               return (
-                <div key={i}>
-                  {/* Dag-overskrift */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                    <div style={{
-                      width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
-                      background: isToday ? 'var(--green)' : isPast ? '#d1d5db' : 'var(--green)',
-                    }} />
-                    <span style={{ fontSize: 13, fontWeight: 700, color: isToday ? 'var(--green)' : isPast ? 'var(--text3)' : 'var(--text)' }}>
-                      {dayName}
-                    </span>
-                    {isToday && (
-                      <span style={{ fontSize: 10, background: 'var(--green)', color: 'white', padding: '1px 8px', borderRadius: 10, fontWeight: 700 }}>I dag</span>
-                    )}
+                <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                  <span style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.3px', color: isToday ? 'var(--green)' : 'var(--text3)' }}>
+                    {DAY_SHORT[i]}
+                  </span>
+                  <div style={{
+                    width: 26, height: 26, borderRadius: 13,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: isToday ? 'var(--green)' : 'transparent',
+                    color: isToday ? 'white' : isPast ? 'var(--text3)' : 'var(--text)',
+                    fontSize: 12, fontWeight: isToday ? 700 : 500,
+                  }}>
+                    {date.getDate()}
                   </div>
-
-                  {/* Sessions som kort */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingLeft: 14, borderLeft: `2px solid ${isPast ? '#e5e7eb' : 'var(--green)'}` }}>
-                    {sessions.map((s, j) => {
-                      const person = personLabel[String(s.hold.conventus_id)]
-                      return (
-                        <button key={j}
-                          onClick={() => onNavigate('team-detail', s.hold)}
-                          style={{
-                            background: 'var(--surface)', border: 'none',
-                            borderRadius: 'var(--radius-sm)', padding: '11px 14px',
-                            display: 'flex', alignItems: 'center', gap: 12,
-                            boxShadow: 'var(--shadow)', cursor: 'pointer', textAlign: 'left',
-                            width: '100%', opacity: isPast ? .5 : 1,
-                            WebkitTapHighlightColor: 'transparent',
-                          }}>
-                          {/* Tids-badge */}
-                          <div style={{
-                            flexShrink: 0, minWidth: 48, textAlign: 'center',
-                            padding: '4px 6px', borderRadius: 8,
-                            background: isPast ? 'var(--bg)' : 'var(--green-soft)',
-                          }}>
-                            {s.time ? (
-                              <>
-                                <div style={{ fontSize: 14, fontWeight: 800, color: isPast ? 'var(--text3)' : 'var(--green)', lineHeight: 1 }}>
-                                  {s.time.split(':')[0]}
-                                </div>
-                                <div style={{ fontSize: 10, color: isPast ? 'var(--text3)' : 'var(--green)', marginTop: 1 }}>
-                                  :{s.time.split(':')[1]}
-                                </div>
-                              </>
-                            ) : (
-                              <Icon name="calendar" size={18} color={isPast ? 'var(--text3)' : 'var(--green)'} />
-                            )}
-                          </div>
-
-                          {/* Info */}
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            {person && (
-                              <div style={{ fontSize: 12, fontWeight: 700, color: isPast ? 'var(--text3)' : 'var(--green)', marginBottom: 1 }}>
-                                {person}
-                              </div>
-                            )}
-                            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {s.hold.titel}
-                            </div>
-                            {s.hold.aktivitet_titel && (
-                              <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 1 }}>
-                                {s.hold.aktivitet_titel}
-                              </div>
-                            )}
-                          </div>
-
-                          {!isPast && <Icon name="chevron" size={16} color="var(--text3)" sw={2.5} />}
-                        </button>
-                      )
-                    })}
-                  </div>
+                  <div style={{ width: 4, height: 4, borderRadius: 2, background: hasSess ? (isPast ? '#d1d5db' : 'var(--green)') : 'transparent' }} />
                 </div>
               )
             })}
           </div>
-        ) : (
-          <p style={{ textAlign: 'center', fontSize: 13, color: 'var(--text3)', padding: '8px 0 4px' }}>
-            Ingen træningstider registreret for denne uge
-          </p>
-        )}
+
+          {/* Sessions — kompakte linjer */}
+          {hasSessions ? weekDates.map((date, i) => {
+            const sessions = byDay[i]
+            if (!sessions.length) return null
+            const isToday = i === todayIdx
+            const isPast  = i < todayIdx
+            const dayLabel = isToday
+              ? 'I dag'
+              : date.toLocaleDateString('da-DK', { weekday: 'long' }).replace(/^./, c => c.toUpperCase())
+            return (
+              <div key={i} style={{ opacity: isPast ? .5 : 1 }}>
+                {/* Dag-label */}
+                <div style={{ padding: '8px 14px 4px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: isToday ? 'var(--green)' : 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.3px' }}>
+                    {dayLabel}
+                  </span>
+                  {isToday && <span style={{ fontSize: 9, background: 'var(--green)', color: 'white', padding: '1px 6px', borderRadius: 8, fontWeight: 700 }}>I DAG</span>}
+                </div>
+                {/* Session-rækker */}
+                {sessions.map((s, j) => {
+                  const person = personLabel[String(s.hold.conventus_id)]
+                  return (
+                    <button key={j} onClick={() => onNavigate('team-detail', s.hold)}
+                      style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '5px 14px', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', WebkitTapHighlightColor: 'transparent' }}>
+                      {/* Tid */}
+                      <span style={{ fontSize: 13, fontWeight: 700, color: isToday ? 'var(--green)' : 'var(--text2)', minWidth: 38, flexShrink: 0 }}>
+                        {s.time || '––'}
+                      </span>
+                      {/* Person + hold */}
+                      <span style={{ flex: 1, fontSize: 14, color: 'var(--text)', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {person
+                          ? <><span style={{ fontWeight: 700 }}>{person}</span><span style={{ color: 'var(--text2)', fontWeight: 400 }}> · {s.hold.titel}</span></>
+                          : <span style={{ fontWeight: 600 }}>{s.hold.titel}</span>
+                        }
+                      </span>
+                      <Icon name="chevron" size={14} color="var(--text3)" sw={2} />
+                    </button>
+                  )
+                })}
+                <div style={{ height: 4 }} />
+              </div>
+            )
+          }) : (
+            <p style={{ padding: '14px', textAlign: 'center', fontSize: 13, color: 'var(--text3)', margin: 0 }}>
+              Ingen træningstider registreret for denne uge
+            </p>
+          )}
+        </div>
       </div>
 
       {/* ── Kommende begivenheder ─────────────────── */}
@@ -2268,6 +2220,14 @@ export default function App() {
           updates.holdIds = [...new Set([...(profile.holdIds || []).map(String), ...memberHoldIds])]
         }
         updateDoc(ref, updates).catch(() => {})
+
+        // Synk lastMsgSeen fra Firestore → localStorage så ulæst-status bevares på tværs af sessioner
+        if (profile.lastMsgSeen) {
+          const local    = parseInt(localStorage.getItem('ssif_msgs_seen') || '0', 10)
+          const fromDb   = Number(profile.lastMsgSeen)
+          const latest   = Math.max(local, fromDb)
+          localStorage.setItem('ssif_msgs_seen', String(latest))
+        }
       }
     } catch {}
 
@@ -2512,7 +2472,13 @@ export default function App() {
           <FeedScreen
             user={user}
             onSelectMsg={setSelectedMsg}
-            onMarkSeen={() => setMsgUnread(0)}
+            onMarkSeen={() => {
+                setMsgUnread(0)
+                if (user?.uid && !user.isDemo) {
+                  const now = Date.now()
+                  updateDoc(doc(db, 'users', user.uid), { lastMsgSeen: now }).catch(() => {})
+                }
+              }}
             onEnableNotifications={handleEnableNotifications}
           />
         ) : activeTab === 'messages' && selectedMsg ? (
