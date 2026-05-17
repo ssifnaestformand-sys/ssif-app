@@ -905,7 +905,25 @@ body {
   padding-bottom: env(safe-area-inset-bottom, 0);
 }
 .splash-logo {
-  color: white;
+  width: 140px;
+  height: 140px;
+  border-radius: 28px;
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0,0,0,.18);
+}
+.splash-logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.splash-logo span {
+  color: var(--green);
   font-size: 36px;
   font-weight: 800;
   letter-spacing: 2px;

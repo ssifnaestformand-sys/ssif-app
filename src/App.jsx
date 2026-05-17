@@ -238,7 +238,11 @@ function FirestoreDot({ live }) {
 function SplashScreen({ label }) {
   return (
     <div className="splash-screen">
-      <div className="splash-logo">SSIF</div>
+      <div className="splash-logo">
+        <img src="/ssif-logo.png" alt="SSIF" className="splash-logo-img"
+             onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block' }} />
+        <span style={{ display: 'none' }}>SSIF</span>
+      </div>
       <div className="spinner spinner--white" />
       {label && <p className="splash-label">{label}</p>}
     </div>
