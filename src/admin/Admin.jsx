@@ -824,48 +824,48 @@ function ImageUploader({ value, onChange, aspectRatio = 'auto', hint = '' }) {
   const [error, setError]       = useState('')
   const inputRef                = useRef(null)
 
-  function handleFile(file) {
+  async function handleFile(file) {
     if (!file || !file.type.startsWith('image/')) { setError('Kun billedfiler tilladt'); return }
-    if (file.size > 8 * 1024 * 1024)              { setError('Maks 8 MB'); return }
-    setError(''); setProgress(0)
+    if (file.size > 10 * 1024 * 1024)             { setError('Maks 10 MB'); return }
+    setError(''); setProgress(1)
 
-    const folder = aspectRatio !== 'auto' ? 'banners' : 'news-images'
-    const path   = `${folder}/${Date.now()}-${file.name.replace(/[^a-z0-9.]/gi, '_')}`
-    const sRef   = storageRef(storage, path)
-    const upload = uploadBytesResumable(sRef, file)
+    try {
+      const idToken = await auth.currentUser?.getIdToken() ?? ''
+      const fd = new FormData()
+      fd.append('image',   file)
+      fd.append('idToken', idToken)
 
-    // Timeout: hvis upload sidder fast på 0% i 12 sek. er det sandsynligvis
-    // Firebase Storage-regler eller CORS der blokerer
-    let hasProgress = false
-    const timeout = setTimeout(() => {
-      if (!hasProgress) {
-        upload.cancel()
-        setProgress(null)
-        setError(
-          'Upload startede ikke — tjek Firebase Storage-regler. ' +
-          'Gå til Firebase Console → Storage → Rules og tilføj: ' +
-          'allow write: if request.auth != null;'
-        )
-      }
-    }, 12000)
+      // XMLHttpRequest giver os progress-events som fetch ikke gør
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest()
+        xhr.open('POST', 'https://app.sejssvejbaek-if.dk/api/upload-image.php')
+        xhr.setRequestHeader('Authorization', `Bearer ${idToken}`)
 
-    upload.on('state_changed',
-      snap => {
-        if (snap.bytesTransferred > 0) hasProgress = true
-        setProgress(Math.round(snap.bytesTransferred / snap.totalBytes * 100))
-      },
-      err => {
-        clearTimeout(timeout)
-        setError('Upload fejlede: ' + (err.code === 'storage/unauthorized'
-          ? 'Ingen tilladelse — tjek Firebase Storage-regler'
-          : err.message))
-        setProgress(null)
-      },
-      () => {
-        clearTimeout(timeout)
-        getDownloadURL(upload.snapshot.ref).then(url => { onChange(url); setProgress(null) })
-      }
-    )
+        xhr.upload.onprogress = e => {
+          if (e.lengthComputable) setProgress(Math.round(e.loaded / e.total * 100))
+        }
+
+        xhr.onload = () => {
+          if (xhr.status === 200) {
+            try {
+              const data = JSON.parse(xhr.responseText)
+              if (data.url) { onChange(data.url); setProgress(null); resolve() }
+              else reject(new Error(data.error || 'Ukendt fejl'))
+            } catch { reject(new Error('Ugyldigt svar fra serveren')) }
+          } else {
+            try { reject(new Error(JSON.parse(xhr.responseText).error || `HTTP ${xhr.status}`)) }
+            catch { reject(new Error(`HTTP ${xhr.status}`)) }
+          }
+        }
+        xhr.onerror   = () => reject(new Error('Netværksfejl — tjek forbindelsen'))
+        xhr.ontimeout = () => reject(new Error('Timeout — prøv igen'))
+        xhr.timeout   = 60000
+        xhr.send(fd)
+      })
+    } catch (err) {
+      setError('Upload fejlede: ' + err.message)
+      setProgress(null)
+    }
   }
 
   function onDrop(e) {
