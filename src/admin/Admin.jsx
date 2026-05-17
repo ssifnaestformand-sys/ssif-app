@@ -305,7 +305,8 @@ function Sidebar({ page, setPage, userDoc, user, onLogout }) {
     { id: 'messages',  label: 'Beskeder',   icon: 'message' },
     { id: 'news',      label: 'Nyheder',    icon: 'news'    },
     { id: 'teams',     label: 'Hold',       icon: 'users'   },
-    { id: 'events', label: 'Begivenheder', icon: 'calendar' },
+    { id: 'events',  label: 'Begivenheder', icon: 'calendar' },
+    { id: 'banners', label: 'Forsidebanners', icon: 'star'   },
     ...(userDoc?.role === 'admin' ? [
       { id: 'appusers', label: 'App-brugere', icon: 'eye'    },
       { id: 'users',    label: 'Adgang',      icon: 'shield' },
@@ -1807,6 +1808,216 @@ function EventsPage({ userDoc, authUser }) {
   )
 }
 
+// ─── Banners ──────────────────────────────────────────────────────────────────
+
+const EMPTY_BANNER = { imageUrl: '', title: '', subtitle: '', linkUrl: '', order: 1, aktiv: true }
+
+function BannersPage({ userDoc, authUser }) {
+  const [banners, setBanners]   = useState([])
+  const [loading, setLoading]   = useState(true)
+  const [editing, setEditing]   = useState(null)  // null | 'new' | banner obj
+  const [form,    setForm]      = useState(EMPTY_BANNER)
+  const [saving,  setSaving]    = useState(false)
+  const [toDelete,setToDelete]  = useState(null)
+  // Events-på-forside-indstilling
+  const [eventsCount, setEventsCount] = useState(3)
+  const [savingEvt,   setSavingEvt]   = useState(false)
+
+  useEffect(() => {
+    const unsub = onSnapshot(
+      query(collection(db, 'banners'), orderBy('order')),
+      snap => { setBanners(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setLoading(false) }
+    )
+    getDoc(doc(db, 'settings', 'app'))
+      .then(s => { if (s.exists()) setEventsCount(s.data().eventsOnDashboard ?? 3) })
+      .catch(() => {})
+    return unsub
+  }, [])
+
+  function setF(k, v) { setForm(f => ({ ...f, [k]: v })) }
+
+  async function save(e) {
+    e.preventDefault()
+    if (!form.imageUrl) return
+    setSaving(true)
+    const data = {
+      imageUrl:  form.imageUrl,
+      title:     form.title.trim(),
+      subtitle:  form.subtitle.trim(),
+      linkUrl:   form.linkUrl.trim(),
+      order:     Number(form.order) || 1,
+      aktiv:     form.aktiv,
+      updatedAt: serverTimestamp(),
+    }
+    try {
+      if (editing === 'new') {
+        await addDoc(collection(db, 'banners'), { ...data, createdAt: serverTimestamp() })
+      } else {
+        await updateDoc(doc(db, 'banners', editing.id), data)
+      }
+      setEditing(null)
+    } finally { setSaving(false) }
+  }
+
+  async function saveEventsCount(n) {
+    setSavingEvt(true)
+    await setDoc(doc(db, 'settings', 'app'), { eventsOnDashboard: n }, { merge: true }).catch(() => {})
+    setSavingEvt(false)
+  }
+
+  async function toggleAktiv(b) {
+    await updateDoc(doc(db, 'banners', b.id), { aktiv: !b.aktiv })
+  }
+
+  if (editing) return (
+    <>
+      <div className="page-header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button className="btn btn-ghost btn-sm" onClick={() => setEditing(null)}>← Tilbage</button>
+          <h1 className="page-title">{editing === 'new' ? 'Nyt banner' : 'Rediger banner'}</h1>
+        </div>
+      </div>
+      <form onSubmit={save}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 20, alignItems: 'start' }}>
+          <div className="card card-pad">
+            <div className="form-group">
+              <label className="form-label">Billede *</label>
+              <ImageUploader value={form.imageUrl} onChange={url => setF('imageUrl', url)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Titel (valgfri)</label>
+              <input className="form-control" value={form.title} onChange={e => setF('title', e.target.value)} placeholder="fx Fitness Silkeborg" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Undertitel (valgfri)</label>
+              <input className="form-control" value={form.subtitle} onChange={e => setF('subtitle', e.target.value)} placeholder="fx Åbn sommersæson med 20% rabat" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Link (valgfri)</label>
+              <input className="form-control" value={form.linkUrl} onChange={e => setF('linkUrl', e.target.value)} placeholder="https://..." type="url" />
+              <p className="form-hint">Tryk på banneret åbner dette link</p>
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
+              <button type="button" className="btn btn-ghost" onClick={() => setEditing(null)}>Annuller</button>
+              <button type="submit" className="btn btn-primary" disabled={saving || !form.imageUrl}>
+                {saving ? 'Gemmer…' : editing === 'new' ? 'Opret banner' : 'Gem ændringer'}
+              </button>
+            </div>
+          </div>
+
+          <div className="card card-pad">
+            <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 14 }}>Indstillinger</h3>
+            <div className="form-group">
+              <label className="form-label">Rækkefølge</label>
+              <input className="form-control" type="number" min="1" value={form.order} onChange={e => setF('order', e.target.value)} style={{ width: 80 }} />
+              <p className="form-hint">Lavest tal vises først</p>
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">Status</label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+                <input type="checkbox" checked={form.aktiv} onChange={e => setF('aktiv', e.target.checked)} />
+                <span style={{ fontSize: 13 }}>Aktiv (vises i appen)</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </form>
+    </>
+  )
+
+  return (
+    <>
+      <div className="page-header">
+        <h1 className="page-title">Forsidebanners</h1>
+        <button className="btn btn-primary" onClick={() => { setForm({ ...EMPTY_BANNER, order: banners.length + 1 }); setEditing('new') }}>
+          <Icon name="plus" size={15} color="white" /> Nyt banner
+        </button>
+      </div>
+
+      {/* Events-på-forside-indstilling */}
+      <div className="card card-pad" style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <Icon name="calendar" size={18} color="var(--green)" />
+          <span style={{ fontWeight: 600, fontSize: 14 }}>Begivenheder på forsiden:</span>
+          <input type="number" min="0" max="10"
+            className="form-control"
+            value={eventsCount}
+            onChange={e => setEventsCount(Number(e.target.value))}
+            style={{ width: 70 }} />
+          <button className="btn btn-primary btn-sm" disabled={savingEvt}
+            onClick={() => saveEventsCount(eventsCount)}>
+            {savingEvt ? 'Gemmer…' : 'Gem'}
+          </button>
+          <span style={{ fontSize: 12, color: 'var(--text2)' }}>Sæt til 0 for at skjule sektionen</span>
+        </div>
+      </div>
+
+      <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 16, lineHeight: 1.5 }}>
+        Banners vises som et roterende galleri øverst på forsiden i appen.
+        Ideelt til sponsorer, arrangementer og kampagner. Tryk på et banner i appen åbner linket.
+      </p>
+
+      {loading ? (
+        <div className="card"><div className="loading-dots"><span/><span/><span/></div></div>
+      ) : banners.length === 0 ? (
+        <EmptyState icon="star" text="Ingen banners endnu — klik 'Nyt banner' for at tilføje" />
+      ) : (
+        <div className="card">
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th style={{ width: 80 }}>Preview</th><th>Titel</th><th>Link</th><th style={{ width: 60 }}>Orden</th><th style={{ textAlign: 'center', width: 80 }}>Aktiv</th><th style={{ width: 90 }}></th></tr></thead>
+              <tbody>
+                {banners.map(b => (
+                  <tr key={b.id}>
+                    <td>
+                      {b.imageUrl
+                        ? <img src={b.imageUrl} alt="" style={{ width: 72, height: 40, objectFit: 'cover', borderRadius: 4 }} onError={e => { e.target.style.display='none' }} />
+                        : <div style={{ width: 72, height: 40, background: 'var(--bg)', borderRadius: 4 }} />}
+                    </td>
+                    <td>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>{b.title || '(ingen titel)'}</div>
+                      {b.subtitle && <div style={{ fontSize: 11, color: 'var(--text2)' }}>{b.subtitle}</div>}
+                    </td>
+                    <td style={{ fontSize: 12, color: 'var(--text2)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {b.linkUrl || '–'}
+                    </td>
+                    <td style={{ textAlign: 'center', color: 'var(--text2)', fontSize: 13 }}>{b.order}</td>
+                    <td style={{ textAlign: 'center' }}>
+                      <button type="button" onClick={() => toggleAktiv(b)} style={{
+                        width: 36, height: 20, borderRadius: 10, padding: 2, border: 'none', cursor: 'pointer',
+                        display: 'inline-flex', alignItems: 'center',
+                        background: b.aktiv ? '#1a5c2a' : '#d1d5db', transition: 'background .2s',
+                      }}>
+                        <span style={{ width: 16, height: 16, borderRadius: '50%', background: 'white', display: 'block', transform: b.aktiv ? 'translateX(16px)' : 'translateX(0)', transition: 'transform .2s', boxShadow: '0 1px 3px rgba(0,0,0,.25)' }} />
+                      </button>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button className="btn btn-ghost btn-sm" onClick={() => { setForm({ imageUrl: b.imageUrl, title: b.title || '', subtitle: b.subtitle || '', linkUrl: b.linkUrl || '', order: b.order || 1, aktiv: b.aktiv !== false }); setEditing(b) }}>
+                          <Icon name="edit" size={13} />
+                        </button>
+                        <button className="btn btn-ghost btn-sm" style={{ color: '#dc3545' }} onClick={() => setToDelete(b)}>
+                          <Icon name="trash" size={13} color="#dc3545" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {toDelete && (
+        <ConfirmDialog title="Slet banner" body={`Slet "${toDelete.title || 'dette banner'}"?`} danger
+          onConfirm={async () => { await deleteDoc(doc(db, 'banners', toDelete.id)); setToDelete(null) }}
+          onCancel={() => setToDelete(null)} />
+      )}
+    </>
+  )
+}
+
 // ─── App-brugere ──────────────────────────────────────────────────────────────
 
 function fmtRelative(ts) {
@@ -2317,6 +2528,7 @@ const PAGE_TITLES = {
   news:      'Nyheder',
   teams:     'Hold',
   events:    'Begivenheder',
+  banners:   'Forsidebanners',
   appusers:  'App-brugere',
   users:     'Adgang',
 }
@@ -2381,6 +2593,7 @@ export default function AdminApp() {
       case 'news':      return <NewsPage       userDoc={userDoc} authUser={authUser} />
       case 'teams':     return <TeamsPage      userDoc={userDoc} authUser={authUser} />
       case 'events':    return <EventsPage     userDoc={userDoc} authUser={authUser} />
+      case 'banners':   return <BannersPage    userDoc={userDoc} authUser={authUser} />
       case 'appusers':
         return userDoc.role === 'admin'
           ? <AppUsersPage />

@@ -641,6 +641,51 @@ function WelcomeScreen({ user, onDone }) {
   )
 }
 
+// ─── Banner-karrusel ─────────────────────────────────────────────────────────
+
+function BannerCarousel({ banners }) {
+  const [idx, setIdx] = useState(0)
+
+  useEffect(() => {
+    if (banners.length <= 1) return
+    const t = setInterval(() => setIdx(i => (i + 1) % banners.length), 5000)
+    return () => clearInterval(t)
+  }, [banners.length])
+
+  if (!banners.length) return null
+  const b = banners[Math.min(idx, banners.length - 1)]
+
+  const inner = (
+    <div style={{ position: 'relative', width: '100%', height: 180, flexShrink: 0, overflow: 'hidden', borderRadius: 'var(--radius)' }}>
+      <img src={b.imageUrl} alt={b.title || ''}
+        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+        onError={e => { e.target.style.display = 'none' }} />
+      {(b.title || b.subtitle) && (
+        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '28px 14px 12px', background: 'linear-gradient(transparent, rgba(0,0,0,.65))' }}>
+          {b.title    && <div style={{ color: 'white', fontWeight: 700, fontSize: 15, lineHeight: 1.3 }}>{b.title}</div>}
+          {b.subtitle && <div style={{ color: 'rgba(255,255,255,.85)', fontSize: 12, marginTop: 2 }}>{b.subtitle}</div>}
+        </div>
+      )}
+      {banners.length > 1 && (
+        <div style={{ position: 'absolute', bottom: 10, right: 12, display: 'flex', gap: 5, alignItems: 'center' }}>
+          {banners.map((_, i) => (
+            <button key={i} onClick={e => { e.preventDefault(); e.stopPropagation(); setIdx(i) }}
+              style={{ width: i === idx ? 18 : 6, height: 6, borderRadius: 3, border: 'none', padding: 0, cursor: 'pointer', transition: 'all .3s', background: i === idx ? 'white' : 'rgba(255,255,255,.5)' }} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+
+  return (
+    <div style={{ padding: '12px 16px 0' }}>
+      {b.linkUrl
+        ? <a href={b.linkUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'block', textDecoration: 'none' }}>{inner}</a>
+        : inner}
+    </div>
+  )
+}
+
 // ─── Dashboard helpers ────────────────────────────────────────────────────────
 
 const _DAY_MAP = {
@@ -671,8 +716,10 @@ function parseSessions(traeningstider) {
 
 function DashboardScreen({ user, unreadMsgs = 0, news, onNavigate, showPushBanner, onEnableNotifications }) {
   const totalUnread = unreadMsgs
-  const [calHolds, setCalHolds] = useState([])
-  const [events,   setEvents]   = useState([])
+  const [calHolds,     setCalHolds]     = useState([])
+  const [events,       setEvents]       = useState([])
+  const [banners,      setBanners]      = useState([])
+  const [eventsCount,  setEventsCount]  = useState(3)
 
   useEffect(() => {
     const ids = new Set((user.holdIds || []).map(String))
@@ -690,12 +737,14 @@ function DashboardScreen({ user, unreadMsgs = 0, news, onNavigate, showPushBanne
 
   useEffect(() => {
     const today = new Date().toISOString().slice(0, 10)
-    getDocs(query(
-      collection(db, 'events'),
-      where('date', '>=', today),
-      orderBy('date'),
-      limit(10)
-    )).then(snap => setEvents(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
+    getDocs(query(collection(db, 'events'), where('date', '>=', today), orderBy('date'), limit(10)))
+      .then(snap => setEvents(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
+      .catch(() => {})
+    getDocs(query(collection(db, 'banners'), orderBy('order')))
+      .then(snap => setBanners(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(b => b.aktiv !== false)))
+      .catch(() => {})
+    getDoc(doc(db, 'settings', 'app'))
+      .then(s => { if (s.exists() && s.data().eventsOnDashboard !== undefined) setEventsCount(s.data().eventsOnDashboard) })
       .catch(() => {})
   }, [])
 
@@ -769,6 +818,9 @@ function DashboardScreen({ user, unreadMsgs = 0, news, onNavigate, showPushBanne
         </div>
       </div>
 
+      {/* ── Sponsor-/reklamebanners ────────────────── */}
+      {banners.length > 0 && <BannerCarousel banners={banners} />}
+
       {/* ── Ugeoversigt ────────────────────────────── */}
       <SectionHeader title="Ugeoversigt – træning" />
       <div style={{ padding: '0 16px 4px' }}>
@@ -833,11 +885,11 @@ function DashboardScreen({ user, unreadMsgs = 0, news, onNavigate, showPushBanne
       </div>
 
       {/* ── Kommende begivenheder ─────────────────── */}
-      {events.length > 0 && (
+      {eventsCount > 0 && events.length > 0 && (
         <>
           <SectionHeader title="Kommende begivenheder" />
           <div className="card-list">
-            {events.slice(0, 3).map(ev => {
+            {events.slice(0, eventsCount).map(ev => {
               const d = ev.date ? new Date(ev.date + 'T12:00:00') : null
               const dateStr = d ? d.toLocaleDateString('da-DK', { weekday: 'short', day: 'numeric', month: 'short' }) : ''
               const typeColor = { kamp: '#1a5c2a', træning: '#5856d6', stævne: '#ff9500', arrangement: '#ff3b30' }
@@ -1038,7 +1090,36 @@ function TeamsScreen({ onSelectTeam, user }) {
           )}
         </div>
       ))}
-      <div style={{ height: 8 }} />
+      {/* Tilmeldingslink */}
+      <div style={{ margin: '8px 16px 0' }}>
+        <a href="https://www.sejssvejbaek-if.dk/tilmelding"
+           target="_blank" rel="noopener noreferrer"
+           style={{ textDecoration: 'none' }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 14,
+            background: 'var(--surface)', borderRadius: 'var(--radius)',
+            padding: '14px 16px', boxShadow: 'var(--shadow)',
+          }}>
+            <div style={{
+              width: 40, height: 40, borderRadius: 12,
+              background: 'var(--green-soft)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}>
+              <Icon name="user-plus" size={20} color="var(--green)" />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--text)' }}>
+                Tilmeld dig selv eller dit barn
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 1 }}>
+                Åbner tilmeldingsside på sejssvejbaek-if.dk
+              </div>
+            </div>
+            <Icon name="chevron" size={18} color="var(--text3)" sw={2.5} />
+          </div>
+        </a>
+      </div>
+      <div style={{ height: 16 }} />
     </div>
   )
 }
