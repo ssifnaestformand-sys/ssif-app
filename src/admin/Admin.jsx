@@ -1014,6 +1014,19 @@ function NewsPage({ userDoc, authUser }) {
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         })
+        // Push-notifikation til alle brugere (holdIds=[] → alle)
+        auth.currentUser?.getIdToken().then(idToken => {
+          const fd = new FormData()
+          fd.append('idToken', idToken)
+          fd.append('holdIds', '[]')
+          fd.append('title',   `Nyhed: ${form.title}`)
+          fd.append('text',    form.excerpt?.slice(0, 120) || form.title)
+          fetch(`${BASE}api/send-push.php`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${idToken}` },
+            body: fd,
+          }).catch(() => {})
+        }).catch(() => {})
       } else {
         await updateDoc(doc(db, 'news', editing.id), {
           ...form,

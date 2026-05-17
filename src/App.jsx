@@ -325,7 +325,11 @@ function LoginScreen({ onDemoLogin, initialError }) {
   return (
     <div className="login-screen">
       <div className="login-top">
-        <div className="login-logo"><span>SSIF</span></div>
+        <div className="login-logo">
+          <img src="/ssif-logo.png" alt="SSIF" className="login-logo-img"
+               onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block' }} />
+          <span style={{ display: 'none' }}>SSIF</span>
+        </div>
         <h1 className="login-club">Sejs-Svejbæk IF</h1>
         <p className="login-subtitle">
           {mode === 'forgot' ? 'Nulstil adgangskode' : mode === 'create' ? 'Opret konto' : 'Log ind på din konto'}
