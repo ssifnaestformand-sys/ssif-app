@@ -1013,7 +1013,7 @@ function TeamsPage({ userDoc, authUser }) {
     try {
       const idToken = await auth.currentUser?.getIdToken() ?? ''
       const fd = new FormData(); fd.append('what', what)
-      const res  = await fetch(`${window.location.origin.replace('/admin','')}/api/admin-sync.php`, {
+      const res  = await fetch(`${BASE}api/admin-sync.php`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${idToken}` },
         body: fd,
