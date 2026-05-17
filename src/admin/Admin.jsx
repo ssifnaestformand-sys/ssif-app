@@ -467,7 +467,6 @@ function DashboardPage({ userDoc }) {
 function MessagesPage({ userDoc, authUser }) {
   const [text, setText]                     = useState('')
   const [selectedIds, setSelectedIds]       = useState([])   // conventus_id som strings
-  const [sending, setSending]               = useState(false)
   const [messages, setMessages]             = useState([])
   const [msgLoading, setMsgLoading]         = useState(true)
   const [availableHolds, setAvailableHolds] = useState([])
@@ -505,50 +504,54 @@ function MessagesPage({ userDoc, authUser }) {
     setSelectedIds(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])
   }
 
-  async function send(e) {
+  const [sendOk, setSendOk] = useState(false)
+
+  function send(e) {
     e.preventDefault()
     if (!text.trim() || selectedIds.length === 0) return
+
     const msgText    = text.trim()
     const msgIds     = [...selectedIds]
     const authorName = userDoc?.displayName || authUser.email
-    setSending(true)
-    try {
-      // Opret ét besked-dokument per hold
-      const selHolds = availableHolds.filter(h => msgIds.includes(String(h.conventus_id)))
-      for (const h of selHolds) {
-        await addDoc(collection(db, 'messages'), {
-          holdId:        String(h.conventus_id),
-          holdNavn:      h.titel,
-          afsenderNavn:  authorName,
-          afsenderUid:   authUser.uid,
-          tekst:         msgText,
-          reaktioner:    { '👍': 0, '✅': 0, '❤️': 0 },
-          userReactions: {},
-          oprettet:      serverTimestamp(),
-          createdAt:     serverTimestamp(),
-        })
-      }
-      setText('')
-      setSelectedIds([])
+    const selHolds   = availableHolds.filter(h => msgIds.includes(String(h.conventus_id)))
 
-      // Push-notifikation: fire-and-forget (ingen await — undgår at UI hænger)
-      auth.currentUser?.getIdToken().then(idToken => {
-        const fd = new FormData()
-        fd.append('idToken', idToken)
-        fd.append('holdIds', JSON.stringify(msgIds))
-        fd.append('text',    msgText)
-        fd.append('title',   `Besked fra ${authorName}`)
-        fetch(`${BASE}api/send-push.php`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${idToken}` },
-          body: fd,
-        }).catch(() => {})
+    if (!selHolds.length) return
+
+    // Skriv til Firestore uden await — onSnapshot viser pending writes øjeblikkeligt
+    // så beskeden er synlig i listen med det samme uden at UI hænger.
+    selHolds.forEach(h => {
+      addDoc(collection(db, 'messages'), {
+        holdId:        String(h.conventus_id),
+        holdNavn:      h.titel,
+        afsenderNavn:  authorName,
+        afsenderUid:   authUser.uid,
+        tekst:         msgText,
+        reaktioner:    { '👍': 0, '✅': 0, '❤️': 0 },
+        userReactions: {},
+        oprettet:      serverTimestamp(),
+        createdAt:     serverTimestamp(),
+      }).catch(err => console.error('Firestore write failed:', err))
+    })
+
+    // Nulstil UI øjeblikkeligt
+    setText('')
+    setSelectedIds([])
+    setSendOk(true)
+    setTimeout(() => setSendOk(false), 3000)
+
+    // Push-notifikation fire-and-forget
+    auth.currentUser?.getIdToken().then(idToken => {
+      const fd = new FormData()
+      fd.append('idToken', idToken)
+      fd.append('holdIds', JSON.stringify(msgIds))
+      fd.append('text',    msgText)
+      fd.append('title',   `Besked fra ${authorName}`)
+      fetch(`${BASE}api/send-push.php`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${idToken}` },
+        body: fd,
       }).catch(() => {})
-    } catch (err) {
-      alert('Besked kunne ikke sendes: ' + err.message)
-    } finally {
-      setSending(false)
-    }
+    }).catch(() => {})
   }
 
   // Gruppér hold efter idrætgren til visning
@@ -618,13 +621,18 @@ function MessagesPage({ userDoc, authUser }) {
                 required
               />
             </div>
+            {sendOk && (
+              <p style={{ fontSize: 13, color: '#16a34a', fontWeight: 600, textAlign: 'center', marginBottom: 8 }}>
+                ✓ Besked sendt!
+              </p>
+            )}
             <button
               className="btn btn-primary"
               style={{ width: '100%', height: 40 }}
-              disabled={sending || !text.trim() || selectedIds.length === 0}
+              disabled={!text.trim() || selectedIds.length === 0}
             >
               <Icon name="send" size={15} color="white" />
-              {sending ? 'Sender…' : 'Send besked'}
+              Send besked
             </button>
           </form>
         </div>
@@ -1682,7 +1690,7 @@ function AppUsersPage() {
   }
 
   const ROLE_LABEL = { admin: 'Admin', trainer: 'Træner', Medlem: 'Medlem' }
-  const ROLE_COLOR = { admin: 'badge-green', trainer: 'badge-blue', Член: 'badge-gray' }
+  const ROLE_COLOR = { admin: 'badge-green', trainer: 'badge-blue', Membre: 'badge-gray' }
 
   const q = search.trim().toLowerCase()
   const filtered = users
@@ -1869,7 +1877,7 @@ function AppUsersPage() {
 
                       <td>
                         <span className={`badge ${ROLE_COLOR[u.role] || 'badge-gray'}`}>
-                          {ROLE_LABEL[u.role] || u.role || 'Член'}
+                          {ROLE_LABEL[u.role] || u.role || 'Membre'}
                         </span>
                       </td>
                       <td style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
@@ -1916,19 +1924,34 @@ function UsersPage({ authUser }) {
     })
   }, [])
 
+  const [roleError, setRoleError] = useState('')
+
   async function saveRole(uid, role) {
+    setRoleError('')
     setSaving(uid + '-role')
-    await updateDoc(doc(db, 'users', uid), { role })
-    setUsers(us => us.map(u => u.id === uid ? { ...u, role } : u))
-    setSaving(null)
+    try {
+      await updateDoc(doc(db, 'users', uid), { role })
+      setUsers(us => us.map(u => u.id === uid ? { ...u, role } : u))
+    } catch (err) {
+      setRoleError('Kunne ikke gemme rollen: ' + (err.code === 'permission-denied'
+        ? 'Firestore-regler tillader ikke at skrive til andre brugeres dokumenter. Tjek sikkerhedsreglerne i Firebase-konsollen.'
+        : err.message))
+    } finally {
+      setSaving(null)
+    }
   }
 
   async function saveHolds(uid, holds) {
     setSaving(uid + '-holds')
-    await updateDoc(doc(db, 'users', uid), { holds })
-    setUsers(us => us.map(u => u.id === uid ? { ...u, holds } : u))
-    setSaving(null)
-    setExpandedId(null)
+    try {
+      await updateDoc(doc(db, 'users', uid), { holds })
+      setUsers(us => us.map(u => u.id === uid ? { ...u, holds } : u))
+      setExpandedId(null)
+    } catch (err) {
+      alert('Kunne ikke gemme hold: ' + err.message)
+    } finally {
+      setSaving(null)
+    }
   }
 
   async function sendInvite(e) {
@@ -2003,6 +2026,13 @@ function UsersPage({ authUser }) {
       <div className="page-header">
         <h1 className="page-title">Brugere</h1>
       </div>
+
+      {roleError && (
+        <div className="alert-error" style={{ marginBottom: 16 }}>
+          <strong>Fejl ved rolle-ændring:</strong> {roleError}
+          <button onClick={() => setRoleError('')} style={{ float: 'right', background: 'none', border: 'none', cursor: 'pointer', opacity: .6 }}>✕</button>
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 20, alignItems: 'start' }}>
         <div className="card">
