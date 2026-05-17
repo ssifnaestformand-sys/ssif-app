@@ -1009,9 +1009,13 @@ function TeamsPage({ userDoc, authUser }) {
   const [syncResult,    setSyncResult]   = useState(null)   // {ok, msg, ts}
 
   async function triggerSync(what) {
+    if (!auth.currentUser) {
+      setSyncResult({ ok: false, msg: 'Synkronisering kræver rigtig login — ikke tilgængeligt i demo-tilstand.' })
+      return
+    }
     setSyncing(what); setSyncResult(null)
     try {
-      const idToken = await auth.currentUser?.getIdToken() ?? ''
+      const idToken = await auth.currentUser.getIdToken()
       const fd = new FormData()
       fd.append('what',    what)
       fd.append('idToken', idToken)   // fallback: Apache stripper Authorization-headeren
@@ -1251,7 +1255,7 @@ function TeamsPage({ userDoc, authUser }) {
     <>
       <div className="page-header">
         <h1 className="page-title">Hold</h1>
-        {userDoc?.role === 'admin' && (
+        {userDoc?.role === 'admin' && auth.currentUser && (
           <div style={{ display: 'flex', gap: 6 }}>
             <button className="btn btn-ghost btn-sm"
               disabled={!!syncing}

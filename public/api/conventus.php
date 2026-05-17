@@ -85,13 +85,13 @@ if ($endpoint === 'afdelinger') {
         'key'      => $apiKey,
     ]);
     $raw = @file_get_contents($url, false, $ctx);
-    if ($raw === false) { http_response_code(503); echo json_encode(['error' => 'Ingen svar fra Conventus']); exit; }
+    if ($raw === false) { echo json_encode(['error' => 'Ingen svar fra Conventus']); exit; }
     if (preg_match('/encoding=["\']ISO-8859-1["\']/i', $raw)) {
         $raw = mb_convert_encoding($raw, 'UTF-8', 'ISO-8859-1');
         $raw = preg_replace('/encoding=["\']ISO-8859-1["\']/i', 'encoding="UTF-8"', $raw);
     }
     $xml = @simplexml_load_string($raw);
-    if ($xml === false) { http_response_code(502); echo json_encode(['error' => 'XML parse-fejl']); exit; }
+    if ($xml === false) { echo json_encode(['error' => 'XML parse-fejl']); exit; }
 
     // xpath finder alle <afdeling>-noder uanset dybde — PHP 7.4 kompatibelt
     // XML-struktur: <afdeling><id>4001</id><titel>...</titel></afdeling>
@@ -131,11 +131,11 @@ if ($endpoint === 'afdeling') {
     ]);
 
     $raw = @file_get_contents($url, false, $ctx);
-    if ($raw === false) { http_response_code(503); echo json_encode(['error' => 'Ingen svar fra Conventus']); exit; }
+    if ($raw === false) { echo json_encode(['error' => 'Ingen svar fra Conventus']); exit; }
 
     $xml = @simplexml_load_string($raw);
-    if ($xml === false) { http_response_code(502); echo json_encode(['error' => 'XML parse-fejl fra Conventus']); exit; }
-    if (!empty((string)$xml->error)) { http_response_code(502); echo json_encode(['error' => (string)$xml->error]); exit; }
+    if ($xml === false) { echo json_encode(['error' => 'XML parse-fejl fra Conventus']); exit; }
+    if (!empty((string)$xml->error)) { echo json_encode(['error' => (string)$xml->error]); exit; }
 
     $arr   = xmlToArray($xml);
     $holds = extractHolds($arr);
@@ -158,9 +158,9 @@ if ($endpoint === 'grupper') {
         'type'     => 'hold',
     ]);
     $raw = @file_get_contents($url, false, $ctx);
-    if ($raw === false) { http_response_code(503); echo json_encode(['error' => 'Ingen svar fra Conventus']); exit; }
+    if ($raw === false) { echo json_encode(['error' => 'Ingen svar fra Conventus']); exit; }
     $xml = @simplexml_load_string($raw);
-    if ($xml === false || !empty((string)$xml->error)) { http_response_code(502); echo json_encode(['error' => $xml ? (string)$xml->error : 'XML-fejl']); exit; }
+    if ($xml === false || !empty((string)$xml->error)) { echo json_encode(['error' => $xml ? (string)$xml->error : 'XML-fejl']); exit; }
     $arr    = xmlToArray($xml);
     $groups = extractHolds($arr);
     echo json_encode(['groups' => $groups, 'count' => count($groups), 'fetched' => date('c')], JSON_UNESCAPED_UNICODE);
@@ -168,61 +168,97 @@ if ($endpoint === 'grupper') {
 }
 
 // ── KALENDER: hent begivenheder fra Conventus RSS-feed ───────────────────────
+// Returnerer altid HTTP 200 — one.com's Apache erstatter 5xx-svar med HTML,
+// så fejl kommunikeres via JSON-feltet "error" i stedet.
 if ($endpoint === 'kalender') {
-    header('Cache-Control: public, max-age=1800');
-    $url = 'https://www.conventus.dk/dataudv/www/kalender.php?' . http_build_query([
-        'foreningsid' => FORENING,
-        'rss'         => '1',
-    ]);
-    $raw = @file_get_contents($url, false, $ctx);
-    if ($raw === false) { http_response_code(503); echo json_encode(['error' => 'Ingen svar fra Conventus kalender']); exit; }
+    header('Cache-Control: no-cache');
+
+    // Conventus kalender-RSS: prøv begge kendte URL-formater
+    $urls = [
+        'https://www.conventus.dk/dataudv/www/kalender.php?' . http_build_query(['foreningsid' => FORENING, 'rss' => '1']),
+        'https://www.conventus.dk/dataudv/www/kalender.php?' . http_build_query(['foreningsid' => FORENING, 'rss' => '1', 'type' => 'begivenhed']),
+    ];
+
+    $raw = false;
+    $usedUrl = '';
+    foreach ($urls as $tryUrl) {
+        $raw = @file_get_contents($tryUrl, false, $ctx);
+        if ($raw !== false && strlen($raw) > 50) { $usedUrl = $tryUrl; break; }
+    }
+
+    if ($raw === false || strlen($raw) < 10) {
+        echo json_encode([
+            'error'  => 'Ingen svar fra Conventus kalender — tjek at RSS-feeden er aktiveret på foreningens side i Conventus.',
+            'events' => [],
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // Encoding-fix
     if (preg_match('/encoding=["\']ISO-8859-1["\']/i', $raw)) {
         $raw = mb_convert_encoding($raw, 'UTF-8', 'ISO-8859-1');
         $raw = preg_replace('/encoding=["\']ISO-8859-1["\']/i', 'encoding="UTF-8"', $raw);
     }
-    $xml = @simplexml_load_string($raw);
-    if ($xml === false) { http_response_code(502); echo json_encode(['error' => 'XML parse-fejl fra kalender']); exit; }
 
-    $events = [];
+    $xml = @simplexml_load_string($raw, 'SimpleXMLElement', LIBXML_NOERROR | LIBXML_NOWARNING);
+    if ($xml === false) {
+        echo json_encode([
+            'error'       => 'Svar fra Conventus er ikke gyldigt XML/RSS.',
+            'raw_preview' => substr($raw, 0, 300),
+            'events'      => [],
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    $events  = [];
     $channel = $xml->channel ?? $xml;
-    foreach ($channel->item ?? [] as $item) {
-        $title    = html_entity_decode(trim((string)$item->title),       ENT_HTML5 | ENT_QUOTES, 'UTF-8');
-        $desc     = html_entity_decode(trim((string)$item->description), ENT_HTML5 | ENT_QUOTES, 'UTF-8');
-        $link     = trim((string)$item->link);
-        $location = trim((string)($item->children('georss', true)->featureName ?? $item->location ?? ''));
-        $pubDate  = trim((string)($item->pubDate ?? $item->date ?? ''));
 
-        // Prøv at parse dato fra pubDate eller <start>/<startdate> custom fields
-        $ns   = $item->getNamespaces(true);
-        $date = ''; $time = '';
-        foreach ($ns as $prefix => $uri) {
-            $ext = $item->children($uri);
-            foreach (['start', 'startdate', 'startDate', 'dtstart'] as $f) {
-                $val = trim((string)($ext->$f ?? ''));
-                if ($val) { $pubDate = $pubDate ?: $val; break 2; }
+    foreach ($channel->item ?? [] as $item) {
+        $title   = html_entity_decode(trim((string)($item->title   ?? '')), ENT_HTML5 | ENT_QUOTES, 'UTF-8');
+        $desc    = html_entity_decode(trim((string)($item->description ?? '')), ENT_HTML5 | ENT_QUOTES, 'UTF-8');
+        $link    = trim((string)($item->link    ?? ''));
+        $pubDate = trim((string)($item->pubDate ?? $item->date ?? ''));
+
+        // Søg i namespace-udvidelser efter startdato (eventkalender-formater)
+        if (!$pubDate) {
+            foreach ($item->getNamespaces(true) as $prefix => $uri) {
+                $ext = $item->children($uri);
+                foreach (['start', 'startdate', 'startDate', 'startDato', 'dtstart', 'dato'] as $f) {
+                    $v = trim((string)($ext->$f ?? ''));
+                    if ($v) { $pubDate = $v; break 2; }
+                }
             }
         }
+
+        $date = ''; $time = '';
         if ($pubDate) {
-            $ts = strtotime($pubDate);
-            if ($ts) {
+            $ts = @strtotime($pubDate);
+            if ($ts && $ts > 0) {
                 $date = date('Y-m-d', $ts);
                 $h    = (int)date('H', $ts);
                 $time = $h > 0 ? date('H:i', $ts) : '';
             }
         }
+
         if ($title) {
             $events[] = [
                 'title'       => $title,
                 'description' => $desc,
                 'date'        => $date,
                 'time'        => $time,
-                'location'    => $location,
                 'link'        => $link,
             ];
         }
     }
-    usort($events, fn($a, $b) => strcmp($a['date'], $b['date']));
-    echo json_encode(['events' => $events, 'count' => count($events), 'fetched' => date('c')], JSON_UNESCAPED_UNICODE);
+
+    usort($events, fn($a, $b) => strcmp($a['date'] ?: '9999', $b['date'] ?: '9999'));
+
+    echo json_encode([
+        'events'  => $events,
+        'count'   => count($events),
+        'fetched' => date('c'),
+        'debug'   => ['url' => $usedUrl, 'raw_bytes' => strlen($raw), 'items_found' => count($events)],
+    ], JSON_UNESCAPED_UNICODE);
     exit;
 }
 

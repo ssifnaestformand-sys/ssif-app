@@ -672,6 +672,7 @@ function parseSessions(traeningstider) {
 function DashboardScreen({ user, unreadMsgs = 0, news, onNavigate, showPushBanner, onEnableNotifications }) {
   const totalUnread = unreadMsgs
   const [calHolds, setCalHolds] = useState([])
+  const [events,   setEvents]   = useState([])
 
   useEffect(() => {
     const ids = new Set((user.holdIds || []).map(String))
@@ -686,6 +687,17 @@ function DashboardScreen({ user, unreadMsgs = 0, news, onNavigate, showPushBanne
       })
       .catch(() => {})
   }, [JSON.stringify(user.holdIds), JSON.stringify(user.familyMembers)])
+
+  useEffect(() => {
+    const today = new Date().toISOString().slice(0, 10)
+    getDocs(query(
+      collection(db, 'events'),
+      where('date', '>=', today),
+      orderBy('date'),
+      limit(10)
+    )).then(snap => setEvents(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
+      .catch(() => {})
+  }, [])
 
   // Byg person-label map: conventus_id → navn (fra familyMembers)
   const personLabel = {}
@@ -819,6 +831,56 @@ function DashboardScreen({ user, unreadMsgs = 0, news, onNavigate, showPushBanne
           </p>
         )}
       </div>
+
+      {/* ── Kommende begivenheder ─────────────────── */}
+      {events.length > 0 && (
+        <>
+          <SectionHeader title="Kommende begivenheder" />
+          <div className="card-list">
+            {events.slice(0, 3).map(ev => {
+              const d = ev.date ? new Date(ev.date + 'T12:00:00') : null
+              const dateStr = d ? d.toLocaleDateString('da-DK', { weekday: 'short', day: 'numeric', month: 'short' }) : ''
+              const typeColor = { kamp: '#1a5c2a', træning: '#5856d6', stævne: '#ff9500', arrangement: '#ff3b30' }
+              const color = typeColor[ev.type] || '#5856d6'
+              return (
+                <div key={ev.id} style={{
+                  background: 'var(--surface)', borderRadius: 'var(--radius)',
+                  padding: '12px 14px', display: 'flex', alignItems: 'center',
+                  gap: 12, boxShadow: 'var(--shadow)',
+                }}>
+                  <div style={{
+                    width: 44, height: 44, borderRadius: 10, background: color + '18',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center',
+                    justifyContent: 'center', flexShrink: 0,
+                  }}>
+                    <span style={{ fontSize: 15, fontWeight: 800, color, lineHeight: 1 }}>
+                      {d ? d.getDate() : '?'}
+                    </span>
+                    <span style={{ fontSize: 9, fontWeight: 600, color, textTransform: 'uppercase' }}>
+                      {d ? d.toLocaleDateString('da-DK', { month: 'short' }) : ''}
+                    </span>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)' }}>{ev.title}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 1 }}>
+                      {dateStr}{ev.time ? ` · ${ev.time}` : ''}{ev.location ? ` · ${ev.location}` : ''}
+                    </div>
+                  </div>
+                  {ev.type && (
+                    <span style={{
+                      fontSize: 10, fontWeight: 600, color,
+                      background: color + '18', padding: '2px 7px', borderRadius: 20,
+                      flexShrink: 0, textTransform: 'capitalize',
+                    }}>
+                      {ev.type}
+                    </span>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </>
+      )}
 
       {/* ── Seneste nyheder ────────────────────────── */}
       <SectionHeader title="Seneste nyheder" />
