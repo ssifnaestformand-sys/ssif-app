@@ -822,64 +822,130 @@ function DashboardScreen({ user, unreadMsgs = 0, news, onNavigate, showPushBanne
       {banners.length > 0 && <BannerCarousel banners={banners} />}
 
       {/* ── Ugeoversigt ────────────────────────────── */}
-      <SectionHeader title="Ugeoversigt – træning" />
+      <SectionHeader title="Træning denne uge" />
       <div style={{ padding: '0 16px 4px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+
+        {/* Kompakt ugestrip — viser hvilke dage der er træning */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
           {weekDates.map((date, i) => {
-            const isToday    = i === todayIdx
-            const isPast     = i < todayIdx
-            const sessions   = byDay[i]
+            const isToday  = i === todayIdx
+            const isPast   = i < todayIdx
+            const hasSess  = byDay[i].length > 0
             return (
-              <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-                {/* Dag-label */}
-                <span style={{
-                  fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.3px',
-                  color: isToday ? 'var(--green)' : 'var(--text3)',
-                }}>
+              <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flex: 1 }}>
+                <span style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', color: isToday ? 'var(--green)' : 'var(--text3)' }}>
                   {DAY_SHORT[i]}
                 </span>
-                {/* Dato-cirkel */}
                 <div style={{
-                  width: 26, height: 26, borderRadius: 13,
+                  width: 28, height: 28, borderRadius: 14,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   background: isToday ? 'var(--green)' : 'transparent',
                   color: isToday ? 'white' : isPast ? 'var(--text3)' : 'var(--text)',
-                  fontSize: 12, fontWeight: isToday ? 700 : 400,
+                  fontSize: 13, fontWeight: isToday ? 700 : 400,
                 }}>
                   {date.getDate()}
                 </div>
-                {/* Træningssessioner */}
-                {sessions.map((s, j) => {
-                  const label = personLabel[String(s.hold.conventus_id)]
-                    || s.hold.titel?.split(/\s+/)[0]
-                    || '?'
-                  return (
-                    <button key={j}
-                      onClick={() => onNavigate('team-detail', s.hold)}
-                      style={{
-                        width: '100%', border: 'none', borderRadius: 5, padding: '3px 1px',
-                        background: isPast ? '#d1d5db' : 'var(--green)',
-                        color: 'white', fontSize: 9, fontWeight: 600,
-                        cursor: 'pointer', textAlign: 'center', lineHeight: 1.35,
-                        WebkitTapHighlightColor: 'transparent',
-                      }}
-                    >
-                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 2px' }}>
-                        {label}
-                      </div>
-                      {s.time && (
-                        <div style={{ opacity: .85, fontSize: 8 }}>{s.time}</div>
-                      )}
-                    </button>
-                  )
-                })}
+                <div style={{
+                  width: 5, height: 5, borderRadius: '50%',
+                  background: hasSess ? (isPast ? '#d1d5db' : 'var(--green)') : 'transparent',
+                }} />
               </div>
             )
           })}
         </div>
-        {!hasSessions && (
-          <p style={{ textAlign: 'center', fontSize: 12, color: 'var(--text3)', padding: '10px 0 4px' }}>
-            Ingen træningstider — tilføjes af trænerne i backoffice
+
+        {/* Træningskort per dag */}
+        {hasSessions ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {weekDates.map((date, i) => {
+              const sessions = byDay[i]
+              if (!sessions.length) return null
+              const isToday = i === todayIdx
+              const isPast  = i < todayIdx
+              const dayName = isToday
+                ? 'I dag'
+                : date.toLocaleDateString('da-DK', { weekday: 'long', day: 'numeric', month: 'long' })
+                    .replace(/^./, c => c.toUpperCase())
+              return (
+                <div key={i}>
+                  {/* Dag-overskrift */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <div style={{
+                      width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+                      background: isToday ? 'var(--green)' : isPast ? '#d1d5db' : 'var(--green)',
+                    }} />
+                    <span style={{ fontSize: 13, fontWeight: 700, color: isToday ? 'var(--green)' : isPast ? 'var(--text3)' : 'var(--text)' }}>
+                      {dayName}
+                    </span>
+                    {isToday && (
+                      <span style={{ fontSize: 10, background: 'var(--green)', color: 'white', padding: '1px 8px', borderRadius: 10, fontWeight: 700 }}>I dag</span>
+                    )}
+                  </div>
+
+                  {/* Sessions som kort */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingLeft: 14, borderLeft: `2px solid ${isPast ? '#e5e7eb' : 'var(--green)'}` }}>
+                    {sessions.map((s, j) => {
+                      const person = personLabel[String(s.hold.conventus_id)]
+                      return (
+                        <button key={j}
+                          onClick={() => onNavigate('team-detail', s.hold)}
+                          style={{
+                            background: 'var(--surface)', border: 'none',
+                            borderRadius: 'var(--radius-sm)', padding: '11px 14px',
+                            display: 'flex', alignItems: 'center', gap: 12,
+                            boxShadow: 'var(--shadow)', cursor: 'pointer', textAlign: 'left',
+                            width: '100%', opacity: isPast ? .5 : 1,
+                            WebkitTapHighlightColor: 'transparent',
+                          }}>
+                          {/* Tids-badge */}
+                          <div style={{
+                            flexShrink: 0, minWidth: 48, textAlign: 'center',
+                            padding: '4px 6px', borderRadius: 8,
+                            background: isPast ? 'var(--bg)' : 'var(--green-soft)',
+                          }}>
+                            {s.time ? (
+                              <>
+                                <div style={{ fontSize: 14, fontWeight: 800, color: isPast ? 'var(--text3)' : 'var(--green)', lineHeight: 1 }}>
+                                  {s.time.split(':')[0]}
+                                </div>
+                                <div style={{ fontSize: 10, color: isPast ? 'var(--text3)' : 'var(--green)', marginTop: 1 }}>
+                                  :{s.time.split(':')[1]}
+                                </div>
+                              </>
+                            ) : (
+                              <Icon name="calendar" size={18} color={isPast ? 'var(--text3)' : 'var(--green)'} />
+                            )}
+                          </div>
+
+                          {/* Info */}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            {person && (
+                              <div style={{ fontSize: 12, fontWeight: 700, color: isPast ? 'var(--text3)' : 'var(--green)', marginBottom: 1 }}>
+                                {person}
+                              </div>
+                            )}
+                            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {s.hold.titel}
+                            </div>
+                            {s.hold.aktivitet_titel && (
+                              <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 1 }}>
+                                {s.hold.aktivitet_titel}
+                              </div>
+                            )}
+                          </div>
+
+                          {!isPast && <Icon name="chevron" size={16} color="var(--text3)" sw={2.5} />}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <p style={{ textAlign: 'center', fontSize: 13, color: 'var(--text3)', padding: '8px 0 4px' }}>
+            Ingen træningstider registreret for denne uge
           </p>
         )}
       </div>
@@ -1833,7 +1899,7 @@ function FamilieTab({ user }) {
 
 // ─── Profil ───────────────────────────────────────────────────────────────────
 
-function ProfileScreen({ user, onLogout, onUserUpdate, verifyMsg }) {
+function ProfileScreen({ user, onLogout, onUserUpdate, verifyMsg, onEnableNotifications }) {
   const [newEmail, setNewEmail] = useState('')
   const [saving, setSaving]     = useState(false)
   const [info, setInfo]         = useState('')
@@ -2042,6 +2108,41 @@ function ProfileScreen({ user, onLogout, onUserUpdate, verifyMsg }) {
           </button>
         </form>
       </div>
+
+      {/* ── Notifikationer ─────────────────────── */}
+      {(() => {
+        let perm = null
+        try { perm = 'Notification' in window ? Notification.permission : null } catch {}
+        const isGranted = perm === 'granted'
+        const isDenied  = perm === 'denied'
+        return (
+          <>
+            <SectionHeader title="Indstillinger" />
+            <div className="list-group">
+              <button className="list-item"
+                onClick={() => { if (!isGranted && !isDenied && perm !== null) onEnableNotifications?.() }}
+                disabled={isGranted || isDenied || perm === null}
+                style={{ cursor: (isGranted || isDenied || perm === null) ? 'default' : 'pointer' }}>
+                <div className="list-item-icon" style={{ background: isGranted ? 'var(--green-soft)' : 'var(--bg)' }}>
+                  <Icon name="bell" size={17} color={isGranted ? 'var(--green)' : 'var(--text3)'} />
+                </div>
+                <div className="list-item-body">
+                  <span className="list-item-title">Notifikationer</span>
+                  <span className="list-item-detail">
+                    {isGranted  ? 'Aktiveret – du modtager beskeder fra trænerne'
+                   : isDenied   ? 'Blokeret – tillad i telefonens indstillinger'
+                   : perm === null ? 'Ikke understøttet i denne browser'
+                   : 'Tryk for at modtage notifikationer fra trænerne'}
+                  </span>
+                </div>
+                <div className={`notif-checkbox ${isGranted ? 'notif-checkbox--checked' : ''}`}>
+                  {isGranted && <Icon name="check" size={12} color="white" sw={3} />}
+                </div>
+              </button>
+            </div>
+          </>
+        )
+      })()}
 
       <div style={{ height: 16 }} />
       <div style={{ padding: '0 16px' }}>
@@ -2389,7 +2490,8 @@ export default function App() {
         )}
         {activeTab === 'profil' && (
           <ProfileScreen user={user} onLogout={handleLogout}
-                         onUserUpdate={setUser} verifyMsg={verifyMsg} />
+                         onUserUpdate={setUser} verifyMsg={verifyMsg}
+                         onEnableNotifications={handleEnableNotifications} />
         )}
         {activeTab === 'teams' && !user.emailVerified ? (
           <UnverifiedScreen user={user} onLogout={handleLogout} />
