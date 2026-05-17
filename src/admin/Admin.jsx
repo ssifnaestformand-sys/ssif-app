@@ -1114,6 +1114,161 @@ function NewsPage({ userDoc, authUser }) {
 
 // ─── Teams ────────────────────────────────────────────────────────────────────
 
+// HoldTable og AfdSection er bevidst defineret UDEN FOR TeamsPage.
+// Komponenter defineret inde i en parent-komponent får ny identitet ved hvert
+// re-render, hvilket får React til at unmounte/remounte dem — inputfelter
+// mister fokus efter hvert tastanslag.
+
+function HoldTable({ holdList, expanded, saving, editForm, users,
+                     onToggleAktiv, onOpenEdit, onCloseEdit, onEditFormChange, onSaveEdit }) {
+  const sorted = [...holdList].sort(
+    (a, b) => (a.aktivitet_titel || '').localeCompare(b.aktivitet_titel || '', 'da')
+           || (a.titel || '').localeCompare(b.titel || '', 'da')
+  )
+  return (
+    <div className="card">
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Holdnavn</th>
+              <th>Periode</th>
+              <th style={{ textAlign: 'center', width: 90 }}>Aktiv i app</th>
+              <th style={{ width: 80 }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map(hold => {
+              const isExp = expanded === hold.conventus_id
+              return (
+                <Fragment key={hold.conventus_id}>
+                  <tr style={{ background: isExp ? 'var(--bg)' : undefined }}>
+                    <td>
+                      <span style={{ fontWeight: 600 }}>{hold.titel}</span>
+                      {hold.aktivitet_titel && (
+                        <span style={{ display: 'block', fontSize: 11, color: 'var(--text3)' }}>
+                          {hold.aktivitet_titel}
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+                      {hold.periode_fra && hold.periode_til ? `${hold.periode_fra} – ${hold.periode_til}` : '–'}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <button
+                        type="button"
+                        onClick={() => onToggleAktiv(hold)}
+                        disabled={saving === hold.conventus_id + '-aktiv'}
+                        aria-label={hold.aktiv ? 'Deaktivér' : 'Aktivér'}
+                        style={{
+                          width: 36, height: 20, borderRadius: 10, padding: 2,
+                          border: 'none', cursor: 'pointer',
+                          display: 'inline-flex', alignItems: 'center',
+                          background: hold.aktiv ? '#1a5c2a' : '#d1d5db',
+                          transition: 'background .2s',
+                          opacity: saving === hold.conventus_id + '-aktiv' ? .5 : 1,
+                        }}
+                      >
+                        <span style={{
+                          width: 16, height: 16, borderRadius: '50%',
+                          background: 'white', display: 'block',
+                          transform: hold.aktiv ? 'translateX(16px)' : 'translateX(0)',
+                          transition: 'transform .2s',
+                          boxShadow: '0 1px 3px rgba(0,0,0,.25)',
+                        }} />
+                      </button>
+                    </td>
+                    <td>
+                      <button className="btn btn-ghost btn-sm"
+                        onClick={() => isExp ? onCloseEdit() : onOpenEdit(hold)}>
+                        <Icon name="edit" size={12} />
+                        {isExp ? 'Luk' : 'Redigér'}
+                      </button>
+                    </td>
+                  </tr>
+                  {isExp && (
+                    <tr>
+                      <td colSpan={4} style={{ padding: '14px 16px', background: 'var(--bg)', borderBottom: '2px solid var(--green)' }}>
+                        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                          <div className="form-group" style={{ marginBottom: 0, flex: '1 1 220px' }}>
+                            <label className="form-label">Træningstider</label>
+                            <input className="form-control"
+                              value={editForm.traeningstider}
+                              onChange={e => onEditFormChange('traeningstider', e.target.value)}
+                              placeholder="fx Mandag 16:00–17:30, Torsdag 17:00–18:30" />
+                          </div>
+                          <div className="form-group" style={{ marginBottom: 0, flex: '1 1 180px' }}>
+                            <label className="form-label">Tilknyt træner</label>
+                            <select className="form-control"
+                              value={editForm.traener_uid}
+                              onChange={e => onEditFormChange('traener_uid', e.target.value)}>
+                              <option value="">– ingen –</option>
+                              {users.map(u => (
+                                <option key={u.id} value={u.id}>{u.displayName || u.email}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button className="btn btn-primary btn-sm"
+                              disabled={saving === hold.conventus_id + '-edit'}
+                              onClick={() => onSaveEdit(hold)}>
+                              {saving === hold.conventus_id + '-edit' ? 'Gemmer…' : 'Gem'}
+                            </button>
+                            <button className="btn btn-ghost btn-sm" onClick={onCloseEdit}>Annuller</button>
+                          </div>
+                        </div>
+                        {hold.beskrivelse && (
+                          <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--text2)' }}>
+                            <strong>Conventus:</strong> {hold.beskrivelse}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function AfdSection({ id, label, holdList, isOpen, onToggle, tableProps }) {
+  const activeCount = holdList.filter(h => h.aktiv).length
+  return (
+    <div className="card">
+      <button
+        onClick={() => onToggle(id)}
+        style={{ width: '100%', display: 'flex', alignItems: 'center',
+                 justifyContent: 'space-between', padding: '12px 16px',
+                 background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontWeight: 600, fontSize: 14 }}>{label}</span>
+          <span style={{ fontSize: 12, color: 'var(--text3)' }}>
+            {holdList.length > 0 ? `${activeCount}/${holdList.length} aktive` : '–'}
+          </span>
+        </span>
+        <span style={{ fontSize: 12, color: 'var(--text2)', flexShrink: 0 }}>
+          {isOpen ? '▲' : '▼'}
+        </span>
+      </button>
+      {isOpen && (
+        <div style={{ borderTop: '1px solid var(--border)' }}>
+          {holdList.length > 0
+            ? <HoldTable holdList={holdList} {...tableProps} />
+            : <p style={{ padding: '12px 16px', fontSize: 13, color: 'var(--text2)', margin: 0 }}>
+                Ingen hold importeret endnu
+              </p>
+          }
+        </div>
+      )}
+    </div>
+  )
+}
+
 /**
  * Firestore-struktur for holds/{conventus_id}:
  *   conventus_id, titel, aktivitet_titel, periode_fra, periode_til, afdeling_id,
@@ -1199,6 +1354,21 @@ function TeamsPage({ userDoc, authUser }) {
     setExpanded(hold.conventus_id)
   }
 
+  function handleEditFormChange(field, value) {
+    setEditForm(f => ({ ...f, [field]: value }))
+  }
+
+  // Props-objekt der sendes til HoldTable via AfdSection — stabil reference ikke nødvendig
+  // her da HoldTable nu er top-level og React ikke remounter den ved prop-ændringer.
+  const tableProps = {
+    expanded, saving, editForm, users,
+    onToggleAktiv: toggleAktiv,
+    onOpenEdit:    openEdit,
+    onCloseEdit:   () => setExpanded(null),
+    onEditFormChange: handleEditFormChange,
+    onSaveEdit:    saveEdit,
+  }
+
   async function saveEdit(hold) {
     const key = hold.conventus_id + '-edit'
     setSaving(key)
@@ -1220,154 +1390,7 @@ function TeamsPage({ userDoc, authUser }) {
   const trainerLabel  = uid => { const u = users.find(u => u.id === uid); return u ? (u.displayName || u.email) : uid }
   const toggleOpenAfd = id  => setOpenAfd(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
 
-  function HoldTable({ holdList }) {
-    const sorted = [...holdList].sort(
-      (a, b) => (a.aktivitet_titel || '').localeCompare(b.aktivitet_titel || '', 'da')
-             || (a.titel || '').localeCompare(b.titel || '', 'da')
-    )
-    return (
-      <div className="card">
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Holdnavn</th>
-                <th>Periode</th>
-                <th style={{ textAlign: 'center', width: 90 }}>Aktiv i app</th>
-                <th style={{ width: 80 }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map(hold => {
-                const isExp = expanded === hold.conventus_id
-                return (
-                  <Fragment key={hold.conventus_id}>
-                    <tr style={{ background: isExp ? 'var(--bg)' : undefined }}>
-                      <td>
-                        <span style={{ fontWeight: 600 }}>{hold.titel}</span>
-                        {hold.aktivitet_titel && (
-                          <span style={{ display: 'block', fontSize: 11, color: 'var(--text3)' }}>
-                            {hold.aktivitet_titel}
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
-                        {hold.periode_fra && hold.periode_til ? `${hold.periode_fra} – ${hold.periode_til}` : '–'}
-                      </td>
-                      <td style={{ textAlign: 'center' }}>
-                        <button
-                          type="button"
-                          onClick={() => toggleAktiv(hold)}
-                          disabled={saving === hold.conventus_id + '-aktiv'}
-                          aria-label={hold.aktiv ? 'Deaktivér' : 'Aktivér'}
-                          style={{
-                            width: 36, height: 20, borderRadius: 10, padding: 2,
-                            border: 'none', cursor: 'pointer',
-                            display: 'inline-flex', alignItems: 'center',
-                            background: hold.aktiv ? '#1a5c2a' : '#d1d5db',
-                            transition: 'background .2s',
-                            opacity: saving === hold.conventus_id + '-aktiv' ? .5 : 1,
-                          }}
-                        >
-                          <span style={{
-                            width: 16, height: 16, borderRadius: '50%',
-                            background: 'white', display: 'block',
-                            transform: hold.aktiv ? 'translateX(16px)' : 'translateX(0)',
-                            transition: 'transform .2s',
-                            boxShadow: '0 1px 3px rgba(0,0,0,.25)',
-                          }} />
-                        </button>
-                      </td>
-                      <td>
-                        <button className="btn btn-ghost btn-sm" onClick={() => isExp ? setExpanded(null) : openEdit(hold)}>
-                          <Icon name="edit" size={12} />
-                          {isExp ? 'Luk' : 'Redigér'}
-                        </button>
-                      </td>
-                    </tr>
-                    {isExp && (
-                      <tr>
-                        <td colSpan={4} style={{ padding: '14px 16px', background: 'var(--bg)', borderBottom: '2px solid var(--green)' }}>
-                          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                            <div className="form-group" style={{ marginBottom: 0, flex: '1 1 220px' }}>
-                              <label className="form-label">Træningstider</label>
-                              <input className="form-control" value={editForm.traeningstider}
-                                onChange={e => setEditForm(f => ({ ...f, traeningstider: e.target.value }))}
-                                placeholder="fx Mandag 16:00–17:30, Torsdag 17:00–18:30" />
-                            </div>
-                            <div className="form-group" style={{ marginBottom: 0, flex: '1 1 180px' }}>
-                              <label className="form-label">Tilknyt træner</label>
-                              <select className="form-control" value={editForm.traener_uid}
-                                onChange={e => setEditForm(f => ({ ...f, traener_uid: e.target.value }))}>
-                                <option value="">– ingen –</option>
-                                {users.map(u => (
-                                  <option key={u.id} value={u.id}>{u.displayName || u.email}</option>
-                                ))}
-                              </select>
-                            </div>
-                            <div style={{ display: 'flex', gap: 8 }}>
-                              <button className="btn btn-primary btn-sm"
-                                disabled={saving === hold.conventus_id + '-edit'}
-                                onClick={() => saveEdit(hold)}>
-                                {saving === hold.conventus_id + '-edit' ? 'Gemmer…' : 'Gem'}
-                              </button>
-                              <button className="btn btn-ghost btn-sm" onClick={() => setExpanded(null)}>Annuller</button>
-                            </div>
-                          </div>
-                          {hold.beskrivelse && (
-                            <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--text2)' }}>
-                              <strong>Conventus:</strong> {hold.beskrivelse}
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    )
-  }
-
   const isReady = !loading && afdelinger !== null
-
-  function AfdSection({ id, label, holdList }) {
-    const activeCount = holdList.filter(h => h.aktiv).length
-    const isOpen      = openAfd.has(id)
-    return (
-      <div className="card">
-        <button
-          onClick={() => toggleOpenAfd(id)}
-          style={{ width: '100%', display: 'flex', alignItems: 'center',
-                   justifyContent: 'space-between', padding: '12px 16px',
-                   background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
-        >
-          <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontWeight: 600, fontSize: 14 }}>{label}</span>
-            <span style={{ fontSize: 12, color: 'var(--text3)' }}>
-              {holdList.length > 0 ? `${activeCount}/${holdList.length} aktive` : '–'}
-            </span>
-          </span>
-          <span style={{ fontSize: 12, color: 'var(--text2)', flexShrink: 0 }}>
-            {isOpen ? '▲' : '▼'}
-          </span>
-        </button>
-        {isOpen && (
-          <div style={{ borderTop: '1px solid var(--border)' }}>
-            {holdList.length > 0
-              ? <HoldTable holdList={holdList} />
-              : <p style={{ padding: '12px 16px', fontSize: 13, color: 'var(--text2)', margin: 0 }}>
-                  Ingen hold importeret endnu
-                </p>
-            }
-          </div>
-        )}
-      </div>
-    )
-  }
 
   const searchQ       = search.trim().toLowerCase()
   const searchActive  = searchQ.length > 0
@@ -1449,7 +1472,7 @@ function TeamsPage({ userDoc, authUser }) {
             <p style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 8 }}>
               {filteredHolds.length} hold fundet
             </p>
-            <HoldTable holdList={filteredHolds} />
+            <HoldTable holdList={filteredHolds} {...tableProps} />
           </>
         )
       ) : (
@@ -1463,6 +1486,9 @@ function TeamsPage({ userDoc, authUser }) {
               id={afd.id}
               label={afd.navn || afd.id}
               holdList={holds.filter(h => String(h.afdeling_id) === String(afd.id))}
+              isOpen={openAfd.has(afd.id)}
+              onToggle={toggleOpenAfd}
+              tableProps={tableProps}
             />
           ))}
           {(() => {
@@ -1471,9 +1497,13 @@ function TeamsPage({ userDoc, authUser }) {
             if (!orphans.length) return null
             return (
               <AfdSection
+                key="__orphan__"
                 id="__orphan__"
                 label="Øvrige hold"
                 holdList={orphans}
+                isOpen={openAfd.has('__orphan__')}
+                onToggle={toggleOpenAfd}
+                tableProps={tableProps}
               />
             )
           })()}
