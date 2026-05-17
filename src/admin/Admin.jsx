@@ -1426,7 +1426,13 @@ function EventsPage({ userDoc, authUser }) {
     try {
       const res  = await fetch(`${BASE}api/conventus.php?endpoint=kalender`)
       const data = await res.json()
-      if (data.error) { setImportMsg('Fejl: ' + data.error); return }
+      if (data.error) {
+        let msg = 'Fejl: ' + data.error
+        if (data.raw_preview) msg += '\n\nConventus svarede:\n' + data.raw_preview
+        if (data.debug)       msg += '\n\nURL forsøgt: ' + (data.debug.url || '–')
+        setImportMsg(msg)
+        return
+      }
       const items = data.events ?? []
       if (!items.length) { setImportMsg('Ingen begivenheder fundet i Conventus-kalenderen.'); return }
 
@@ -1545,7 +1551,9 @@ function EventsPage({ userDoc, authUser }) {
         </div>
       </div>
       {importMsg && (
-        <div className="alert-info" style={{ marginBottom: 16, fontSize: 13 }}>{importMsg}</div>
+        <div className={importMsg.startsWith('Fejl') ? 'alert-error' : 'alert-info'}
+             style={{ marginBottom: 16, fontSize: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+          {importMsg}</div>
       )}
 
       {loading ? (

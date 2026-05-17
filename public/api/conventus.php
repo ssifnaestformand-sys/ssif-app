@@ -173,10 +173,12 @@ if ($endpoint === 'grupper') {
 if ($endpoint === 'kalender') {
     header('Cache-Control: no-cache');
 
-    // Conventus kalender-RSS: prøv begge kendte URL-formater
+    // Conventus kalender-RSS: prøv kendte URL-formater med og uden API-nøgle
     $urls = [
+        'https://www.conventus.dk/dataudv/www/kalender.php?' . http_build_query(['foreningsid' => FORENING, 'key' => $apiKey, 'rss' => '1']),
+        'https://www.conventus.dk/dataudv/www/kalender.php?' . http_build_query(['foreningsid' => FORENING, 'key' => $apiKey, 'rss' => '1', 'type' => 'begivenhed']),
         'https://www.conventus.dk/dataudv/www/kalender.php?' . http_build_query(['foreningsid' => FORENING, 'rss' => '1']),
-        'https://www.conventus.dk/dataudv/www/kalender.php?' . http_build_query(['foreningsid' => FORENING, 'rss' => '1', 'type' => 'begivenhed']),
+        'https://www.conventus.dk/dataudv/api/kalender/get_begivenheder.php?' . http_build_query(['forening' => FORENING, 'key' => $apiKey]),
     ];
 
     $raw = false;
