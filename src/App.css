@@ -558,6 +558,31 @@ body {
 }
 .list-separator--indent { margin-left: 76px; }
 
+/* ─── Hold-beskrivelse (HTML fra Conventus) ─────────────────────────────────── */
+.hold-beskrivelse {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  font-size: 14px;
+  color: var(--text2);
+  line-height: 1.6;
+  box-shadow: var(--shadow);
+}
+.hold-beskrivelse p   { margin: 0 0 10px; }
+.hold-beskrivelse p:last-child { margin-bottom: 0; }
+.hold-beskrivelse br  { display: block; margin-bottom: 4px; content: ''; }
+.hold-beskrivelse strong, .hold-beskrivelse b { color: var(--text); font-weight: 600; }
+.hold-beskrivelse em, .hold-beskrivelse i { font-style: italic; }
+.hold-beskrivelse ul, .hold-beskrivelse ol { padding-left: 20px; margin: 6px 0; }
+.hold-beskrivelse li  { margin-bottom: 4px; }
+.hold-beskrivelse a   { color: var(--green); text-decoration: none; }
+.hold-beskrivelse a:hover { text-decoration: underline; }
+.hold-beskrivelse h1, .hold-beskrivelse h2, .hold-beskrivelse h3 {
+  font-size: 15px; font-weight: 700; color: var(--text); margin: 10px 0 6px;
+}
+/* Ryd op i Conventus' inline styles og fonte */
+.hold-beskrivelse font, .hold-beskrivelse span { font-family: inherit !important; font-size: inherit !important; }
+
 /* ─── Team Hero ─────────────────────────────────────────────────────────────── */
 .team-hero {
   display: flex;

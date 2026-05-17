@@ -466,29 +466,33 @@ function DashboardPage({ userDoc }) {
 
 function MessagesPage({ userDoc, authUser }) {
   const [text, setText]                     = useState('')
-  const [selectedIds, setSelectedIds]       = useState([])   // conventus_id som strings
+  const [selectedIds, setSelectedIds]       = useState([])
   const [messages, setMessages]             = useState([])
   const [msgLoading, setMsgLoading]         = useState(true)
   const [availableHolds, setAvailableHolds] = useState([])
+  const [afdelinger, setAfdelinger]         = useState([])
   const [holdsLoading, setHoldsLoading]     = useState(true)
+  const [holdSearch, setHoldSearch]         = useState('')
+  const [openAfd, setOpenAfd]               = useState(new Set())
 
-  // Hent aktive hold fra Firestore
   useEffect(() => {
-    getDocs(query(collection(db, 'holds'), where('aktiv', '==', true)))
-      .then(snap => {
-        let all = snap.docs.map(d => ({ _id: d.id, ...d.data() }))
-        // Trænere ser kun tildelte hold
-        if (userDoc?.role !== 'admin' && userDoc?.holds?.length) {
-          const mine = new Set(userDoc.holds.map(String))
-          all = all.filter(h => mine.has(String(h.conventus_id)))
-        }
-        all.sort((a, b) =>
-          (a.aktivitet_titel || '').localeCompare(b.aktivitet_titel || '', 'da') ||
-          (a.titel || '').localeCompare(b.titel || '', 'da')
-        )
-        setAvailableHolds(all)
-      })
-      .finally(() => setHoldsLoading(false))
+    Promise.all([
+      getDocs(query(collection(db, 'holds'), where('aktiv', '==', true))),
+      getDocs(collection(db, 'afdelinger')),
+    ]).then(([hSnap, aSnap]) => {
+      let all = hSnap.docs.map(d => ({ _id: d.id, ...d.data() }))
+      if (userDoc?.role !== 'admin' && userDoc?.holds?.length) {
+        const mine = new Set(userDoc.holds.map(String))
+        all = all.filter(h => mine.has(String(h.conventus_id)))
+      }
+      all.sort((a, b) =>
+        (a.titel || '').localeCompare(b.titel || '', 'da')
+      )
+      setAvailableHolds(all)
+      const afd = aSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (a.navn || a.id).localeCompare(b.navn || b.id, 'da'))
+      setAfdelinger(afd)
+    }).finally(() => setHoldsLoading(false))
   }, [])
 
   // Lyt på beskeder i real-time
@@ -554,13 +558,35 @@ function MessagesPage({ userDoc, authUser }) {
     }).catch(() => {})
   }
 
-  // Gruppér hold efter idrætgren til visning
-  const byType = availableHolds.reduce((acc, h) => {
-    const t = h.aktivitet_titel || 'Hold'
-    if (!acc[t]) acc[t] = []
-    acc[t].push(h)
-    return acc
-  }, {})
+  const toggleAfd = id => setOpenAfd(prev => {
+    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n
+  })
+
+  function toggleAllInAfd(holdList) {
+    const ids = holdList.map(h => String(h.conventus_id))
+    const allSelected = ids.every(id => selectedIds.includes(id))
+    if (allSelected) setSelectedIds(prev => prev.filter(id => !ids.includes(id)))
+    else setSelectedIds(prev => [...new Set([...prev, ...ids])])
+  }
+
+  const searchQ = holdSearch.trim().toLowerCase()
+  const searchActive = searchQ.length > 0
+  const filteredHolds = searchActive
+    ? availableHolds.filter(h =>
+        (h.titel || '').toLowerCase().includes(searchQ) ||
+        (h.aktivitet_titel || '').toLowerCase().includes(searchQ)
+      )
+    : []
+
+  // Grupper ikke-søgte holds efter afdeling
+  const afdHoldMap = {}
+  availableHolds.forEach(h => {
+    const key = String(h.afdeling_id || '__ingen__')
+    if (!afdHoldMap[key]) afdHoldMap[key] = []
+    afdHoldMap[key].push(h)
+  })
+  const afdWithHolds = afdelinger.filter(a => (afdHoldMap[a.id] || []).length > 0)
+  const orphans = afdHoldMap['__ingen__'] || []
 
   return (
     <>
@@ -568,45 +594,146 @@ function MessagesPage({ userDoc, authUser }) {
         <h1 className="page-title">Beskeder</h1>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '420px 1fr', gap: 20, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '480px 1fr', gap: 20, alignItems: 'start' }}>
         <div className="card card-pad">
           <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 14 }}>Send ny besked</h3>
           <form onSubmit={send}>
             <div className="form-group">
-              <label className="form-label">Modtagere (hold)</label>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                <label className="form-label" style={{ margin: 0 }}>Modtagere</label>
+                {selectedIds.length > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--green)' }}>
+                      {selectedIds.length} hold valgt
+                    </span>
+                    <button type="button" onClick={() => setSelectedIds([])}
+                      style={{ fontSize: 11, color: 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                      Ryd
+                    </button>
+                  </div>
+                )}
+              </div>
 
               {holdsLoading ? (
-                <p className="form-hint">Henter aktive hold…</p>
+                <p className="form-hint">Henter hold…</p>
               ) : availableHolds.length === 0 ? (
                 <p className="form-hint" style={{ color: '#92400e' }}>
                   Ingen aktive hold — aktivér hold under Hold-siden først.
                 </p>
               ) : (
-                Object.entries(byType).map(([type, typeHolds]) => (
-                  <div key={type} style={{ marginBottom: 10 }}>
-                    <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
-                                letterSpacing: '.4px', color: 'var(--text2)', marginBottom: 5 }}>
-                      {type}
-                    </p>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      {typeHolds.map(h => {
+                <>
+                  {/* Søgefelt */}
+                  <div style={{ position: 'relative', marginBottom: 8 }}>
+                    <span style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', display: 'flex' }}>
+                      <Icon name="search" size={14} color="var(--text3)" />
+                    </span>
+                    <input className="form-control" value={holdSearch}
+                      onChange={e => setHoldSearch(e.target.value)}
+                      placeholder="Søg hold…"
+                      style={{ paddingLeft: 30, paddingRight: holdSearch ? 30 : undefined, fontSize: 13 }} />
+                    {holdSearch && (
+                      <button type="button" onClick={() => setHoldSearch('')}
+                        style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
+                        <Icon name="x" size={14} color="var(--text3)" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Hold-liste: flad ved søgning, afdelingsgrupperet ellers */}
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden', maxHeight: 340, overflowY: 'auto' }}>
+                    {searchActive ? (
+                      filteredHolds.length === 0 ? (
+                        <p style={{ padding: '12px 14px', fontSize: 13, color: 'var(--text3)', margin: 0 }}>Ingen hold matcher "{holdSearch}"</p>
+                      ) : filteredHolds.map((h, i) => {
                         const id = String(h.conventus_id)
                         const checked = selectedIds.includes(id)
                         return (
-                          <label key={id} className={`hold-check-label ${checked ? 'selected' : ''}`}
-                                 style={{ gridColumn: 'unset' }}>
-                            <input type="checkbox" checked={checked} onChange={() => toggleId(h.conventus_id)} />
-                            {h.titel}
-                          </label>
+                          <div key={id}>
+                            {i > 0 && <div style={{ height: 1, background: 'var(--border)' }} />}
+                            <label className={`hold-check-label ${checked ? 'selected' : ''}`}
+                                   style={{ gridColumn: 'unset', borderRadius: 0, margin: 0 }}>
+                              <input type="checkbox" checked={checked} onChange={() => toggleId(h.conventus_id)} />
+                              <span>
+                                {h.titel}
+                                {h.aktivitet_titel && <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 6 }}>({h.aktivitet_titel})</span>}
+                              </span>
+                            </label>
+                          </div>
                         )
-                      })}
-                    </div>
+                      })
+                    ) : (
+                      <>
+                        {afdWithHolds.map(afd => {
+                          const holds = afdHoldMap[afd.id] || []
+                          const isOpen = openAfd.has(afd.id)
+                          const afdIds = holds.map(h => String(h.conventus_id))
+                          const allChk = afdIds.length > 0 && afdIds.every(id => selectedIds.includes(id))
+                          const someChk = afdIds.some(id => selectedIds.includes(id))
+                          return (
+                            <div key={afd.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', padding: '7px 10px', background: 'var(--bg)', gap: 8 }}>
+                                <input type="checkbox" checked={allChk} ref={el => { if (el) el.indeterminate = someChk && !allChk }}
+                                  onChange={() => toggleAllInAfd(holds)} style={{ flexShrink: 0 }} />
+                                <button type="button" onClick={() => toggleAfd(afd.id)}
+                                  style={{ flex: 1, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{afd.navn || afd.id}</span>
+                                  <span style={{ fontSize: 11, color: 'var(--text3)' }}>
+                                    {someChk ? `${afdIds.filter(id => selectedIds.includes(id)).length}/${holds.length} valgt` : holds.length + ' hold'}
+                                    {' '}{isOpen ? '▲' : '▼'}
+                                  </span>
+                                </button>
+                              </div>
+                              {isOpen && holds.map((h, i) => {
+                                const id = String(h.conventus_id)
+                                const checked = selectedIds.includes(id)
+                                return (
+                                  <div key={id}>
+                                    {<div style={{ height: 1, background: 'var(--border)', marginLeft: 36 }} />}
+                                    <label className={`hold-check-label ${checked ? 'selected' : ''}`}
+                                           style={{ gridColumn: 'unset', borderRadius: 0, margin: 0, paddingLeft: 28 }}>
+                                      <input type="checkbox" checked={checked} onChange={() => toggleId(h.conventus_id)} />
+                                      {h.titel}
+                                    </label>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )
+                        })}
+                        {orphans.length > 0 && (
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', padding: '7px 10px', background: 'var(--bg)', gap: 8 }}>
+                              <input type="checkbox"
+                                checked={orphans.map(h => String(h.conventus_id)).every(id => selectedIds.includes(id))}
+                                ref={el => { if (el) el.indeterminate = orphans.some(h => selectedIds.includes(String(h.conventus_id))) && !orphans.every(h => selectedIds.includes(String(h.conventus_id))) }}
+                                onChange={() => toggleAllInAfd(orphans)} />
+                              <button type="button" onClick={() => toggleAfd('__ingen__')}
+                                style={{ flex: 1, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>Øvrige hold</span>
+                                <span style={{ fontSize: 11, color: 'var(--text3)' }}>{openAfd.has('__ingen__') ? '▲' : '▼'}</span>
+                              </button>
+                            </div>
+                            {openAfd.has('__ingen__') && orphans.map(h => {
+                              const id = String(h.conventus_id)
+                              const checked = selectedIds.includes(id)
+                              return (
+                                <div key={id}>
+                                  <div style={{ height: 1, background: 'var(--border)', marginLeft: 36 }} />
+                                  <label className={`hold-check-label ${checked ? 'selected' : ''}`}
+                                         style={{ gridColumn: 'unset', borderRadius: 0, margin: 0, paddingLeft: 28 }}>
+                                    <input type="checkbox" checked={checked} onChange={() => toggleId(h.conventus_id)} />
+                                    {h.titel}
+                                  </label>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
-                ))
-              )}
-
-              {!holdsLoading && selectedIds.length === 0 && availableHolds.length > 0 && (
-                <p className="form-hint">Vælg mindst ét hold</p>
+                  {selectedIds.length === 0 && <p className="form-hint" style={{ marginTop: 6 }}>Vælg mindst ét hold</p>}
+                </>
               )}
             </div>
 

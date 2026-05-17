@@ -1091,12 +1091,9 @@ function TeamDetailScreen({ team: hold }) {
       {hold.beskrivelse ? (
         <>
           <SectionHeader title="Om holdet" />
-          <div className="list-group">
-            <div className="list-item" style={{ cursor: 'default' }}>
-              <div className="list-item-body">
-                <span className="list-item-detail">{hold.beskrivelse}</span>
-              </div>
-            </div>
+          <div style={{ margin: '0 16px' }}>
+            <div className="hold-beskrivelse"
+                 dangerouslySetInnerHTML={{ __html: hold.beskrivelse }} />
           </div>
         </>
       ) : null}
