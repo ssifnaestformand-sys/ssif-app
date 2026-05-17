@@ -1012,7 +1012,9 @@ function TeamsPage({ userDoc, authUser }) {
     setSyncing(what); setSyncResult(null)
     try {
       const idToken = await auth.currentUser?.getIdToken() ?? ''
-      const fd = new FormData(); fd.append('what', what)
+      const fd = new FormData()
+      fd.append('what',    what)
+      fd.append('idToken', idToken)   // fallback: Apache stripper Authorization-headeren
       const res  = await fetch('https://app.sejssvejbaek-if.dk/api/admin-sync.php', {
         method: 'POST',
         headers: { Authorization: `Bearer ${idToken}` },
