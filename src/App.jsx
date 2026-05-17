@@ -63,18 +63,19 @@ function Icon({ name, size = 24, color = 'currentColor', sw = 1.75 }) {
 // ─── Dummy Data (fallback) ────────────────────────────────────────────────────
 
 const DEMO_USER = {
-  name:          'Lars Thomsen',
-  firstName:     'Lars',
-  email:         'lars@demo.dk',
-  initials:      'LT',
-  isDemo:        true,
-  emailVerified: true,
-  primaryEmail:  'lars@demo.dk',
-  extraEmails:   [],
-  holdIds:       [],
-  holds:         [],
-  familyMembers: [],
-  role:          'Medlem',
+  name:           'Lars Thomsen',
+  firstName:      'Lars',
+  email:          'lars@demo.dk',
+  initials:       'LT',
+  isDemo:         true,
+  emailVerified:  true,
+  primaryEmail:   'lars@demo.dk',
+  extraEmails:    [],
+  holdIds:        [],
+  holds:          [],
+  familyMembers:  [],
+  role:           'Medlem',
+  onboardingDone: false,
 }
 
 const TEAMS = [
@@ -479,6 +480,164 @@ function BottomNav({ activeTab, onChange, unreadCount }) {
         </button>
       ))}
     </nav>
+  )
+}
+
+// ─── Welcome / onboarding ─────────────────────────────────────────────────────
+
+const WELCOME_FEATURES = [
+  {
+    icon: 'news',
+    color: '#5856d6',
+    bg:    '#ede9fe',
+    title: 'Nyheder fra klubben',
+    desc:  'Hold dig opdateret med nyheder, kampresultater og arrangementer direkte fra SSIF.',
+  },
+  {
+    icon: 'message',
+    color: '#1a5c2a',
+    bg:    '#e8f5ec',
+    title: 'Beskeder fra din træner',
+    desc:  'Trænere sender beskeder til holdet her. Du kan reagere med 👍 ✅ ❤️ — men det er kun trænere der skriver.',
+  },
+  {
+    icon: 'calendar',
+    color: '#ff9500',
+    bg:    '#fff3e0',
+    title: 'Ugeoversigt over træning',
+    desc:  'Forsiden viser en ugekalender med træningstider for dine hold og dine børns hold — et hurtigt overblik hver dag.',
+  },
+  {
+    icon: 'users',
+    color: '#007aff',
+    bg:    '#eff6ff',
+    title: 'Hold og tilmeldinger',
+    desc:  'Under Hold-fanen ser du alle de hold, du eller dine børn er tilmeldt via Conventus.',
+  },
+]
+
+function WelcomeScreen({ user, onDone }) {
+  const [saving, setSaving] = useState(false)
+
+  async function done() {
+    setSaving(true)
+    if (!user.isDemo) {
+      updateDoc(doc(db, 'users', user.uid), { onboardingDone: true }).catch(() => {})
+    }
+    onDone()
+  }
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 999,
+      background: 'var(--bg)',
+      overflowY: 'auto',
+      paddingTop: 'env(safe-area-inset-top, 0)',
+      paddingBottom: 'calc(env(safe-area-inset-bottom, 0) + 100px)',
+      maxWidth: 430,
+      margin: '0 auto',
+    }}>
+      {/* Top hero */}
+      <div style={{
+        background: 'var(--green)',
+        padding: '40px 28px 36px',
+        textAlign: 'center',
+      }}>
+        <div style={{
+          width: 72, height: 72, borderRadius: 20,
+          background: 'rgba(255,255,255,.18)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          margin: '0 auto 20px',
+          fontSize: 32, fontWeight: 800, color: 'white',
+          letterSpacing: 1,
+        }}>
+          S
+        </div>
+        <h1 style={{ color: 'white', fontSize: 26, fontWeight: 800, marginBottom: 8 }}>
+          Hej, {user.firstName || user.name}! 👋
+        </h1>
+        <p style={{ color: 'rgba(255,255,255,.8)', fontSize: 15, lineHeight: 1.5, maxWidth: 280, margin: '0 auto' }}>
+          Velkommen til Sejs-Svejbæk IF's app — ét sted til alt om din klub.
+        </p>
+      </div>
+
+      {/* Feature cards */}
+      <div style={{ padding: '24px 16px 0' }}>
+        <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 12 }}>
+          Det kan appen
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {WELCOME_FEATURES.map(f => (
+            <div key={f.title} style={{
+              background: 'var(--surface)',
+              borderRadius: 'var(--radius)',
+              padding: '14px 16px',
+              display: 'flex',
+              gap: 14,
+              alignItems: 'flex-start',
+              boxShadow: 'var(--shadow)',
+            }}>
+              <div style={{
+                width: 40, height: 40, borderRadius: 12,
+                background: f.bg,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0,
+              }}>
+                <Icon name={f.icon} size={20} color={f.color} />
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)', marginBottom: 3 }}>{f.title}</div>
+                <div style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.45 }}>{f.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Tip: link Conventus */}
+        <div style={{
+          marginTop: 16, padding: '14px 16px',
+          background: '#fff3e0', borderRadius: 'var(--radius)',
+          display: 'flex', gap: 12, alignItems: 'flex-start',
+          border: '1px solid #fed7aa',
+        }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: 10,
+            background: '#ff9500', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}>
+            <Icon name="person" size={18} color="white" />
+          </div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 13, color: '#92400e', marginBottom: 3 }}>
+              Tilknyt dine hold
+            </div>
+            <div style={{ fontSize: 13, color: '#78350f', lineHeight: 1.45 }}>
+              Gå til <strong>Profil → Tilknyttede emails</strong> og tilføj den email du bruger i Conventus. Så ser du automatisk dine hold og dine børns hold.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Sticky button */}
+      <div style={{
+        position: 'fixed',
+        bottom: 0,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        width: '100%',
+        maxWidth: 430,
+        padding: `16px 16px calc(16px + env(safe-area-inset-bottom, 0))`,
+        background: 'linear-gradient(to top, var(--bg) 70%, transparent)',
+      }}>
+        <button
+          className="btn btn-primary"
+          style={{ width: '100%', height: 52, fontSize: 17, fontWeight: 700, borderRadius: 14 }}
+          onClick={done}
+          disabled={saving}
+        >
+          Kom i gang
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -1880,12 +2039,13 @@ export default function App() {
       emailVerified: fbUser.emailVerified,
       initials:      ((parts[0]?.[0] || '') + (parts[parts.length - 1]?.[0] || '')).toUpperCase()
                      || (fbUser.email?.slice(0,2).toUpperCase() ?? 'SS'),
-      role:          profile.role          || 'Medlem',
-      holds:         profile.holds         || [],
-      holdIds:       [...new Set([...(profile.holdIds || []).map(String), ...memberHoldIds])],
-      familyMembers: profile.familyMembers  || [],
-      primaryEmail:  profile.primaryEmail   || fbUser.email || '',
-      extraEmails:   profile.extraEmails    || [],
+      role:           profile.role          || 'Medlem',
+      holds:          profile.holds         || [],
+      holdIds:        [...new Set([...(profile.holdIds || []).map(String), ...memberHoldIds])],
+      familyMembers:  profile.familyMembers  || [],
+      primaryEmail:   profile.primaryEmail   || fbUser.email || '',
+      extraEmails:    profile.extraEmails    || [],
+      onboardingDone: profile.onboardingDone === true,
     })
   }
 
@@ -2042,6 +2202,16 @@ export default function App() {
       <LoginScreen
         initialError={loginError}
         onDemoLogin={() => { isDemoRef.current = true; setUser(DEMO_USER) }}
+      />
+    )
+  }
+
+  // Velkomstskærm ved første login (vises én gang, gemmes i Firestore)
+  if (!user.onboardingDone) {
+    return (
+      <WelcomeScreen
+        user={user}
+        onDone={() => setUser(u => ({ ...u, onboardingDone: true }))}
       />
     )
   }

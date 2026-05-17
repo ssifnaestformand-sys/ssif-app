@@ -56,19 +56,5 @@ jobs:
           port: 21
           local-dir: ./dist/
           server-dir: /customers/7/8/f/sejssvejbaek-if.dk/httpd.www/app/
-
-      - name: Synkronisér Conventus-hold
-        continue-on-error: true
-        run: |
-          curl -s -X POST https://app.sejssvejbaek-if.dk/api/sync-holds.php \
-            -H "X-Sync-Secret: ${{ secrets.SYNC_SECRET }}" \
-            --max-time 30 || true
-          echo "sync-holds startet (kører i baggrunden)"
-
-      - name: Synkronisér Conventus-medlemmer
-        continue-on-error: true
-        run: |
-          curl -s -X POST https://app.sejssvejbaek-if.dk/api/sync-members.php \
-            -H "X-Sync-Secret: ${{ secrets.SYNC_SECRET }}" \
-            --max-time 30 || true
-          echo "sync-members startet (kører i baggrunden)"
+      # Synkronisering køres IKKE ved deploy — kun via daglig cron (sync-members.yml)
+      # eller manuelt fra backoffice. Dette sparer Firestore-kvoten på Spark-planen.

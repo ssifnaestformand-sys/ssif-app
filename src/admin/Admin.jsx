@@ -997,6 +997,32 @@ function TeamsPage({ userDoc, authUser }) {
   const [editForm,      setEditForm]     = useState({ traeningstider: '', traener_uid: '' })
   const [openAfd,       setOpenAfd]      = useState(new Set())
   const [search,        setSearch]       = useState('')
+  const [syncing,       setSyncing]      = useState(null)   // null | 'holds' | 'members' | 'all'
+  const [syncResult,    setSyncResult]   = useState(null)   // {ok, msg, ts}
+
+  async function triggerSync(what) {
+    setSyncing(what); setSyncResult(null)
+    try {
+      const idToken = await auth.currentUser?.getIdToken() ?? ''
+      const fd = new FormData(); fd.append('what', what)
+      const res  = await fetch(`${window.location.origin.replace('/admin','')}/api/admin-sync.php`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}` },
+        body: fd,
+      })
+      const data = await res.json()
+      if (!res.ok) { setSyncResult({ ok: false, msg: data.error || 'Fejl' }); return }
+      const r = data.results || {}
+      const parts = []
+      if (r.holds)   parts.push(`Hold: ${r.holds.written ?? '?'} skrevet`)
+      if (r.members) parts.push('Medlemmer: kører i baggrunden')
+      setSyncResult({ ok: true, msg: parts.join(' · ') || 'Synkronisering gennemført', ts: data.synced })
+      // Genindlæs holds efter holds-sync
+      if (what === 'holds' || what === 'all') { setTimeout(loadHolds, 2000) }
+    } catch (err) {
+      setSyncResult({ ok: false, msg: err.message })
+    } finally { setSyncing(null) }
+  }
 
   function loadHolds() {
     setLoading(true)
@@ -1215,7 +1241,32 @@ function TeamsPage({ userDoc, authUser }) {
     <>
       <div className="page-header">
         <h1 className="page-title">Hold</h1>
+        {userDoc?.role === 'admin' && (
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button className="btn btn-ghost btn-sm"
+              disabled={!!syncing}
+              onClick={() => triggerSync('holds')}
+              title="Henter hold og afdelinger fra Conventus (~500 skrivninger)">
+              {syncing === 'holds' ? 'Henter…' : 'Synk. hold'}
+            </button>
+            <button className="btn btn-ghost btn-sm"
+              disabled={!!syncing}
+              onClick={() => triggerSync('all')}
+              title="Henter hold + alle medlemmer (~3.400 skrivninger — brug sjældent)">
+              {syncing === 'all' ? 'Synkroniserer…' : 'Synk. alt'}
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* Sync-resultat */}
+      {syncResult && (
+        <div className={syncResult.ok ? 'alert-info' : 'alert-error'}
+             style={{ marginBottom: 12, fontSize: 13, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>{syncResult.msg}</span>
+          <button onClick={() => setSyncResult(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px', opacity: .5 }}>✕</button>
+        </div>
+      )}
 
       {/* Søgefelt */}
       <div style={{ position: 'relative', marginBottom: 16 }}>
