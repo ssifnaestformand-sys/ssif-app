@@ -816,7 +816,9 @@ function MessagesPage({ userDoc, authUser }) {
 
 // ─── ImageUploader ────────────────────────────────────────────────────────────
 
-function ImageUploader({ value, onChange }) {
+// aspectRatio: CSS aspect-ratio streng, fx '3/1' for banners, 'auto' for nyheder
+// hint: vejledende tekst under uploadzonen
+function ImageUploader({ value, onChange, aspectRatio = 'auto', hint = '' }) {
   const [dragging, setDragging] = useState(false)
   const [progress, setProgress] = useState(null) // null | 0-100
   const [error, setError]       = useState('')
@@ -827,14 +829,42 @@ function ImageUploader({ value, onChange }) {
     if (file.size > 8 * 1024 * 1024)              { setError('Maks 8 MB'); return }
     setError(''); setProgress(0)
 
-    const path   = `news-images/${Date.now()}-${file.name.replace(/[^a-z0-9.]/gi, '_')}`
+    const folder = aspectRatio !== 'auto' ? 'banners' : 'news-images'
+    const path   = `${folder}/${Date.now()}-${file.name.replace(/[^a-z0-9.]/gi, '_')}`
     const sRef   = storageRef(storage, path)
     const upload = uploadBytesResumable(sRef, file)
 
+    // Timeout: hvis upload sidder fast på 0% i 12 sek. er det sandsynligvis
+    // Firebase Storage-regler eller CORS der blokerer
+    let hasProgress = false
+    const timeout = setTimeout(() => {
+      if (!hasProgress) {
+        upload.cancel()
+        setProgress(null)
+        setError(
+          'Upload startede ikke — tjek Firebase Storage-regler. ' +
+          'Gå til Firebase Console → Storage → Rules og tilføj: ' +
+          'allow write: if request.auth != null;'
+        )
+      }
+    }, 12000)
+
     upload.on('state_changed',
-      snap  => setProgress(Math.round(snap.bytesTransferred / snap.totalBytes * 100)),
-      err   => { setError('Upload fejlede: ' + err.message); setProgress(null) },
-      ()    => getDownloadURL(upload.snapshot.ref).then(url => { onChange(url); setProgress(null) })
+      snap => {
+        if (snap.bytesTransferred > 0) hasProgress = true
+        setProgress(Math.round(snap.bytesTransferred / snap.totalBytes * 100))
+      },
+      err => {
+        clearTimeout(timeout)
+        setError('Upload fejlede: ' + (err.code === 'storage/unauthorized'
+          ? 'Ingen tilladelse — tjek Firebase Storage-regler'
+          : err.message))
+        setProgress(null)
+      },
+      () => {
+        clearTimeout(timeout)
+        getDownloadURL(upload.snapshot.ref).then(url => { onChange(url); setProgress(null) })
+      }
     )
   }
 
@@ -842,6 +872,8 @@ function ImageUploader({ value, onChange }) {
     e.preventDefault(); setDragging(false)
     handleFile(e.dataTransfer.files[0])
   }
+
+  const isBanner = aspectRatio !== 'auto'
 
   return (
     <div>
@@ -853,36 +885,61 @@ function ImageUploader({ value, onChange }) {
         style={{
           border: `2px dashed ${dragging ? 'var(--primary)' : 'var(--border)'}`,
           borderRadius: 8,
-          padding: '18px 12px',
-          textAlign: 'center',
           cursor: 'pointer',
           background: dragging ? 'var(--primary-soft, #e8f5e9)' : 'var(--bg)',
           transition: 'border-color .15s, background .15s',
+          overflow: 'hidden',
+          // Fastlås proportioner for banner-upload
+          ...(isBanner ? { aspectRatio, position: 'relative' } : { padding: '18px 12px', textAlign: 'center' }),
         }}
       >
         <input ref={inputRef} type="file" accept="image/*" style={{ display: 'none' }}
                onChange={e => handleFile(e.target.files[0])} />
+
         {progress !== null ? (
-          <div>
-            <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 6 }}>Uploader… {progress}%</div>
-            <div style={{ height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+          <div style={isBanner ? { position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 20 } : {}}>
+            <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 8 }}>Uploader… {progress}%</div>
+            <div style={{ width: '100%', height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
               <div style={{ height: '100%', width: progress + '%', background: 'var(--primary, #1a5c2a)', transition: 'width .2s' }} />
             </div>
           </div>
         ) : value ? (
-          <div>
-            <img src={value} alt="" style={{ maxWidth: '100%', maxHeight: 160, borderRadius: 6, objectFit: 'cover', display: 'block', margin: '0 auto 8px' }} />
-            <span style={{ fontSize: 12, color: 'var(--text2)' }}>Klik eller træk for at skifte billede</span>
+          <div style={isBanner ? { position: 'absolute', inset: 0 } : {}}>
+            <img src={value} alt=""
+              style={isBanner
+                ? { width: '100%', height: '100%', objectFit: 'cover', display: 'block' }
+                : { maxWidth: '100%', maxHeight: 160, borderRadius: 6, objectFit: 'cover', display: 'block', margin: '0 auto 8px' }}
+            />
+            {isBanner && (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,.35)', opacity: 0 }}
+                   onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                   onMouseLeave={e => e.currentTarget.style.opacity = 0}>
+                <span style={{ color: 'white', fontSize: 13, fontWeight: 600 }}>Klik for at skifte billede</span>
+              </div>
+            )}
+            {!isBanner && <span style={{ fontSize: 12, color: 'var(--text2)' }}>Klik eller træk for at skifte billede</span>}
           </div>
         ) : (
-          <div style={{ fontSize: 13, color: 'var(--text2)', pointerEvents: 'none' }}>
-            <div style={{ fontSize: 24, marginBottom: 6 }}>🖼</div>
-            Træk et billede hertil eller <span style={{ color: 'var(--primary, #1a5c2a)', fontWeight: 600 }}>vælg fil</span>
+          <div style={isBanner
+            ? { position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, pointerEvents: 'none' }
+            : { fontSize: 13, color: 'var(--text2)', pointerEvents: 'none' }}>
+            <div style={{ fontSize: isBanner ? 32 : 24, marginBottom: isBanner ? 0 : 6 }}>🖼</div>
+            <span style={{ fontSize: 13, color: 'var(--text2)', textAlign: 'center', padding: '0 16px' }}>
+              Træk et billede hertil eller{' '}
+              <span style={{ color: 'var(--primary, #1a5c2a)', fontWeight: 600 }}>vælg fil</span>
+            </span>
+            {isBanner && (
+              <span style={{ fontSize: 11, color: 'var(--text3)' }}>
+                Anbefalet: 1200 × 400 px · maks 8 MB
+              </span>
+            )}
           </div>
         )}
       </div>
-      {error && <p style={{ fontSize: 12, color: '#dc3545', marginTop: 4 }}>{error}</p>}
-      {value && !progress && (
+
+      {hint && !value && <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 5 }}>{hint}</p>}
+      {error && <p style={{ fontSize: 12, color: '#dc3545', marginTop: 5, whiteSpace: 'pre-wrap' }}>{error}</p>}
+      {value && progress === null && (
         <button type="button" style={{ fontSize: 12, color: '#dc3545', background: 'none', border: 'none', cursor: 'pointer', marginTop: 4, padding: 0 }}
                 onClick={e => { e.stopPropagation(); onChange('') }}>
           Fjern billede
@@ -1882,7 +1939,9 @@ function BannersPage({ userDoc, authUser }) {
           <div className="card card-pad">
             <div className="form-group">
               <label className="form-label">Billede *</label>
-              <ImageUploader value={form.imageUrl} onChange={url => setF('imageUrl', url)} />
+              <ImageUploader value={form.imageUrl} onChange={url => setF('imageUrl', url)}
+                aspectRatio="3/1"
+                hint="Anbefalet størrelse: 1200 × 400 px (bredformat). Vises i fuld bredde i appen." />
             </div>
             <div className="form-group">
               <label className="form-label">Titel (valgfri)</label>
