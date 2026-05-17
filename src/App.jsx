@@ -249,6 +249,101 @@ function SplashScreen({ label }) {
   )
 }
 
+// ─── PWA-installationsprompt ─────────────────────────────────────────────────
+
+function InstallPromptScreen({ onContinue }) {
+  const [prompt, setPrompt] = useState(null)
+  const [installed, setInstalled] = useState(false)
+
+  useEffect(() => {
+    const handler = e => { e.preventDefault(); setPrompt(e) }
+    window.addEventListener('beforeinstallprompt', handler)
+    window.addEventListener('appinstalled', () => setInstalled(true))
+    return () => window.removeEventListener('beforeinstallprompt', handler)
+  }, [])
+
+  const isIOS     = /iphone|ipad|ipod/i.test(navigator.userAgent)
+  const isAndroid = /android/i.test(navigator.userAgent)
+
+  async function installNative() {
+    if (!prompt) return
+    await prompt.prompt()
+    const { outcome } = await prompt.userChoice
+    if (outcome === 'accepted') setInstalled(true)
+  }
+
+  return (
+    <div style={{
+      minHeight: '100vh', background: 'var(--green)',
+      display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center',
+      padding: `max(env(safe-area-inset-top,24px),24px) 24px max(env(safe-area-inset-bottom,24px),24px)`,
+      maxWidth: 430, margin: '0 auto',
+    }}>
+      {/* Logo */}
+      <div style={{ width: 120, height: 120, borderRadius: 28, background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12, marginBottom: 28, boxShadow: '0 8px 32px rgba(0,0,0,.2)' }}>
+        <img src="/ssif-logo.png" alt="SSIF" style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+             onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='block' }} />
+        <span style={{ display:'none', color:'var(--green)', fontSize:32, fontWeight:800 }}>S</span>
+      </div>
+
+      <h1 style={{ color: 'white', fontSize: 26, fontWeight: 800, textAlign: 'center', marginBottom: 10 }}>
+        Sejs-Svejbæk IF
+      </h1>
+      <p style={{ color: 'rgba(255,255,255,.8)', fontSize: 15, textAlign: 'center', lineHeight: 1.5, marginBottom: 32, maxWidth: 280 }}>
+        Dette er en <strong style={{ color: 'white' }}>app</strong> — ikke en hjemmeside. Gem den på din hjemmeskærm for den bedste oplevelse med notifikationer og hurtig adgang.
+      </p>
+
+      {/* Platform-specifikke instruktioner */}
+      <div style={{ background: 'rgba(255,255,255,.12)', borderRadius: 16, padding: '20px 20px', width: '100%', maxWidth: 340, marginBottom: 24 }}>
+        {installed ? (
+          <p style={{ color: 'white', textAlign: 'center', fontWeight: 700, fontSize: 16 }}>
+            ✅ Appen er installeret!
+          </p>
+        ) : isIOS ? (
+          <>
+            <p style={{ color: 'white', fontWeight: 700, marginBottom: 14, fontSize: 14 }}>Sådan gemmer du den på iPhone/iPad:</p>
+            {[
+              { n: 1, icon: '⬆️', text: 'Tryk på deleknappen i bunden af Safari' },
+              { n: 2, icon: '📱', text: 'Vælg "Føj til hjemmeskærm"' },
+              { n: 3, icon: '✅', text: 'Tryk "Tilføj" øverst til højre' },
+            ].map(s => (
+              <div key={s.n} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 10 }}>
+                <span style={{ fontSize: 20, flexShrink: 0 }}>{s.icon}</span>
+                <span style={{ color: 'rgba(255,255,255,.9)', fontSize: 14, lineHeight: 1.4 }}>{s.text}</span>
+              </div>
+            ))}
+          </>
+        ) : prompt ? (
+          <>
+            <p style={{ color: 'white', fontWeight: 700, marginBottom: 14, fontSize: 14 }}>Installer appen direkte:</p>
+            <button onClick={installNative} style={{ width: '100%', background: 'white', color: 'var(--green)', border: 'none', borderRadius: 12, height: 48, fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>
+              📲 Installer app
+            </button>
+          </>
+        ) : (
+          <>
+            <p style={{ color: 'white', fontWeight: 700, marginBottom: 14, fontSize: 14 }}>Sådan gemmer du den:</p>
+            {[
+              { icon: '⋮', text: 'Tryk på menu-ikonet i din browser' },
+              { icon: '📱', text: 'Vælg "Tilføj til startskærm" eller "Installer app"' },
+            ].map((s, i) => (
+              <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 10 }}>
+                <span style={{ fontSize: 18, flexShrink: 0, fontWeight: 700, color: 'white' }}>{s.icon}</span>
+                <span style={{ color: 'rgba(255,255,255,.9)', fontSize: 14, lineHeight: 1.4 }}>{s.text}</span>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+
+      <button onClick={onContinue} style={{ background: 'none', border: '1.5px solid rgba(255,255,255,.4)', color: 'rgba(255,255,255,.75)', borderRadius: 12, padding: '12px 24px', fontSize: 14, cursor: 'pointer' }}>
+        Fortsæt til login uden at installere
+      </button>
+    </div>
+  )
+}
+
 // ─── Login ────────────────────────────────────────────────────────────────────
 
 function LoginScreen({ onDemoLogin, initialError }) {
@@ -468,10 +563,10 @@ function AppHeader({ title, onBack, backLabel, right }) {
 function BottomNav({ activeTab, onChange, unreadCount }) {
   const tabs = [
     { id: 'dashboard', label: 'Hjem',     icon: 'home'          },
-    { id: 'profil',    label: 'Profil',   icon: 'person-circle' },
+    { id: 'teams',     label: 'Hold',     icon: 'users'         },
     { id: 'news',      label: 'Nyheder',  icon: 'news'          },
     { id: 'messages',  label: 'Beskeder', icon: 'message'       },
-    { id: 'teams',     label: 'Hold',     icon: 'users'         },
+    { id: 'profil',    label: 'Profil',   icon: 'person-circle' },
   ]
   return (
     <nav className="tab-bar">
@@ -2153,6 +2248,11 @@ function UnverifiedScreen({ user, onLogout }) {
 export default function App() {
   const [user, setUser]                           = useState(null)
   const [authChecked, setAuthChecked]             = useState(false)
+  const [installDone, setInstallDone]             = useState(() => {
+    const standalone = window.matchMedia('(display-mode: standalone)').matches
+                    || window.navigator.standalone === true
+    return standalone || localStorage.getItem('ssif_install_done') === '1'
+  })
   const [activeTab, setActiveTab]                 = useState('dashboard')
   const [selectedTeam, setSelectedTeam]           = useState(null)
   const [selectedArticle, setSelectedArticle]     = useState(null)
@@ -2409,6 +2509,16 @@ export default function App() {
   // ── Render guards ─────────────────────────────────────────────────────────
 
   if (!authChecked) return <SplashScreen />
+
+  // Vis installationsprompt i browser (ikke i installeret PWA)
+  if (!installDone) {
+    return (
+      <InstallPromptScreen onContinue={() => {
+        localStorage.setItem('ssif_install_done', '1')
+        setInstallDone(true)
+      }} />
+    )
+  }
 
   if (!user) {
     return (
