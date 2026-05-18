@@ -74,14 +74,26 @@ $resp = @file_get_contents($queryUrl, false, stream_context_create(['http' => [
     'ignore_errors' => true,
 ]]));
 
-$rows = json_decode($resp ?: '[]', true);
+$decoded = json_decode($resp ?: 'null', true);
+
+// Firestore returnerer enten et array (resultater) eller et objekt med 'error'
+if (!is_array($decoded) || isset($decoded['error'])) {
+    $errMsg = $decoded['error']['message'] ?? ($resp ? substr($resp, 0, 200) : 'Tomt svar fra Firestore');
+    http_response_code(500);
+    echo json_encode(['error' => 'Firestore-forespørgsel fejlede', 'detail' => $errMsg]);
+    exit;
+}
+
+$rows = $decoded;
 
 // ── Filter + send ─────────────────────────────────────────────────────────────
-$sent    = 0;
-$skipped = 0;
+$sent        = 0;
+$skipped     = 0;
+$usersFound  = 0;
 
 foreach ($rows as $row) {
     if (!isset($row['document']['fields'])) continue;
+    $usersFound++;
     $fields = $row['document']['fields'];
 
     // Brugerens hold-IDs (fra holdIds-feltet)
@@ -92,7 +104,7 @@ foreach ($rows as $row) {
         }
     }
 
-    // Tjek overlap
+    // Tjek overlap med beskedens holdIds
     $overlap = false;
     foreach ($userHoldIds as $id) {
         if (isset($targetSet[$id])) { $overlap = true; break; }
@@ -122,7 +134,7 @@ foreach ($rows as $row) {
     }
 }
 
-echo json_encode(['ok' => true, 'sent' => $sent, 'skipped' => $skipped]);
+echo json_encode(['ok' => true, 'sent' => $sent, 'skipped' => $skipped, 'usersWithNotif' => $usersFound]);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
