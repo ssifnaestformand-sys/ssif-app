@@ -15,6 +15,8 @@
  *   SMS_API_KEY  — GatewayAPI Token (https://gatewayapi.com)
  */
 
+define('SMS_PRICE_DKK', 0.40); // estimat pr. SMS-del (GatewayAPI, Danmark)
+
 require_once __DIR__ . '/_auth.php';
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
@@ -147,8 +149,6 @@ send_and_log($msisdns, $text, $parts, $scope, $scopeLabel, $callerUid, $callerNa
 
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const SMS_PRICE_DKK = 0.40; // estimat pr. SMS-del (GatewayAPI, Danmark)
-
 // ── SMS-hjælpere ──────────────────────────────────────────────────────────────
 
 function sms_parts(string $text): int {
@@ -233,7 +233,7 @@ function parse_msisdns_from_xml(string $raw, array $targetGroupIds): array {
             if (isset($k->relationer)) {
                 foreach ($k->relationer->children() as $relType) {
                     foreach ($relType->children() as $child) {
-                        if (strtolower($child->getName()) !== 'groupe') continue;
+                        if (strtolower($child->getName()) !== 'gruppe') continue;
                         if (isset($targetSet[(int)trim((string)$child)])) { $inGroup = true; break 2; }
                     }
                 }
@@ -278,7 +278,7 @@ function send_and_log(array $msisdns, string $text, int $parts, string $scope, s
     }
 
     // GatewayAPI REST-kald
-    $recipients = array_map(fn($m) => ['msisdn' => $m], $msisdns);
+    $recipients = array_map(function($m) { return ['msisdn' => $m]; }, $msisdns);
     $payload    = json_encode(['sender' => 'SSIF', 'message' => $text, 'recipients' => $recipients]);
 
     $gwResp = @file_get_contents('https://gatewayapi.com/rest/mtsms', false, stream_context_create(['http' => [
@@ -305,7 +305,7 @@ function send_and_log(array $msisdns, string $text, int $parts, string $scope, s
         'parts'         => ['integerValue'   => (string)$parts],
         'text'          => ['stringValue'    => $text],
         'gatewayOk'     => ['booleanValue'   => $gwOk],
-        'gatewayIds'    => ['arrayValue'     => ['values' => array_map(fn($id) => ['integerValue' => (string)$id], $gwIds)]],
+        'gatewayIds'    => ['arrayValue'     => ['values' => array_map(function($id) { return ['integerValue' => (string)$id]; }, $gwIds)]],
         'estimatedCost' => ['doubleValue'    => round(count($msisdns) * $parts * SMS_PRICE_DKK, 2)],
     ];
     if ($actualCost !== null) $logDoc['actualCost'] = ['doubleValue' => (float)$actualCost];

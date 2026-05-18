@@ -2675,20 +2675,20 @@ function UsersPage({ authUser }) {
 // ─── SMS ──────────────────────────────────────────────────────────────────────
 
 function SmsPage({ authUser, userDoc }) {
-  const [text,         setText]         = useState('')
-  const [scope,        setScope]        = useState('all')
-  const [scopeId,      setScopeId]      = useState('')
-  const [manualInput,  setManualInput]  = useState('')
-  const [afdelinger,   setAfdelinger]   = useState([])
-  const [holds,        setHolds]        = useState([])
-  const [preview,      setPreview]      = useState(null)   // {count,parts,estimatedCost}
-  const [previewing,   setPreviewing]   = useState(false)
-  const [sending,      setSending]      = useState(false)
-  const [result,       setResult]       = useState(null)
-  const [error,        setError]        = useState('')
-  const [logs,         setLogs]         = useState([])
-  const [logsLoading,  setLogsLoading]  = useState(true)
-  const [confirm,      setConfirm]      = useState(false)
+  const [text,        setText]        = useState('')
+  const [scope,       setScope]       = useState('all')
+  const [scopeId,     setScopeId]     = useState('')
+  const [manualInput, setManualInput] = useState('')
+  const [afdelinger,  setAfdelinger]  = useState([])
+  const [holds,       setHolds]       = useState([])
+  const [preview,     setPreview]     = useState(null)
+  const [previewing,  setPreviewing]  = useState(false)
+  const [sending,     setSending]     = useState(false)
+  const [result,      setResult]      = useState(null)
+  const [error,       setError]       = useState('')
+  const [logs,        setLogs]        = useState([])
+  const [logsLoading, setLogsLoading] = useState(true)
+  const [confirm,     setConfirm]     = useState(false)
 
   useEffect(() => {
     getDocs(collection(db, 'afdelinger'))
@@ -2768,220 +2768,247 @@ function SmsPage({ authUser, userDoc }) {
     ? holds.filter(h => String(h.afdeling_id) === scopeId)
     : holds
 
+  // Beregn udgiftsstatistik fra loggen
+  const totalCost = logs.reduce((sum, l) => {
+    const cost = l.actualCost != null ? l.actualCost * 7.46 : (l.estimatedCost ?? 0)
+    return sum + cost
+  }, 0)
+  const now = new Date()
+  const thisMonthCost = logs
+    .filter(l => { const d = l.sentAt?.toDate?.(); return d && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() })
+    .reduce((sum, l) => {
+      const cost = l.actualCost != null ? l.actualCost * 7.46 : (l.estimatedCost ?? 0)
+      return sum + cost
+    }, 0)
+
+  const canSend = text.trim() && (scope === 'all' || (scope === 'manual' && manualInput.trim()) || ((scope === 'afdeling' || scope === 'hold') && scopeId))
+
+  const SCOPE_OPTS = [
+    { value: 'all',      label: 'Alle' },
+    { value: 'afdeling', label: 'Afdeling' },
+    { value: 'hold',     label: 'Hold' },
+    { value: 'manual',   label: 'Manuelt' },
+  ]
+
   return (
     <>
       {confirm && (
         <ConfirmDialog
           title="Send SMS?"
-          body={`Send til ${preview?.count ?? '?'} modtagere · estimeret ${preview?.estimatedCost ?? '?'} kr.`}
+          body={`Send til ${preview?.count ?? '?'} modtagere · estimeret ${preview?.estimatedCost ?? '?'} kr. · ~0,40 kr./SMS`}
           onConfirm={doSend}
           onCancel={() => setConfirm(false)}
+          danger
         />
       )}
-      <div className="page-header">
-        <h1 className="page-title">SMS-besked</h1>
-        <div className="alert-info" style={{ fontSize: 12, marginTop: 0 }}>
-          Telefonnumre hentes fra Conventus ved afsendelse og gemmes aldrig.
-        </div>
-      </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 20, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 24, alignItems: 'start' }}>
 
-        {/* Venstre: compose */}
-        <div className="card card-pad">
+        {/* ── Venstre: Compose ── */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-          {/* Besked */}
-          <div className="form-group">
-            <label className="form-label">Besked *</label>
-            <textarea
-              className="form-control"
-              rows={5}
-              style={{ resize: 'vertical', fontFamily: 'inherit' }}
-              placeholder="Skriv din SMS-besked her…"
-              value={text}
-              onChange={e => { setText(e.target.value); setPreview(null); setResult(null) }}
-              maxLength={480}
-            />
-            <p className="form-hint" style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span>{charCount} tegn</span>
-              <span style={{ color: smsParts > 1 ? '#ff9500' : 'var(--text3)' }}>
-                {smsParts} SMS-del{smsParts > 1 ? 'e' : ''} pr. modtager
-                {smsParts > 1 && ' · delbesked bruger 153 tegn'}
-              </span>
-            </p>
-          </div>
-
-          {/* Scope */}
-          <div className="form-group">
-            <label className="form-label">Modtagere *</label>
-            <select className="form-control" value={scope}
-                    onChange={e => { setScope(e.target.value); setScopeId(''); setPreview(null) }}>
-              <option value="all">Alle aktive medlemmer</option>
-              <option value="afdeling">En bestemt afdeling</option>
-              <option value="hold">Et specifikt hold</option>
-              <option value="manual">Manuelt telefonnummer</option>
-            </select>
-          </div>
-
-          {scope === 'afdeling' && (
-            <div className="form-group">
-              <label className="form-label">Vælg afdeling</label>
-              <select className="form-control" value={scopeId}
-                      onChange={e => { setScopeId(e.target.value); setPreview(null) }}>
-                <option value="">— vælg afdeling —</option>
-                {afdelinger.map(a => <option key={a.id} value={a.id}>{a.navn}</option>)}
-              </select>
-            </div>
-          )}
-
-          {scope === 'hold' && (
-            <div className="form-group">
-              <label className="form-label">Vælg hold</label>
-              <select className="form-control" value={scopeId}
-                      onChange={e => { setScopeId(e.target.value); setPreview(null) }}>
-                <option value="">— vælg hold —</option>
-                {holds.map(h => (
-                  <option key={h.id} value={String(h.conventus_id)}>
-                    {h.titel}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {scope === 'manual' && (
-            <div className="form-group">
-              <label className="form-label">Telefonnummer(e)</label>
+          {/* Beskedfeltet */}
+          <div className="card card-pad">
+            <div style={{ position: 'relative' }}>
               <textarea
                 className="form-control"
-                rows={3}
-                placeholder={'Ét eller flere numre — adskil med komma, semikolon eller linjeskift.\nEks: 22391328, +4512345678'}
-                value={manualInput}
-                onChange={e => { setManualInput(e.target.value); setPreview(null) }}
+                rows={6}
+                style={{ resize: 'none', fontFamily: 'inherit', fontSize: 14, paddingBottom: 28 }}
+                placeholder="Skriv din SMS-besked…"
+                value={text}
+                onChange={e => { setText(e.target.value); setPreview(null); setResult(null) }}
+                maxLength={480}
+                autoFocus
               />
-              <p className="form-hint">Danske numre antages at bruge +45</p>
+              <div style={{ position: 'absolute', bottom: 10, left: 12, right: 12, display: 'flex', justifyContent: 'space-between', pointerEvents: 'none' }}>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>{charCount}/480</span>
+                <span style={{ fontSize: 11, color: smsParts > 1 ? '#f59e0b' : 'var(--text3)', fontWeight: smsParts > 1 ? 600 : 400 }}>
+                  {smsParts > 1 ? `⚠ ${smsParts} SMS-dele pr. modtager` : '1 SMS pr. modtager'}
+                </span>
+              </div>
             </div>
-          )}
+          </div>
 
-          {error && (
-            <div className="alert-error" style={{ marginBottom: 12 }}>{error}</div>
-          )}
+          {/* Modtagere */}
+          <div className="card card-pad">
+            <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '.05em' }}>Modtagere</p>
 
-          {result && (
-            <div className="alert-success" style={{ marginBottom: 12 }}>
-              ✓ Sendt til {result.sent} modtagere · {result.cost}
+            {/* Segmenteret scopevælger */}
+            <div style={{ display: 'flex', background: 'var(--bg)', borderRadius: 8, padding: 3, gap: 2, marginBottom: 14 }}>
+              {SCOPE_OPTS.map(opt => (
+                <button key={opt.value}
+                  onClick={() => { setScope(opt.value); setScopeId(''); setPreview(null) }}
+                  style={{
+                    flex: 1, padding: '6px 0', fontSize: 13, fontWeight: scope === opt.value ? 600 : 400,
+                    background: scope === opt.value ? 'white' : 'transparent',
+                    border: 'none', borderRadius: 6, cursor: 'pointer',
+                    color: scope === opt.value ? 'var(--text)' : 'var(--text2)',
+                    boxShadow: scope === opt.value ? '0 1px 3px rgba(0,0,0,.12)' : 'none',
+                    transition: 'all .15s',
+                  }}>
+                  {opt.label}
+                </button>
+              ))}
             </div>
-          )}
 
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <button className="btn btn-ghost" onClick={doPreview} disabled={previewing || sending}>
-              {previewing ? 'Henter fra Conventus…' : 'Beregn modtagere'}
-            </button>
-            {preview && (
-              <button className="btn btn-primary" onClick={() => setConfirm(true)} disabled={sending || preview.count === 0}>
-                {sending ? 'Sender…' : `Send til ${preview.count} modtagere`}
-              </button>
+            {scope === 'afdeling' && (
+              <select className="form-control" value={scopeId}
+                      onChange={e => { setScopeId(e.target.value); setPreview(null) }}>
+                <option value="">Vælg afdeling…</option>
+                {afdelinger.map(a => <option key={a.id} value={a.id}>{a.navn}</option>)}
+              </select>
+            )}
+            {scope === 'hold' && (
+              <select className="form-control" value={scopeId}
+                      onChange={e => { setScopeId(e.target.value); setPreview(null) }}>
+                <option value="">Vælg hold…</option>
+                {holds.map(h => <option key={h.id} value={String(h.conventus_id)}>{h.titel}</option>)}
+              </select>
+            )}
+            {scope === 'manual' && (
+              <>
+                <textarea className="form-control" rows={2}
+                  style={{ fontFamily: 'monospace', fontSize: 13, resize: 'none' }}
+                  placeholder="22391328, +4512345678, …"
+                  value={manualInput}
+                  onChange={e => { setManualInput(e.target.value); setPreview(null) }}
+                />
+                <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 5 }}>Adskil med komma, semikolon eller linjeskift · Danske numre antages +45</p>
+              </>
             )}
           </div>
-        </div>
 
-        {/* Højre: preview + info */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {preview && (
-            <div className="card card-pad">
-              <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Forhåndsvisning</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <div className="stat-card" style={{ padding: '12px 16px' }}>
-                  <div className="stat-card-value" style={{ fontSize: 24 }}>{preview.count}</div>
-                  <div className="stat-card-label">modtagere</div>
-                </div>
-                <div className="stat-card" style={{ padding: '12px 16px' }}>
-                  <div className="stat-card-value" style={{ fontSize: 24 }}>{preview.estimatedCost} kr.</div>
-                  <div className="stat-card-label">estimeret pris</div>
-                </div>
+          {/* Feedback */}
+          {error  && <div className="alert-error">{error}</div>}
+          {result && <div className="alert-success">✓ Sendt til {result.sent} modtagere · {result.cost}</div>}
+
+          {/* Handlinger */}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button className="btn btn-ghost" onClick={doPreview} disabled={previewing || sending || !canSend} style={{ flex: 1 }}>
+              {previewing ? 'Henter fra Conventus…' : 'Beregn modtagere + pris'}
+            </button>
+            <button className="btn btn-primary" onClick={() => setConfirm(true)}
+                    disabled={sending || !canSend} style={{ flex: 1 }}>
+              {sending ? 'Sender…' : preview ? `Send til ${preview.count} · ~${preview.estimatedCost} kr.` : 'Send besked'}
+            </button>
+          </div>
+
+          {/* Inline preview-info */}
+          {preview && !error && (
+            <div style={{ display: 'flex', gap: 12, padding: '12px 16px', background: preview.count > 0 ? '#f0fdf4' : 'var(--bg)', borderRadius: 8, border: '1px solid', borderColor: preview.count > 0 ? '#bbf7d0' : 'var(--sep)' }}>
+              <div style={{ textAlign: 'center', flex: 1 }}>
+                <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--green)' }}>{preview.count}</div>
+                <div style={{ fontSize: 11, color: 'var(--text3)' }}>modtagere</div>
               </div>
-              {preview.parts > 1 && (
-                <p style={{ fontSize: 12, color: '#ff9500', marginTop: 8 }}>
-                  ⚠ Beskeden fylder {preview.parts} SMS-dele pr. modtager
-                </p>
-              )}
-              {preview.count === 0 && (
-                <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: 8 }}>
-                  Ingen modtagere med telefonnummer fundet i dette udvalg.
-                </p>
-              )}
-              <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
-                Prisen er et estimat. Faktisk pris afregnes via GatewayAPI (~0,40 kr./SMS).
-              </p>
+              <div style={{ width: 1, background: 'var(--sep)' }} />
+              <div style={{ textAlign: 'center', flex: 1 }}>
+                <div style={{ fontSize: 22, fontWeight: 700, color: '#f59e0b' }}>{preview.estimatedCost} kr.</div>
+                <div style={{ fontSize: 11, color: 'var(--text3)' }}>estimeret pris</div>
+              </div>
+              <div style={{ width: 1, background: 'var(--sep)' }} />
+              <div style={{ textAlign: 'center', flex: 1 }}>
+                <div style={{ fontSize: 22, fontWeight: 700 }}>{preview.parts}</div>
+                <div style={{ fontSize: 11, color: 'var(--text3)' }}>SMS-del{preview.parts > 1 ? 'e' : ''}</div>
+              </div>
             </div>
           )}
-
-          <div className="card card-pad">
-            <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>SMS-gateway</h3>
-            <p style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.6 }}>
-              Anbefalet løsning: <strong>GatewayAPI</strong> (dansk virksomhed, GDPR-compliant,
-              ~0,40 kr./SMS til danske numre).
-            </p>
-            <p style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.6, marginTop: 6 }}>
-              Tilføj API-nøglen som GitHub Secret <code>SMS_API_KEY</code> for at aktivere afsendelse.
-            </p>
-          </div>
         </div>
-      </div>
 
-      {/* Log */}
-      <div style={{ marginTop: 24 }}>
-        <h2 style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>Sendte SMS-beskeder</h2>
-        <div className="card">
+        {/* ── Højre: Udgiftslog ── */}
+        <div className="card card-pad">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
+            <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '.05em' }}>SMS-forbrug</p>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>~0,40 kr./SMS</span>
+          </div>
+
+          {/* Totaler */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+            <div style={{ background: 'var(--bg)', borderRadius: 8, padding: '10px 12px' }}>
+              <div style={{ fontSize: 18, fontWeight: 700 }}>{totalCost.toFixed(2)} kr.</div>
+              <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>samlet forbrug</div>
+            </div>
+            <div style={{ background: 'var(--bg)', borderRadius: 8, padding: '10px 12px' }}>
+              <div style={{ fontSize: 18, fontWeight: 700 }}>{thisMonthCost.toFixed(2)} kr.</div>
+              <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>denne måned</div>
+            </div>
+          </div>
+
+          {/* Aktivitetsfeed */}
           {logsLoading ? (
             <div className="loading-dots"><span/><span/><span/></div>
           ) : logs.length === 0 ? (
-            <EmptyState icon="sms" text="Ingen SMS-beskeder sendt endnu" />
+            <p style={{ fontSize: 13, color: 'var(--text3)', textAlign: 'center', padding: '12px 0' }}>Ingen SMS sendt endnu</p>
           ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              {logs.slice(0, 8).map(l => {
+                const cost = l.actualCost != null ? (l.actualCost * 7.46).toFixed(2) : l.estimatedCost != null ? `~${l.estimatedCost.toFixed(2)}` : '–'
+                return (
+                  <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid var(--sep)' }}>
+                    <div style={{ width: 28, height: 28, borderRadius: '50%', background: l.gatewayOk ? 'var(--green-soft)' : '#fee2e2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 12, fontWeight: 700, color: l.gatewayOk ? 'var(--green)' : '#dc2626' }}>
+                      {(l.senderName || '?')[0].toUpperCase()}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {l.senderName || '–'}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+                        {l.recipients ?? '?'} modtagere · {formatDate(l.sentAt)}
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: '#f59e0b', flexShrink: 0 }}>
+                      {cost} kr.
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 12, lineHeight: 1.5 }}>
+            Priser er estimater baseret på 0,40 kr./SMS. Faktisk afregning sker via GatewayAPI.
+          </p>
+        </div>
+      </div>
+
+      {/* ── Fuld log-tabel ── */}
+      {logs.length > 0 && (
+        <div style={{ marginTop: 28 }}>
+          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 10 }}>Historik</p>
+          <div className="card">
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
                     <th>Tidspunkt</th>
                     <th>Afsender</th>
-                    <th>Modtagere</th>
-                    <th>Scope</th>
-                    <th>Pris</th>
+                    <th style={{ textAlign: 'right' }}>Modtagere</th>
+                    <th>Modtagergruppe</th>
+                    <th style={{ textAlign: 'right' }}>Pris</th>
                     <th>Status</th>
                     <th>Besked</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {logs.map(l => (
-                    <tr key={l.id}>
-                      <td style={{ fontSize: 12, whiteSpace: 'nowrap', color: 'var(--text2)' }}>
-                        {formatDate(l.sentAt)}
-                      </td>
-                      <td style={{ fontSize: 13 }}>{l.senderName || '–'}</td>
-                      <td style={{ fontSize: 13, textAlign: 'right' }}>{l.recipients ?? '–'}</td>
-                      <td style={{ fontSize: 12, color: 'var(--text2)' }}>{l.scope || '–'}</td>
-                      <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
-                        {l.actualCost != null
-                          ? `${(l.actualCost * 7.46).toFixed(2)} kr.`
-                          : l.estimatedCost != null ? `~${l.estimatedCost} kr.` : '–'}
-                      </td>
-                      <td>
-                        <span className={`badge ${l.gatewayOk ? 'badge-green' : 'badge-red'}`}>
-                          {l.gatewayOk ? '✓ Sendt' : '✗ Fejl'}
-                        </span>
-                      </td>
-                      <td style={{ fontSize: 12, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                          title={l.text}>
-                        {l.text}
-                      </td>
-                    </tr>
-                  ))}
+                  {logs.map(l => {
+                    const cost = l.actualCost != null ? `${(l.actualCost * 7.46).toFixed(2)} kr.` : l.estimatedCost != null ? `~${l.estimatedCost.toFixed(2)} kr.` : '–'
+                    return (
+                      <tr key={l.id}>
+                        <td style={{ fontSize: 12, whiteSpace: 'nowrap', color: 'var(--text2)' }}>{formatDate(l.sentAt)}</td>
+                        <td style={{ fontSize: 13, fontWeight: 500 }}>{l.senderName || '–'}</td>
+                        <td style={{ fontSize: 13, textAlign: 'right' }}>{l.recipients ?? '–'}</td>
+                        <td style={{ fontSize: 12, color: 'var(--text2)' }}>{l.scope || '–'}</td>
+                        <td style={{ fontSize: 12, textAlign: 'right', fontWeight: 600, color: '#f59e0b' }}>{cost}</td>
+                        <td><span className={`badge ${l.gatewayOk ? 'badge-green' : 'badge-red'}`}>{l.gatewayOk ? 'Sendt' : 'Fejl'}</span></td>
+                        <td style={{ fontSize: 12, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text2)' }} title={l.text}>{l.text}</td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
-          )}
+          </div>
         </div>
-      </div>
+      )}
     </>
   )
 }
