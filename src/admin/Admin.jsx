@@ -548,7 +548,7 @@ function MessagesPage({ userDoc, authUser }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
         body: JSON.stringify({ holdIds: msgIds, senderName: authorName, text: msgText, holdNavn: holdNavnLabel }),
-      }).then(r => r.json()).then(d => console.log('[email-notif]', d)).catch(err => console.warn('[email-notif]', err))
+      }).catch(() => {})
     }).catch(() => {})
   }
 
@@ -780,6 +780,7 @@ function MessagesPage({ userDoc, authUser }) {
                       onClick={async () => {
                         if (window.confirm('Slet denne besked?')) {
                           await deleteDoc(doc(db, 'messages', m.id))
+                          loadMessages()
                         }
                       }}
                     >

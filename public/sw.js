@@ -1,12 +1,12 @@
-const CACHE = 'ssif-v3'
-const PRECACHE = ['/', '/index.html']
+const CACHE = 'ssif-v4'
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(PRECACHE)))
+  // Ingen precache — undgår "addAll failed"-fejl og forceert cache af HTML
   self.skipWaiting()
 })
 
 self.addEventListener('activate', e => {
+  // Slet alle gamle caches (fx ssif-v3)
   e.waitUntil(
     caches.keys().then(keys =>
       Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
@@ -17,19 +17,52 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return
-  // Kun http/https — chrome-extension://, moz-extension:// osv. kan ikke caches
   if (!e.request.url.startsWith('http')) return
+
+  const url = new URL(e.request.url)
+
+  // API-kald: aldrig SW — lad netværket håndtere dem
+  if (url.pathname.startsWith('/api/')) return
+
+  // Navigation + HTML: altid netværk, fallback til cached index.html (offline)
+  // Dette sikrer at en ny deploy altid leverer frisk HTML med korrekte JS-hashes
+  if (e.request.mode === 'navigate'
+      || url.pathname === '/'
+      || url.pathname.endsWith('.html')) {
+    e.respondWith(
+      fetch(e.request)
+        .then(res => {
+          // Opdatér cachen med den friske HTML
+          if (res.ok) caches.open(CACHE).then(c => c.put(e.request, res.clone()))
+          return res
+        })
+        .catch(() => caches.match('/index.html'))
+    )
+    return
+  }
+
+  // Hashed assets (/assets/…): cache-first — de er immutable (nyt navn ved ny build)
+  if (url.pathname.startsWith('/assets/')) {
+    e.respondWith(
+      caches.match(e.request).then(cached => {
+        if (cached) return cached
+        return fetch(e.request).then(res => {
+          if (res.ok) caches.open(CACHE).then(c => c.put(e.request, res.clone()))
+          return res
+        })
+      })
+    )
+    return
+  }
+
+  // Alt andet (logo, manifest, ikoner): netværk-first, cache fallback
   e.respondWith(
-    caches.match(e.request).then(cached => {
-      const network = fetch(e.request).then(res => {
-        if (res.ok) {
-          const clone = res.clone()
-          caches.open(CACHE).then(c => c.put(e.request, clone))
-        }
+    fetch(e.request)
+      .then(res => {
+        if (res.ok) caches.open(CACHE).then(c => c.put(e.request, res.clone()))
         return res
       })
-      return cached || network
-    })
+      .catch(() => caches.match(e.request))
   )
 })
 

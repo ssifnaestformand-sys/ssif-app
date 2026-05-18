@@ -2355,7 +2355,7 @@ export default function App() {
       primaryEmail:   profile.primaryEmail   || fbUser.email || '',
       extraEmails:    profile.extraEmails    || [],
       onboardingDone:       profile.onboardingDone === true,
-      emailNotifications:   profile.emailNotifications === true,
+      emailNotifications:   profile.emailNotifications !== false,
     })
   }
 
