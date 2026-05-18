@@ -528,7 +528,7 @@ function AppHeader({ title, onBack, backLabel, right }) {
               <Icon name="back" size={20} color="var(--green)" sw={2.5} />
               {backLabel && <span>{backLabel}</span>}
             </button>
-          : <span className="header-logo">SSIF</span>
+          : <img src="/ssif-logo.png" alt="SSIF" className="header-logo-img" />
         }
       </div>
       <span className="header-title">{title}</span>
@@ -2149,6 +2149,13 @@ function ProfileScreen({ user, onLogout, onUserUpdate, verifyMsg, onEnableNotifi
         try { perm = 'Notification' in window ? Notification.permission : null } catch {}
         const isGranted = perm === 'granted'
         const isDenied  = perm === 'denied'
+
+        async function toggleEmailNotif() {
+          const next = !user.emailNotifications
+          onUserUpdate(prev => ({ ...prev, emailNotifications: next }))
+          updateDoc(doc(db, 'users', user.uid), { emailNotifications: next }).catch(() => {})
+        }
+
         return (
           <>
             <SectionHeader title="Indstillinger" />
@@ -2171,6 +2178,23 @@ function ProfileScreen({ user, onLogout, onUserUpdate, verifyMsg, onEnableNotifi
                 </div>
                 <div className={`notif-checkbox ${isGranted ? 'notif-checkbox--checked' : ''}`}>
                   {isGranted && <Icon name="check" size={12} color="white" sw={3} />}
+                </div>
+              </button>
+              <div className="list-separator" />
+              <button className="list-item" onClick={toggleEmailNotif} style={{ cursor: 'pointer' }}>
+                <div className="list-item-icon" style={{ background: user.emailNotifications ? 'var(--green-soft)' : 'var(--bg)' }}>
+                  <Icon name="mail" size={17} color={user.emailNotifications ? 'var(--green)' : 'var(--text3)'} />
+                </div>
+                <div className="list-item-body">
+                  <span className="list-item-title">Email-notifikationer</span>
+                  <span className="list-item-detail">
+                    {user.emailNotifications
+                      ? 'Aktiveret – du modtager beskeder på email'
+                      : 'Tryk for at modtage beskeder fra trænerne på email'}
+                  </span>
+                </div>
+                <div className={`notif-checkbox ${user.emailNotifications ? 'notif-checkbox--checked' : ''}`}>
+                  {user.emailNotifications && <Icon name="check" size={12} color="white" sw={3} />}
                 </div>
               </button>
             </div>
@@ -2330,7 +2354,8 @@ export default function App() {
       familyMembers:  profile.familyMembers  || [],
       primaryEmail:   profile.primaryEmail   || fbUser.email || '',
       extraEmails:    profile.extraEmails    || [],
-      onboardingDone: profile.onboardingDone === true,
+      onboardingDone:       profile.onboardingDone === true,
+      emailNotifications:   profile.emailNotifications === true,
     })
   }
 

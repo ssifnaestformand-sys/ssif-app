@@ -84,6 +84,13 @@ body {
   letter-spacing: .5px;
   padding: 4px 8px;
 }
+.header-logo-img {
+  height: 30px;
+  width: auto;
+  object-fit: contain;
+  display: block;
+  padding: 2px 4px;
+}
 
 .header-title {
   font-size: 16px;

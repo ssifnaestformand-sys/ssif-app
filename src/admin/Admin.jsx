@@ -529,8 +529,10 @@ function MessagesPage({ userDoc, authUser }) {
     setTimeout(() => setSendOk(false), 3000)
     setTimeout(() => loadMessages(), 1500)
 
-    // Push-notifikation fire-and-forget
+    // Push-notifikation + email-notifikation fire-and-forget
     auth.currentUser?.getIdToken().then(idToken => {
+      const holdNavnLabel = selHolds.map(h => h.titel).join(', ')
+
       const fd = new FormData()
       fd.append('idToken', idToken)
       fd.append('holdIds', JSON.stringify(msgIds))
@@ -540,6 +542,12 @@ function MessagesPage({ userDoc, authUser }) {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${idToken}` },
         body: fd,
+      }).catch(() => {})
+
+      fetch(`${BASE}api/send-message-email.php`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+        body: JSON.stringify({ holdIds: msgIds, senderName: authorName, text: msgText, holdNavn: holdNavnLabel }),
       }).catch(() => {})
     }).catch(() => {})
   }
@@ -2342,20 +2350,17 @@ function AppUsersPage() {
                         {(() => {
                           const ids   = getUserHoldIds(u)
                           if (!ids.length) return <span style={{ color: 'var(--text3)' }}>–</span>
-                          const named = ids.map(id => holdMap[id]).filter(Boolean)
+                          const named   = ids.map(id => holdMap[id]).filter(Boolean)
                           const unknown = ids.length - named.length
                           return (
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-                              {named.slice(0, 6).map((titel, i) => (
+                              {named.map((titel, i) => (
                                 <span key={i} className="badge badge-gray"
-                                      style={{ fontSize: 10, padding: '1px 5px', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                      style={{ fontSize: 10, padding: '1px 5px', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                                       title={titel}>
                                   {titel}
                                 </span>
                               ))}
-                              {named.length > 6 && (
-                                <span className="badge badge-gray" style={{ fontSize: 10 }}>+{named.length - 6}</span>
-                              )}
                               {unknown > 0 && (
                                 <span style={{ fontSize: 10, color: 'var(--text3)', alignSelf: 'center' }}>
                                   ({unknown} uden navn)
