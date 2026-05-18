@@ -41,11 +41,13 @@ jobs:
           sed -i "s|CONVENTUS_KEY_PLACEHOLDER|${{ secrets.CONVENTUS_KEY }}|g"   dist/api/.htaccess
           sed -i "s|SYNC_SECRET_PLACEHOLDER|${{ secrets.SYNC_SECRET }}|g"       dist/api/.htaccess
           sed -i "s|SMTP_PASSWORD_PLACEHOLDER|${{ secrets.SMTP_PASSWORD }}|g"   dist/api/.htaccess
+          sed -i "s|SMS_API_KEY_PLACEHOLDER|${{ secrets.SMS_API_KEY }}|g"       dist/api/.htaccess
           sed -i "s|CONVENTUS_KEY_PLACEHOLDER|${{ secrets.CONVENTUS_KEY }}|g"   dist/.htaccess
         env:
           CONVENTUS_KEY: ${{ secrets.CONVENTUS_KEY }}
           SYNC_SECRET:   ${{ secrets.SYNC_SECRET }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMS_API_KEY:   ${{ secrets.SMS_API_KEY }}
 
       - name: Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4

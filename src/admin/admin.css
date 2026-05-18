@@ -451,6 +451,15 @@ select.form-control { cursor: pointer; }
   font-size: 13px;
   line-height: 1.55;
 }
+.alert-success {
+  padding: 11px 14px;
+  border-radius: 7px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #15803d;
+  font-size: 13px;
+  line-height: 1.55;
+}
 .alert-warn {
   padding: 11px 14px;
   border-radius: 7px;

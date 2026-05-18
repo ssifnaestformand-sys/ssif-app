@@ -9,6 +9,7 @@ RewriteRule ^ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 SetEnv CONVENTUS_KEY  CONVENTUS_KEY_PLACEHOLDER
 SetEnv SYNC_SECRET    SYNC_SECRET_PLACEHOLDER
 SetEnv SMTP_PASSWORD  SMTP_PASSWORD_PLACEHOLDER
+SetEnv SMS_API_KEY    SMS_API_KEY_PLACEHOLDER
 
 # Beskyt følsomme filer mod direkte HTTP-adgang (Apache 2.4, fix L-3)
 <FilesMatch "(^\.|\.(json|key|pem)$)">

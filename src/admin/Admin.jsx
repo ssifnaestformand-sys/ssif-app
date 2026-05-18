@@ -89,6 +89,7 @@ function Icon({ name, size = 18, color = 'currentColor', sw = 1.75 }) {
     calendar: <><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></>,
     search:   <><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></>,
     eye:      <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>,
+    sms:      <><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><line x1="9" y1="10" x2="9" y2="10" strokeWidth={3}/><line x1="12" y1="10" x2="12" y2="10" strokeWidth={3}/><line x1="15" y1="10" x2="15" y2="10" strokeWidth={3}/></>,
   }
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -303,6 +304,7 @@ function Sidebar({ page, setPage, userDoc, user, onLogout }) {
     { id: 'events',  label: 'Begivenheder', icon: 'calendar' },
     { id: 'banners', label: 'Forsidebanners', icon: 'star'   },
     ...(userDoc?.role === 'admin' ? [
+      { id: 'sms',      label: 'SMS',         icon: 'sms'    },
       { id: 'appusers', label: 'App-brugere', icon: 'eye'    },
       { id: 'users',    label: 'Adgang',      icon: 'shield' },
     ] : []),
@@ -2670,6 +2672,320 @@ function UsersPage({ authUser }) {
   )
 }
 
+// ─── SMS ──────────────────────────────────────────────────────────────────────
+
+function SmsPage({ authUser, userDoc }) {
+  const [text,         setText]         = useState('')
+  const [scope,        setScope]        = useState('all')
+  const [scopeId,      setScopeId]      = useState('')
+  const [manualInput,  setManualInput]  = useState('')
+  const [afdelinger,   setAfdelinger]   = useState([])
+  const [holds,        setHolds]        = useState([])
+  const [preview,      setPreview]      = useState(null)   // {count,parts,estimatedCost}
+  const [previewing,   setPreviewing]   = useState(false)
+  const [sending,      setSending]      = useState(false)
+  const [result,       setResult]       = useState(null)
+  const [error,        setError]        = useState('')
+  const [logs,         setLogs]         = useState([])
+  const [logsLoading,  setLogsLoading]  = useState(true)
+  const [confirm,      setConfirm]      = useState(false)
+
+  useEffect(() => {
+    getDocs(collection(db, 'afdelinger'))
+      .then(s => setAfdelinger(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (a.navn||'').localeCompare(b.navn||'','da'))))
+      .catch(() => {})
+    getDocs(query(collection(db, 'holds'), where('aktiv', '==', true)))
+      .then(s => setHolds(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (a.titel||'').localeCompare(b.titel||'','da'))))
+      .catch(() => {})
+    loadLogs()
+  }, [])
+
+  function loadLogs() {
+    getDocs(query(collection(db, 'sms_logs'), orderBy('sentAt', 'desc'), limit(20)))
+      .then(s => setLogs(s.docs.map(d => ({ id: d.id, ...d.data() }))))
+      .catch(() => {})
+      .finally(() => setLogsLoading(false))
+  }
+
+  const charCount = text.length
+  const smsParts  = charCount <= 160 ? 1 : charCount <= 306 ? 2 : Math.ceil(charCount / 153)
+
+  function scopeLabel() {
+    if (scope === 'all') return 'Alle aktive medlemmer'
+    if (scope === 'manual') return 'Manuel'
+    if (scope === 'afdeling') {
+      const a = afdelinger.find(x => x.id === scopeId)
+      return a ? a.navn : scopeId
+    }
+    if (scope === 'hold') {
+      const h = holds.find(x => String(x.conventus_id) === scopeId)
+      return h ? h.titel : scopeId
+    }
+    return ''
+  }
+
+  async function doPreview() {
+    if (!text.trim()) { setError('Skriv en besked først'); return }
+    if (scope !== 'manual' && scope !== 'all' && !scopeId) { setError('Vælg en modtager-gruppe'); return }
+    if (scope === 'manual' && !manualInput.trim()) { setError('Indtast mindst ét telefonnummer'); return }
+    setError(''); setPreview(null); setPreviewing(true)
+    try {
+      const idToken = await auth.currentUser?.getIdToken() ?? ''
+      const res  = await fetch(`${BASE}api/send-sms.php`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ action: 'preview', scope, scope_id: scopeId,
+                               scope_label: scopeLabel(), manual_input: manualInput, text }),
+      })
+      const data = await res.json()
+      if (data.error) { setError(data.error + (data.detail ? ` (${data.detail})` : '')); return }
+      setPreview(data)
+    } catch (err) { setError('Netværksfejl: ' + err.message) }
+    finally { setPreviewing(false) }
+  }
+
+  async function doSend() {
+    setConfirm(false)
+    setError(''); setResult(null); setSending(true)
+    try {
+      const idToken = await auth.currentUser?.getIdToken() ?? ''
+      const res  = await fetch(`${BASE}api/send-sms.php`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ action: 'send', scope, scope_id: scopeId,
+                               scope_label: scopeLabel(), manual_input: manualInput, text }),
+      })
+      const data = await res.json()
+      if (data.error) { setError(data.error + (data.detail ? ` (${data.detail})` : '')); return }
+      setResult(data)
+      setText(''); setScopeId(''); setManualInput(''); setPreview(null)
+      loadLogs()
+    } catch (err) { setError('Netværksfejl: ' + err.message) }
+    finally { setSending(false) }
+  }
+
+  const holdsForAfd = scopeId && scope === 'afdeling'
+    ? holds.filter(h => String(h.afdeling_id) === scopeId)
+    : holds
+
+  return (
+    <>
+      {confirm && (
+        <ConfirmDialog
+          title="Send SMS?"
+          body={`Send til ${preview?.count ?? '?'} modtagere · estimeret ${preview?.estimatedCost ?? '?'} kr.`}
+          onConfirm={doSend}
+          onCancel={() => setConfirm(false)}
+        />
+      )}
+      <div className="page-header">
+        <h1 className="page-title">SMS-besked</h1>
+        <div className="alert-info" style={{ fontSize: 12, marginTop: 0 }}>
+          Telefonnumre hentes fra Conventus ved afsendelse og gemmes aldrig.
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 20, alignItems: 'start' }}>
+
+        {/* Venstre: compose */}
+        <div className="card card-pad">
+
+          {/* Besked */}
+          <div className="form-group">
+            <label className="form-label">Besked *</label>
+            <textarea
+              className="form-control"
+              rows={5}
+              style={{ resize: 'vertical', fontFamily: 'inherit' }}
+              placeholder="Skriv din SMS-besked her…"
+              value={text}
+              onChange={e => { setText(e.target.value); setPreview(null); setResult(null) }}
+              maxLength={480}
+            />
+            <p className="form-hint" style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>{charCount} tegn</span>
+              <span style={{ color: smsParts > 1 ? '#ff9500' : 'var(--text3)' }}>
+                {smsParts} SMS-del{smsParts > 1 ? 'e' : ''} pr. modtager
+                {smsParts > 1 && ' · delbesked bruger 153 tegn'}
+              </span>
+            </p>
+          </div>
+
+          {/* Scope */}
+          <div className="form-group">
+            <label className="form-label">Modtagere *</label>
+            <select className="form-control" value={scope}
+                    onChange={e => { setScope(e.target.value); setScopeId(''); setPreview(null) }}>
+              <option value="all">Alle aktive medlemmer</option>
+              <option value="afdeling">En bestemt afdeling</option>
+              <option value="hold">Et specifikt hold</option>
+              <option value="manual">Manuelt telefonnummer</option>
+            </select>
+          </div>
+
+          {scope === 'afdeling' && (
+            <div className="form-group">
+              <label className="form-label">Vælg afdeling</label>
+              <select className="form-control" value={scopeId}
+                      onChange={e => { setScopeId(e.target.value); setPreview(null) }}>
+                <option value="">— vælg afdeling —</option>
+                {afdelinger.map(a => <option key={a.id} value={a.id}>{a.navn}</option>)}
+              </select>
+            </div>
+          )}
+
+          {scope === 'hold' && (
+            <div className="form-group">
+              <label className="form-label">Vælg hold</label>
+              <select className="form-control" value={scopeId}
+                      onChange={e => { setScopeId(e.target.value); setPreview(null) }}>
+                <option value="">— vælg hold —</option>
+                {holds.map(h => (
+                  <option key={h.id} value={String(h.conventus_id)}>
+                    {h.titel}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {scope === 'manual' && (
+            <div className="form-group">
+              <label className="form-label">Telefonnummer(e)</label>
+              <textarea
+                className="form-control"
+                rows={3}
+                placeholder={'Ét eller flere numre — adskil med komma, semikolon eller linjeskift.\nEks: 22391328, +4512345678'}
+                value={manualInput}
+                onChange={e => { setManualInput(e.target.value); setPreview(null) }}
+              />
+              <p className="form-hint">Danske numre antages at bruge +45</p>
+            </div>
+          )}
+
+          {error && (
+            <div className="alert-error" style={{ marginBottom: 12 }}>{error}</div>
+          )}
+
+          {result && (
+            <div className="alert-success" style={{ marginBottom: 12 }}>
+              ✓ Sendt til {result.sent} modtagere · {result.cost}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <button className="btn btn-ghost" onClick={doPreview} disabled={previewing || sending}>
+              {previewing ? 'Henter fra Conventus…' : 'Beregn modtagere'}
+            </button>
+            {preview && (
+              <button className="btn btn-primary" onClick={() => setConfirm(true)} disabled={sending || preview.count === 0}>
+                {sending ? 'Sender…' : `Send til ${preview.count} modtagere`}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Højre: preview + info */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {preview && (
+            <div className="card card-pad">
+              <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Forhåndsvisning</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <div className="stat-card" style={{ padding: '12px 16px' }}>
+                  <div className="stat-card-value" style={{ fontSize: 24 }}>{preview.count}</div>
+                  <div className="stat-card-label">modtagere</div>
+                </div>
+                <div className="stat-card" style={{ padding: '12px 16px' }}>
+                  <div className="stat-card-value" style={{ fontSize: 24 }}>{preview.estimatedCost} kr.</div>
+                  <div className="stat-card-label">estimeret pris</div>
+                </div>
+              </div>
+              {preview.parts > 1 && (
+                <p style={{ fontSize: 12, color: '#ff9500', marginTop: 8 }}>
+                  ⚠ Beskeden fylder {preview.parts} SMS-dele pr. modtager
+                </p>
+              )}
+              {preview.count === 0 && (
+                <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: 8 }}>
+                  Ingen modtagere med telefonnummer fundet i dette udvalg.
+                </p>
+              )}
+              <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
+                Prisen er et estimat. Faktisk pris afregnes via GatewayAPI (~0,40 kr./SMS).
+              </p>
+            </div>
+          )}
+
+          <div className="card card-pad">
+            <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>SMS-gateway</h3>
+            <p style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.6 }}>
+              Anbefalet løsning: <strong>GatewayAPI</strong> (dansk virksomhed, GDPR-compliant,
+              ~0,40 kr./SMS til danske numre).
+            </p>
+            <p style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.6, marginTop: 6 }}>
+              Tilføj API-nøglen som GitHub Secret <code>SMS_API_KEY</code> for at aktivere afsendelse.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Log */}
+      <div style={{ marginTop: 24 }}>
+        <h2 style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>Sendte SMS-beskeder</h2>
+        <div className="card">
+          {logsLoading ? (
+            <div className="loading-dots"><span/><span/><span/></div>
+          ) : logs.length === 0 ? (
+            <EmptyState icon="sms" text="Ingen SMS-beskeder sendt endnu" />
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Tidspunkt</th>
+                    <th>Afsender</th>
+                    <th>Modtagere</th>
+                    <th>Scope</th>
+                    <th>Pris</th>
+                    <th>Status</th>
+                    <th>Besked</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {logs.map(l => (
+                    <tr key={l.id}>
+                      <td style={{ fontSize: 12, whiteSpace: 'nowrap', color: 'var(--text2)' }}>
+                        {formatDate(l.sentAt)}
+                      </td>
+                      <td style={{ fontSize: 13 }}>{l.senderName || '–'}</td>
+                      <td style={{ fontSize: 13, textAlign: 'right' }}>{l.recipients ?? '–'}</td>
+                      <td style={{ fontSize: 12, color: 'var(--text2)' }}>{l.scope || '–'}</td>
+                      <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+                        {l.actualCost != null
+                          ? `${(l.actualCost * 7.46).toFixed(2)} kr.`
+                          : l.estimatedCost != null ? `~${l.estimatedCost} kr.` : '–'}
+                      </td>
+                      <td>
+                        <span className={`badge ${l.gatewayOk ? 'badge-green' : 'badge-red'}`}>
+                          {l.gatewayOk ? '✓ Sendt' : '✗ Fejl'}
+                        </span>
+                      </td>
+                      <td style={{ fontSize: 12, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                          title={l.text}>
+                        {l.text}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  )
+}
+
 // ─── Root App ─────────────────────────────────────────────────────────────────
 
 
@@ -2680,6 +2996,7 @@ const PAGE_TITLES = {
   teams:     'Hold',
   events:    'Begivenheder',
   banners:   'Forsidebanners',
+  sms:       'SMS-besked',
   appusers:  'App-brugere',
   users:     'Adgang',
 }
@@ -2736,6 +3053,10 @@ export default function AdminApp() {
       case 'teams':     return <TeamsPage      userDoc={userDoc} authUser={authUser} />
       case 'events':    return <EventsPage     userDoc={userDoc} authUser={authUser} />
       case 'banners':   return <BannersPage    userDoc={userDoc} authUser={authUser} />
+      case 'sms':
+        return userDoc.role === 'admin'
+          ? <SmsPage authUser={authUser} userDoc={userDoc} />
+          : <EmptyState icon="shield" text="Kun administratorer kan sende SMS" />
       case 'appusers':
         return userDoc.role === 'admin'
           ? <AppUsersPage />
