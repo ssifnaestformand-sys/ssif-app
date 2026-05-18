@@ -1763,12 +1763,11 @@ function FamilieTab({ user }) {
     })
   }, [user?.uid])
 
-  // Hent kommende begivenheder fra Firestore
+  // Hent kommende begivenheder (getDocs — begivenheder ændres ikke i realtid)
   useEffect(() => {
-    return onSnapshot(
-      query(collection(db, 'events'), orderBy('date'), limit(40)),
-      snap => setEvents(snap.docs.map(d => ({ id: d.id, ...d.data() })))
-    )
+    getDocs(query(collection(db, 'events'), orderBy('date'), limit(40)))
+      .then(snap => setEvents(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
+      .catch(() => {})
   }, [])
 
   async function persistMembers(updated) {
@@ -2405,18 +2404,15 @@ export default function App() {
     return () => { mounted = false; unsubAuth() }
   }, [])
 
-  // ── Firestore: news ──────────────────────────────────────────────────────
+  // ── Firestore: news (getDocs — nyheder ændres sjældent) ─────────────────
   useEffect(() => {
     if (!user) return
-    const q = query(collection(db, 'news'), orderBy('createdAt', 'desc'))
-    const unsub = onSnapshot(q,
-      snap => { if (!snap.empty) { setNews(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setNewsLive(true) } },
-      () => setNewsLive(false)
-    )
-    return unsub
+    getDocs(query(collection(db, 'news'), orderBy('createdAt', 'desc'), limit(50)))
+      .then(snap => { if (!snap.empty) { setNews(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setNewsLive(true) } })
+      .catch(() => setNewsLive(false))
   }, [user?.uid])
 
-  // ── Ulæste beskeder (til tab-badge) ─────────────────────────────────────
+  // ── Ulæste beskeder (getDocs — badge behøver ikke realtid) ───────────────
   useEffect(() => {
     if (!user) return
     const seenTs = parseInt(localStorage.getItem('ssif_msgs_seen') || '0', 10)
@@ -2425,18 +2421,18 @@ export default function App() {
       ...(user.holds         || []).map(String),
       ...(user.familyMembers || []).filter(m => m.holdId).map(m => String(m.holdId)),
     ])
-    const q = query(collection(db, 'messages'), orderBy('oprettet', 'desc'), limit(60))
-    return onSnapshot(q, snap => {
-      const count = snap.docs.filter(d => {
-        const data = d.data()
-        const ts   = (data.oprettet || data.createdAt)?.toDate?.().getTime() ?? 0
-        const inHold = data.holdId
-          ? userHoldIds.has(String(data.holdId))
-          : (data.targetHolds || []).some(h => userHoldIds.has(typeof h === 'object' ? String(h.conventus_id) : String(h)))
-        return ts > seenTs && inHold
-      }).length
-      setMsgUnread(count)
-    }, () => {})
+    getDocs(query(collection(db, 'messages'), orderBy('oprettet', 'desc'), limit(60)))
+      .then(snap => {
+        const count = snap.docs.filter(d => {
+          const data = d.data()
+          const ts   = (data.oprettet || data.createdAt)?.toDate?.().getTime() ?? 0
+          const inHold = data.holdId
+            ? userHoldIds.has(String(data.holdId))
+            : (data.targetHolds || []).some(h => userHoldIds.has(typeof h === 'object' ? String(h.conventus_id) : String(h)))
+          return ts > seenTs && inHold
+        }).length
+        setMsgUnread(count)
+      }).catch(() => {})
   }, [user?.uid])
 
   // ── FCM: knappen vises/skjules via synkron check (ingen useEffect-timing) ─

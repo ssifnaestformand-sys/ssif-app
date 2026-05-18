@@ -8,7 +8,7 @@ import {
   signOut, onAuthStateChanged,
 } from 'firebase/auth'
 import {
-  collection, query, where, orderBy, limit, onSnapshot,
+  collection, query, where, orderBy, limit,
   addDoc, updateDoc, deleteDoc, serverTimestamp,
   doc, getDoc, setDoc, getDocs,
 } from 'firebase/firestore'
@@ -361,21 +361,12 @@ function DashboardPage({ userDoc }) {
   const [recentMsgs, setRecentMsgs]   = useState([])
 
   useEffect(() => {
-    const unsubNews = onSnapshot(
-      query(collection(db, 'news'), orderBy('createdAt', 'desc'), limit(50)),
-      snap => {
-        setNewsCount(snap.size)
-        setRecentNews(snap.docs.slice(0, 5).map(d => ({ id: d.id, ...d.data() })))
-      }
-    )
-    const unsubMsgs = onSnapshot(
-      query(collection(db, 'messages'), orderBy('createdAt', 'desc'), limit(50)),
-      snap => {
-        setMsgCount(snap.size)
-        setRecentMsgs(snap.docs.slice(0, 5).map(d => ({ id: d.id, ...d.data() })))
-      }
-    )
-    return () => { unsubNews(); unsubMsgs() }
+    getDocs(query(collection(db, 'news'), orderBy('createdAt', 'desc'), limit(50)))
+      .then(snap => { setNewsCount(snap.size); setRecentNews(snap.docs.slice(0, 5).map(d => ({ id: d.id, ...d.data() }))) })
+      .catch(() => {})
+    getDocs(query(collection(db, 'messages'), orderBy('oprettet', 'desc'), limit(50)))
+      .then(snap => { setMsgCount(snap.size); setRecentMsgs(snap.docs.slice(0, 5).map(d => ({ id: d.id, ...d.data() }))) })
+      .catch(() => {})
   }, [])
 
   return (
@@ -496,13 +487,12 @@ function MessagesPage({ userDoc, authUser }) {
     }).finally(() => setHoldsLoading(false))
   }, [])
 
-  // Lyt på beskeder i real-time
-  useEffect(() => {
-    return onSnapshot(
-      query(collection(db, 'messages'), orderBy('oprettet', 'desc'), limit(100)),
-      snap => { setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setMsgLoading(false) }
-    )
-  }, [])
+  function loadMessages() {
+    getDocs(query(collection(db, 'messages'), orderBy('oprettet', 'desc'), limit(100)))
+      .then(snap => { setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setMsgLoading(false) })
+      .catch(() => setMsgLoading(false))
+  }
+  useEffect(() => { loadMessages() }, [])
 
   function toggleId(conventusId) {
     const s = String(conventusId)
@@ -522,8 +512,7 @@ function MessagesPage({ userDoc, authUser }) {
 
     if (!selHolds.length) return
 
-    // Skriv til Firestore uden await — onSnapshot viser pending writes øjeblikkeligt
-    // så beskeden er synlig i listen med det samme uden at UI hænger.
+    // Skriv til Firestore uden await — listen genindlæses med loadMessages() efter kort delay.
     selHolds.forEach(h => {
       addDoc(collection(db, 'messages'), {
         holdId:        String(h.conventus_id),
@@ -538,11 +527,12 @@ function MessagesPage({ userDoc, authUser }) {
       }).catch(err => console.error('Firestore write failed:', err))
     })
 
-    // Nulstil UI øjeblikkeligt
+    // Nulstil UI øjeblikkeligt, genindlæs listen efter kort delay
     setText('')
     setSelectedIds([])
     setSendOk(true)
     setTimeout(() => setSendOk(false), 3000)
+    setTimeout(() => loadMessages(), 1500)
 
     // Push-notifikation fire-and-forget
     auth.currentUser?.getIdToken().then(idToken => {
@@ -964,15 +954,12 @@ function NewsPage({ userDoc, authUser }) {
   const [saving, setSaving]     = useState(false)
   const [toDelete, setToDelete] = useState(null)
 
-  useEffect(() => {
-    return onSnapshot(
-      query(collection(db, 'news'), orderBy('createdAt', 'desc'), limit(100)),
-      snap => {
-        setArticles(snap.docs.map(d => ({ id: d.id, ...d.data() })))
-        setLoading(false)
-      }
-    )
-  }, [])
+  function loadArticles() {
+    getDocs(query(collection(db, 'news'), orderBy('createdAt', 'desc'), limit(100)))
+      .then(snap => { setArticles(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setLoading(false) })
+      .catch(() => setLoading(false))
+  }
+  useEffect(() => { loadArticles() }, [])
 
   function startNew() {
     setForm(EMPTY_ARTICLE)
@@ -1034,6 +1021,7 @@ function NewsPage({ userDoc, authUser }) {
         })
       }
       setEditing(null)
+      loadArticles()
     } finally {
       setSaving(false)
     }
@@ -1043,6 +1031,7 @@ function NewsPage({ userDoc, authUser }) {
     if (!toDelete) return
     await deleteDoc(doc(db, 'news', toDelete.id))
     setToDelete(null)
+    loadArticles()
   }
 
   if (editing) {
@@ -1606,12 +1595,12 @@ function EventsPage({ userDoc, authUser }) {
       .catch(() => {})
   }, [])
 
-  useEffect(() => {
-    return onSnapshot(
-      query(collection(db, 'events'), orderBy('date'), limit(200)),
-      snap => { setEvents(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setLoading(false) }
-    )
-  }, [])
+  function loadEvents() {
+    getDocs(query(collection(db, 'events'), orderBy('date'), limit(200)))
+      .then(snap => { setEvents(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setLoading(false) })
+      .catch(() => setLoading(false))
+  }
+  useEffect(() => { loadEvents() }, [])
 
   const visibleHolds = userDoc?.role === 'admin'
     ? holds
@@ -1646,6 +1635,7 @@ function EventsPage({ userDoc, authUser }) {
         await updateDoc(doc(db, 'events', editing.id), payload)
       }
       setEditing(null)
+      loadEvents()
     } finally { setSaving(false) }
   }
 
@@ -1704,6 +1694,7 @@ function EventsPage({ userDoc, authUser }) {
         added++
       }
       setImportMsg(`${added} nye begivenheder importeret (${items.length} fundet i alt).`)
+      loadEvents()
     } catch (err) {
       setImportMsg('Hentning fejlede: ' + err.message)
     } finally { setImporting(false) }
@@ -1713,6 +1704,7 @@ function EventsPage({ userDoc, authUser }) {
     if (!toDelete) return
     await deleteDoc(doc(db, 'events', toDelete.id))
     setToDelete(null)
+    loadEvents()
   }
 
   const typeColor = { kamp: '#1a5c2a', træning: '#5856d6', stævne: '#ff9500', arrangement: '#ff3b30' }
@@ -1899,15 +1891,16 @@ function BannersPage({ userDoc, authUser }) {
   const [eventsCount, setEventsCount] = useState(3)
   const [savingEvt,   setSavingEvt]   = useState(false)
 
+  function loadBanners() {
+    getDocs(query(collection(db, 'banners'), orderBy('order')))
+      .then(snap => { setBanners(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setLoading(false) })
+      .catch(() => setLoading(false))
+  }
   useEffect(() => {
-    const unsub = onSnapshot(
-      query(collection(db, 'banners'), orderBy('order')),
-      snap => { setBanners(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setLoading(false) }
-    )
+    loadBanners()
     getDoc(doc(db, 'settings', 'app'))
       .then(s => { if (s.exists()) setEventsCount(s.data().eventsOnDashboard ?? 3) })
       .catch(() => {})
-    return unsub
   }, [])
 
   function setF(k, v) { setForm(f => ({ ...f, [k]: v })) }
@@ -1932,6 +1925,7 @@ function BannersPage({ userDoc, authUser }) {
         await updateDoc(doc(db, 'banners', editing.id), data)
       }
       setEditing(null)
+      loadBanners()
     } finally { setSaving(false) }
   }
 
@@ -1943,6 +1937,7 @@ function BannersPage({ userDoc, authUser }) {
 
   async function toggleAktiv(b) {
     await updateDoc(doc(db, 'banners', b.id), { aktiv: !b.aktiv })
+    loadBanners()
   }
 
   if (editing) return (
