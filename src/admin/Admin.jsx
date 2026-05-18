@@ -171,7 +171,7 @@ const ADMIN_AUTH_ERRORS = {
   'auth/cancelled-popup-request':  '',
 }
 
-function LoginPage({ onDemoLogin }) {
+function LoginPage() {
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
   const [mode,     setMode]     = useState('main') // 'main' | 'forgot'
@@ -252,11 +252,6 @@ function LoginPage({ onDemoLogin }) {
               Glemt adgangskode?
             </button>
 
-            <div style={{ marginTop: 20, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
-              <button className="btn btn-ghost" style={{ width: '100%', height: 38, fontSize: 13 }} onClick={onDemoLogin}>
-                Demo-adgang (admin)
-              </button>
-            </div>
           </>
         )}
 
@@ -1351,10 +1346,6 @@ function TeamsPage({ userDoc, authUser }) {
   const [syncResult,    setSyncResult]   = useState(null)   // {ok, msg, ts}
 
   async function triggerSync(what) {
-    if (!auth.currentUser) {
-      setSyncResult({ ok: false, msg: 'Synkronisering kræver rigtig login — ikke tilgængeligt i demo-tilstand.' })
-      return
-    }
     setSyncing(what); setSyncResult(null)
     try {
       const idToken = await auth.currentUser.getIdToken()
@@ -2675,8 +2666,6 @@ function UsersPage({ authUser }) {
 
 // ─── Root App ─────────────────────────────────────────────────────────────────
 
-const DEMO_AUTH_USER = { uid: 'demo-uid', email: 'demo@ssif.dk', displayName: 'Demo Admin' }
-const DEMO_USER_DOC  = { id: 'demo-uid', email: 'demo@ssif.dk', displayName: 'Demo Admin', role: 'admin', holds: [] }
 
 const PAGE_TITLES = {
   dashboard: 'Dashboard',
@@ -2693,16 +2682,8 @@ export default function AdminApp() {
   const [authUser, setAuthUser] = useState(undefined)
   const [userDoc, setUserDoc]   = useState(null)
   const [page, setPage]         = useState('dashboard')
-  const isDemoMode              = useRef(false)
-
-  function handleDemoLogin() {
-    isDemoMode.current = true
-    setAuthUser(DEMO_AUTH_USER)
-    setUserDoc(DEMO_USER_DOC)
-  }
 
   function handleLogout() {
-    isDemoMode.current = false
     setAuthUser(null)
     setUserDoc(null)
     signOut(auth).catch(() => {})
@@ -2711,7 +2692,6 @@ export default function AdminApp() {
 
   useEffect(() => {
     return onAuthStateChanged(auth, async fbUser => {
-      if (isDemoMode.current) return   // Demo-tilstand — ignorer Firebase events
       if (!fbUser) {
         setAuthUser(null)
         setUserDoc(null)
@@ -2739,7 +2719,7 @@ export default function AdminApp() {
   }, [])
 
   if (authUser === undefined) return <LoadingScreen />
-  if (!authUser)              return <LoginPage onDemoLogin={handleDemoLogin} />
+  if (!authUser)              return <LoginPage />
   if (!userDoc?.role)         return <UnauthorizedPage user={authUser} />
 
   function renderPage() {

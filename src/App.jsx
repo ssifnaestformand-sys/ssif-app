@@ -61,23 +61,6 @@ function Icon({ name, size = 24, color = 'currentColor', sw = 1.75 }) {
   )
 }
 
-// ─── Dummy Data (fallback) ────────────────────────────────────────────────────
-
-const DEMO_USER = {
-  name:           'Lars Thomsen',
-  firstName:      'Lars',
-  email:          'lars@demo.dk',
-  initials:       'LT',
-  isDemo:         true,
-  emailVerified:  true,
-  primaryEmail:   'lars@demo.dk',
-  extraEmails:    [],
-  holdIds:        [],
-  holds:          [],
-  familyMembers:  [],
-  role:           'Medlem',
-  onboardingDone: false,
-}
 
 const TEAMS = [
   { id: 1, name: 'U6',      category: 'Ungdom', members: 14, coach: 'Lars Jensen',          coachPhone: '50 12 34 56', nextMatch: 'Lør 10. maj · 09:00 · Hjemmebane',           record: [5,1,0], players: ['Sofie M.','Oliver B.','Emma K.','Noah P.','Ida L.','Magnus T.','Freja H.','Victor S.','Mathilde N.','Albert C.','Astrid R.','Mikkel J.','Nanna W.','Emil D.'] },
@@ -346,7 +329,7 @@ function InstallPromptScreen({ onContinue }) {
 
 // ─── Login ────────────────────────────────────────────────────────────────────
 
-function LoginScreen({ onDemoLogin, initialError }) {
+function LoginScreen({ initialError }) {
   const [mode, setMode]         = useState('main') // 'main' | 'forgot' | 'create'
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
@@ -528,10 +511,6 @@ function LoginScreen({ onDemoLogin, initialError }) {
             <button className="login-link" type="button" onClick={() => reset('create')}>Opret konto</button>
           </div>
 
-          <div className="login-divider"><span>test</span></div>
-          <button className="btn btn-secondary btn-full" type="button" onClick={onDemoLogin}>
-            Demo adgang
-          </button>
         </div>
       )}
     </div>
@@ -625,9 +604,7 @@ function WelcomeScreen({ user, onDone }) {
 
   async function done() {
     setSaving(true)
-    if (!user.isDemo) {
-      updateDoc(doc(db, 'users', user.uid), { onboardingDone: true }).catch(() => {})
-    }
+    updateDoc(doc(db, 'users', user.uid), { onboardingDone: true }).catch(() => {})
     onDone()
   }
 
@@ -1427,7 +1404,7 @@ function MessageDetailScreen({ msg, user, onBack }) {
   const myEmoji = userR[user.uid] ?? null
 
   async function react(emoji) {
-    if (saving || user.isDemo) return
+    if (saving) return
     setSaving(true)
     const ref  = doc(db, 'messages', msg.id)
     const prev = myEmoji
@@ -2088,7 +2065,7 @@ function ProfileScreen({ user, onLogout, onUserUpdate, verifyMsg, onEnableNotifi
               <span className="list-item-detail">Verificér for at se hold og indhold</span>
             )}
           </div>
-          {!user.emailVerified && !user.isDemo && (
+          {!user.emailVerified && (
             <button className="btn btn-secondary" style={{ height: 32, fontSize: 12, padding: '0 12px' }}
                     onClick={resendPrimaryVerification} disabled={resent}>
               {resent ? '✓ Sendt' : 'Send igen'}
@@ -2230,11 +2207,9 @@ function UnverifiedScreen({ user, onLogout }) {
         Tjek din indbakke og klik bekræftelseslinket
         for at få adgang til hold og indhold.
       </p>
-      {!user.isDemo && (
-        <button className="btn btn-primary btn-full" onClick={resend} disabled={resent}>
-          {resent ? '✓ Bekræftelsesmail sendt' : 'Send bekræftelsesmail igen'}
-        </button>
-      )}
+      <button className="btn btn-primary btn-full" onClick={resend} disabled={resent}>
+        {resent ? '✓ Bekræftelsesmail sendt' : 'Send bekræftelsesmail igen'}
+      </button>
       <button className="btn btn-secondary btn-full" style={{ marginTop: 12 }} onClick={onLogout}>
         Log ud
       </button>
@@ -2262,8 +2237,6 @@ export default function App() {
   const [loginError, setLoginError]               = useState('')
   const [pushGranted, setPushGranted]             = useState(false)
   const [verifyMsg, setVerifyMsg]                 = useState('')
-
-  const isDemoRef = useRef(false)
 
   // PHP-endpointet (verify-email.php) håndterer selve Firestore-opdateringen
   // og redirecter hertil med ?verifySuccess=1 eller ?verifyError=X
@@ -2385,7 +2358,7 @@ export default function App() {
         if (!mounted) return
         // Hvis ingen bruger kom ud af redirectet (og ingen eksisterende session),
         // viser vi loginskærmen nu.
-        if (!auth.currentUser && !isDemoRef.current) {
+        if (!auth.currentUser) {
           setUser(null)
           setAuthChecked(true)
         }
@@ -2395,7 +2368,7 @@ export default function App() {
         const msg = AUTH_ERRORS[err.code]
         if (msg) setLoginError(msg)
         else if (err.code && err.code !== 'auth/null-user') setLoginError(err.message)
-        if (!auth.currentUser && !isDemoRef.current) {
+        if (!auth.currentUser) {
           setUser(null)
           setAuthChecked(true)
         }
@@ -2460,7 +2433,7 @@ export default function App() {
 
   // Synkron check – evalueres på hvert render, ingen asynkron forsinkelse
   function canRequestPush() {
-    if (!user?.uid || user.isDemo || pushGranted) return false
+    if (!user?.uid || pushGranted) return false
     if (!('serviceWorker' in navigator) || !('Notification' in window)) return false
     try { return Notification.permission !== 'granted' && Notification.permission !== 'denied' }
     catch { return false }
@@ -2494,7 +2467,6 @@ export default function App() {
   }
 
   async function handleLogout() {
-    isDemoRef.current = false
     setUser(null); setActiveTab('dashboard')
     setSelectedTeam(null); setSelectedArticle(null); setSelectedMsg(null)
     setNewsLive(false)
@@ -2518,10 +2490,7 @@ export default function App() {
 
   if (!user) {
     return (
-      <LoginScreen
-        initialError={loginError}
-        onDemoLogin={() => { isDemoRef.current = true; setUser(DEMO_USER) }}
-      />
+      <LoginScreen initialError={loginError} />
     )
   }
 
@@ -2591,7 +2560,7 @@ export default function App() {
             onSelectMsg={setSelectedMsg}
             onMarkSeen={() => {
                 setMsgUnread(0)
-                if (user?.uid && !user.isDemo) {
+                if (user?.uid) {
                   const now = Date.now()
                   updateDoc(doc(db, 'users', user.uid), { lastMsgSeen: now }).catch(() => {})
                 }
