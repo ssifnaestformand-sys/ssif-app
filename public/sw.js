@@ -80,8 +80,8 @@ self.addEventListener('push', e => {
   e.waitUntil(
     self.registration.showNotification(title, {
       body,
-      icon:     '/icon-192.png',
-      badge:    '/icon-192.png',
+      icon:     '/ssif-logo.png',
+      badge:    '/ssif-logo.png',
       tag:      'ssif-push',
       renotify: true,
       data:     { url: '/' },

@@ -250,8 +250,8 @@ function sendFcmMessage(string $projectId, string $accessToken, string $token, s
             'apns'    => ['payload' => ['aps' => ['sound' => 'default', 'badge' => 1]]],
             'webpush' => [
                 'notification' => [
-                    'icon'  => '/icon-192.png',
-                    'badge' => '/icon-192.png',
+                    'icon'  => '/ssif-logo.png',
+                    'badge' => '/ssif-logo.png',
                 ],
                 'fcm_options' => ['link' => '/'],
             ],

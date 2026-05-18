@@ -194,15 +194,23 @@ function extract_member(SimpleXMLElement $k, int $id, array $holdsMap): ?array {
 
     if (!$email || !filter_var($email, FILTER_VALIDATE_EMAIL)) return null;
 
-    // Hold-IDs fra <relationer><membre><gruppe> (tekst-indhold er ID-tallet)
-    $holds = [];
-    $seen  = [];
+    // Hold-IDs fra <relationer><leder|membre><gruppe>
+    // <leder>-relationer bruges til at identificere trænere/ledere
+    $holds      = [];
+    $lederHolds = [];
+    $seen       = [];
+
     if (isset($k->relationer)) {
-        foreach ($k->relationer->children() as $rel) {
-            foreach ($rel->children() as $child) {
+        foreach ($k->relationer->children() as $relType) {
+            $isLeder = strtolower($relType->getName()) === 'leder';
+            foreach ($relType->children() as $child) {
                 if (strtolower($child->getName()) !== 'gruppe') continue;
                 $holdId = (int)trim((string)$child);
-                if (!$holdId || isset($seen[$holdId])) continue;
+                if (!$holdId) continue;
+                if ($isLeder && !in_array($holdId, $lederHolds, true)) {
+                    $lederHolds[] = $holdId;
+                }
+                if (isset($seen[$holdId])) continue;
                 $seen[$holdId] = true;
                 $holds[] = [
                     'conventus_id' => $holdId,
@@ -217,6 +225,8 @@ function extract_member(SimpleXMLElement $k, int $id, array $holdsMap): ?array {
         'name'         => $name,
         'allEmails'    => [$email],
         'holds'        => $holds,
+        'lederHolds'   => $lederHolds,
+        'isLeder'      => !empty($lederHolds),
     ];
 }
 

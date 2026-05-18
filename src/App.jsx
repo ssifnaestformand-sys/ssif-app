@@ -2306,25 +2306,34 @@ export default function App() {
         setDoc(ref, profile).catch(() => {})
       }
 
-      // Hent hold-IDs fra members-samlingen (synkroniseret fra Conventus).
+      // Hent hold-IDs + leder-relationer fra members-samlingen (synkroniseret fra Conventus).
+      let lederHoldIds = []
       if (fbUser.email) {
         const mSnap = await getDocs(query(
           collection(db, 'members'),
           where('allEmails', 'array-contains', fbUser.email.toLowerCase())
         ))
-        mSnap.docs.forEach(d =>
-          (d.data().holds || []).forEach(h => {
+        mSnap.docs.forEach(d => {
+          const data = d.data()
+          ;(data.holds || []).forEach(h => {
             if (h.conventus_id) memberHoldIds.push(String(h.conventus_id))
           })
-        )
+          ;(data.lederHolds || []).forEach(id => {
+            lederHoldIds.push(String(id))
+          })
+        })
       }
 
-      // Skriv lastSeen + sammenslåede holdIds til Firestore (bruges af push-notifikationer)
+      // Skriv lastSeen + sammenslåede holdIds + evt. rolle til Firestore
       if (snap.exists()) {
         const updates = { lastSeen: serverTimestamp() }
         if (profile.emailVerified !== fbUser.emailVerified) updates.emailVerified = fbUser.emailVerified
         if (memberHoldIds.length > 0) {
           updates.holdIds = [...new Set([...(profile.holdIds || []).map(String), ...memberHoldIds])]
+        }
+        // Auto-sæt trainer-rolle hvis personen er leder i Conventus (og ikke allerede admin)
+        if (lederHoldIds.length > 0 && profile.role !== 'admin' && profile.role !== 'trainer') {
+          updates.role = 'trainer'
         }
         updateDoc(ref, updates).catch(() => {})
 
@@ -2348,7 +2357,9 @@ export default function App() {
       emailVerified: fbUser.emailVerified,
       initials:      ((parts[0]?.[0] || '') + (parts[parts.length - 1]?.[0] || '')).toUpperCase()
                      || (fbUser.email?.slice(0,2).toUpperCase() ?? 'SS'),
-      role:           profile.role          || 'Medlem',
+      role:           profile.role === 'admin' ? 'admin'
+                    : lederHoldIds.length > 0  ? 'trainer'
+                    : profile.role             || 'Medlem',
       holds:          profile.holds         || [],
       holdIds:        [...new Set([...(profile.holdIds || []).map(String), ...memberHoldIds])],
       familyMembers:  profile.familyMembers  || [],
@@ -2474,7 +2485,7 @@ export default function App() {
       if (Notification.permission === 'granted' && n.title) {
         new Notification(n.title, {
           body: n.body || '',
-          icon: `${import.meta.env.BASE_URL}icon-192.png`,
+          icon: `${import.meta.env.BASE_URL}ssif-logo.png`,
         })
       }
     })
