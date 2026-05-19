@@ -67,15 +67,14 @@ if ($callerDoc) {
 $input       = json_decode(file_get_contents('php://input'), true) ?: [];
 $action      = trim($input['action']       ?? 'preview');
 $scope       = trim($input['scope']        ?? 'all');
-$scopeId     = trim($input['scope_id']     ?? '');
-$scopeLabel  = trim($input['scope_label']  ?? $scopeId);
+$scopeLabel  = trim($input['scope_label']  ?? '');
 $manualInput = trim($input['manual_input'] ?? '');
 $text        = trim($input['text']         ?? '');
 
 if (!$text)                   { http_response_code(400); echo json_encode(['error' => 'Besked er tom']); exit; }
 if (mb_strlen($text) > 480)   { http_response_code(400); echo json_encode(['error' => 'Besked er for lang (max 480 tegn)']); exit; }
 if (!in_array($action, ['preview', 'send'], true)) { http_response_code(400); echo json_encode(['error' => 'Ukendt action']); exit; }
-if (!in_array($scope,  ['all', 'afdeling', 'hold', 'manual'], true)) { http_response_code(400); echo json_encode(['error' => 'Ukendt scope']); exit; }
+if (!in_array($scope, ['all', 'gruppe', 'manual'], true)) { http_response_code(400); echo json_encode(['error' => 'Ukendt scope']); exit; }
 
 $parts = sms_parts($text);
 
@@ -100,41 +99,11 @@ if (!$conventusKey) {
 }
 if (!$conventusKey) { http_response_code(500); echo json_encode(['error' => 'CONVENTUS_KEY ikke konfigureret']); exit; }
 
-// ── Bestem target-gruppe-IDs ───────────────────────────────────────────────────
-$targetGroupIds = []; // tomt = alle
-
-if ($scope === 'hold') {
-    if (!$scopeId) { http_response_code(400); echo json_encode(['error' => 'scope_id mangler']); exit; }
-    $targetGroupIds = [(int)$scopeId];
-}
-
-if ($scope === 'afdeling') {
-    if (!$scopeId) { http_response_code(400); echo json_encode(['error' => 'scope_id mangler']); exit; }
-    // Hent alle holds i afdelingen fra Firestore → samle conventus_ids
-    $qUrl  = "https://firestore.googleapis.com/v1/projects/{$projectId}/databases/(default)/documents:runQuery";
-    $qBody = ['structuredQuery' => [
-        'from'  => [['collectionId' => 'holds']],
-        'where' => ['fieldFilter' => [
-            'field' => ['fieldPath' => 'afdeling_id'],
-            'op'    => 'EQUAL',
-            'value' => ['stringValue' => $scopeId],
-        ]],
-    ]];
-    $qResp = @file_get_contents($qUrl, false, stream_context_create(['http' => [
-        'method' => 'POST', 'header' => "Authorization: Bearer {$fsToken}\r\nContent-Type: application/json\r\n",
-        'content' => json_encode($qBody), 'timeout' => 10, 'ignore_errors' => true,
-    ]]));
-    foreach ((array)json_decode($qResp ?: '[]', true) as $row) {
-        if (!isset($row['document']['fields'])) continue;
-        $f   = $row['document']['fields'];
-        $cid = (int)($f['conventus_id']['integerValue'] ?? $f['conventus_id']['stringValue'] ?? 0);
-        if ($cid) $targetGroupIds[] = $cid;
-    }
-    if (empty($targetGroupIds)) {
-        echo json_encode(['ok' => true, 'count' => 0, 'parts' => $parts, 'estimatedCost' => 0.0]);
-        exit;
-    }
-}
+// ── Target-gruppe-IDs sendes færdigberegnede fra frontend ─────────────────────
+// scope='all'    → hold_ids=[] (tom = alle)
+// scope='gruppe' → hold_ids=[conventus_id, ...] (beregnet i Admin.jsx)
+$rawIds         = (array)($input['hold_ids'] ?? []);
+$targetGroupIds = array_values(array_unique(array_filter(array_map('intval', $rawIds))));
 
 // ── Hent telefonnumre fra Conventus ───────────────────────────────────────────
 $msisdns = fetch_conventus_msisdns($conventusKey, $targetGroupIds);

@@ -2676,11 +2676,14 @@ function UsersPage({ authUser }) {
 
 function SmsPage({ authUser, userDoc }) {
   const [text,        setText]        = useState('')
-  const [scope,       setScope]       = useState('all')
+  const [scope,       setScope]       = useState('all')   // 'all' | 'gruppe' | 'manual'
+  const [gruppeType,  setGruppeType]  = useState('')      // 'afdeling' | 'hold'
   const [scopeId,     setScopeId]     = useState('')
+  const [holdSearch,  setHoldSearch]  = useState('')
   const [manualInput, setManualInput] = useState('')
   const [afdelinger,  setAfdelinger]  = useState([])
   const [holds,       setHolds]       = useState([])
+  const [openAfds,    setOpenAfds]    = useState(new Set())
   const [preview,     setPreview]     = useState(null)
   const [previewing,  setPreviewing]  = useState(false)
   const [sending,     setSending]     = useState(false)
@@ -2713,15 +2716,37 @@ function SmsPage({ authUser, userDoc }) {
   function scopeLabel() {
     if (scope === 'all') return 'Alle aktive medlemmer'
     if (scope === 'manual') return 'Manuel'
-    if (scope === 'afdeling') {
-      const a = afdelinger.find(x => x.id === scopeId)
-      return a ? a.navn : scopeId
-    }
-    if (scope === 'hold') {
-      const h = holds.find(x => String(x.conventus_id) === scopeId)
-      return h ? h.titel : scopeId
+    if (scope === 'gruppe') {
+      if (gruppeType === 'afdeling') {
+        const a = afdelinger.find(x => x.id === scopeId)
+        return a ? `Afd: ${a.navn}` : scopeId
+      }
+      if (gruppeType === 'hold') {
+        const h = holds.find(x => String(x.conventus_id) === scopeId)
+        return h ? h.titel : scopeId
+      }
     }
     return ''
+  }
+
+  // Hold-IDs der sendes til PHP — beregnes her, ikke på serveren
+  function getHoldIds() {
+    if (scope !== 'gruppe' || !scopeId) return []
+    if (gruppeType === 'hold') return [scopeId]
+    if (gruppeType === 'afdeling')
+      return holds.filter(h => String(h.afdeling_id) === scopeId).map(h => String(h.conventus_id))
+    return []
+  }
+
+  function buildBody(action) {
+    return JSON.stringify({
+      action,
+      scope,
+      hold_ids:     getHoldIds(),
+      scope_label:  scopeLabel(),
+      manual_input: manualInput,
+      text,
+    })
   }
 
   async function fetchPreview() {
@@ -2731,8 +2756,7 @@ function SmsPage({ authUser, userDoc }) {
       const res  = await fetch(`${BASE}api/send-sms.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ action: 'preview', scope, scope_id: scopeId,
-                               scope_label: scopeLabel(), manual_input: manualInput, text }),
+        body: buildBody('preview'),
       })
       const data = await res.json()
       if (data.error) { setError(data.error + (data.detail ? ` (${data.detail})` : '')); return null }
@@ -2744,14 +2768,14 @@ function SmsPage({ authUser, userDoc }) {
 
   async function doPreview() {
     if (!text.trim()) { setError('Skriv en besked først'); return }
-    if (scope !== 'manual' && scope !== 'all' && !scopeId) { setError('Vælg en modtager-gruppe'); return }
+    if (scope === 'gruppe' && !scopeId) { setError('Vælg en gruppe eller et hold'); return }
     if (scope === 'manual' && !manualInput.trim()) { setError('Indtast mindst ét telefonnummer'); return }
     await fetchPreview()
   }
 
   async function handleSendClick() {
     if (!text.trim()) { setError('Skriv en besked først'); return }
-    if (scope !== 'manual' && scope !== 'all' && !scopeId) { setError('Vælg en modtager-gruppe'); return }
+    if (scope === 'gruppe' && !scopeId) { setError('Vælg en gruppe eller et hold'); return }
     if (scope === 'manual' && !manualInput.trim()) { setError('Indtast mindst ét telefonnummer'); return }
     const p = preview ?? await fetchPreview()
     if (p) setConfirm(true)
@@ -2765,21 +2789,16 @@ function SmsPage({ authUser, userDoc }) {
       const res  = await fetch(`${BASE}api/send-sms.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ action: 'send', scope, scope_id: scopeId,
-                               scope_label: scopeLabel(), manual_input: manualInput, text }),
+        body: buildBody('send'),
       })
       const data = await res.json()
       if (data.error) { setError(data.error + (data.detail ? ` (${data.detail})` : '')); return }
       setResult(data)
-      setText(''); setScopeId(''); setManualInput(''); setPreview(null)
+      setText(''); setScopeId(''); setGruppeType(''); setManualInput(''); setPreview(null)
       loadLogs()
     } catch (err) { setError('Netværksfejl: ' + err.message) }
     finally { setSending(false) }
   }
-
-  const holdsForAfd = scopeId && scope === 'afdeling'
-    ? holds.filter(h => String(h.afdeling_id) === scopeId)
-    : holds
 
   // Beregn udgiftsstatistik fra loggen
   const totalCost = logs.reduce((sum, l) => {
@@ -2794,14 +2813,38 @@ function SmsPage({ authUser, userDoc }) {
       return sum + cost
     }, 0)
 
-  const canSend = text.trim() && (scope === 'all' || (scope === 'manual' && manualInput.trim()) || ((scope === 'afdeling' || scope === 'hold') && scopeId))
+  const canSend = text.trim() && (
+    scope === 'all' ||
+    (scope === 'manual' && manualInput.trim()) ||
+    (scope === 'gruppe' && scopeId)
+  )
 
   const SCOPE_OPTS = [
-    { value: 'all',      label: 'Alle' },
-    { value: 'afdeling', label: 'Afdeling' },
-    { value: 'hold',     label: 'Hold' },
-    { value: 'manual',   label: 'Manuelt' },
+    { value: 'all',    label: 'Alle' },
+    { value: 'gruppe', label: 'Gruppe / Hold' },
+    { value: 'manual', label: 'Manuelt' },
   ]
+
+  // Søgbar hold-/afdeling-træ
+  const holdSearchQ = holdSearch.trim().toLowerCase()
+  const afdHoldMap  = {}
+  afdelinger.forEach(a => { afdHoldMap[a.id] = [] })
+  holds.forEach(h => {
+    const aid = String(h.afdeling_id ?? '')
+    if (!afdHoldMap[aid]) afdHoldMap[aid] = []
+    afdHoldMap[aid].push(h)
+  })
+  const orphanHolds = holds.filter(h => !afdHoldMap[String(h.afdeling_id ?? '')] || !afdelinger.find(a => a.id === String(h.afdeling_id ?? '')))
+
+  function afdMatchesSearch(afd) {
+    if (!holdSearchQ) return true
+    if ((afd.navn || '').toLowerCase().includes(holdSearchQ)) return true
+    return (afdHoldMap[afd.id] || []).some(h => (h.titel || '').toLowerCase().includes(holdSearchQ))
+  }
+  function holdMatchesSearch(h) {
+    if (!holdSearchQ) return true
+    return (h.titel || '').toLowerCase().includes(holdSearchQ)
+  }
 
   return (
     <>
@@ -2866,19 +2909,97 @@ function SmsPage({ authUser, userDoc }) {
               ))}
             </div>
 
-            {scope === 'afdeling' && (
-              <select className="form-control" value={scopeId}
-                      onChange={e => { setScopeId(e.target.value); setPreview(null) }}>
-                <option value="">Vælg afdeling…</option>
-                {afdelinger.map(a => <option key={a.id} value={a.id}>{a.navn}</option>)}
-              </select>
-            )}
-            {scope === 'hold' && (
-              <select className="form-control" value={scopeId}
-                      onChange={e => { setScopeId(e.target.value); setPreview(null) }}>
-                <option value="">Vælg hold…</option>
-                {holds.map(h => <option key={h.id} value={String(h.conventus_id)}>{h.titel}</option>)}
-              </select>
+            {scope === 'gruppe' && (
+              <div>
+                {/* Søgefelt */}
+                <div style={{ position: 'relative', marginBottom: 8 }}>
+                  <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', display: 'flex', pointerEvents: 'none' }}>
+                    <Icon name="search" size={14} color="var(--text3)" />
+                  </span>
+                  <input className="form-control" style={{ paddingLeft: 32, height: 36, fontSize: 13 }}
+                    placeholder="Søg afdeling eller hold…"
+                    value={holdSearch}
+                    onChange={e => setHoldSearch(e.target.value)}
+                    autoComplete="off"
+                  />
+                </div>
+
+                {/* Valgt */}
+                {scopeId && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'var(--green-soft)', borderRadius: 6, marginBottom: 8, fontSize: 13 }}>
+                    <Icon name="check" size={13} color="var(--green)" sw={2.5} />
+                    <span style={{ flex: 1, fontWeight: 600, color: 'var(--green)' }}>{scopeLabel()}</span>
+                    <button onClick={() => { setScopeId(''); setGruppeType(''); setPreview(null) }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, display: 'flex' }}>
+                      <Icon name="x" size={13} color="var(--text3)" />
+                    </button>
+                  </div>
+                )}
+
+                {/* Træ */}
+                <div style={{ maxHeight: 260, overflowY: 'auto', border: '1px solid var(--sep)', borderRadius: 8 }}>
+                  {afdelinger.filter(afdMatchesSearch).map(afd => {
+                    const afdHolds  = (afdHoldMap[afd.id] || []).filter(holdMatchesSearch)
+                    const isOpen    = openAfds.has(afd.id) || !!holdSearchQ
+                    const isSelAfd  = gruppeType === 'afdeling' && scopeId === afd.id
+                    if (!holdSearchQ && afdHolds.length === 0 && !(afdHoldMap[afd.id]||[]).length) return null
+                    return (
+                      <div key={afd.id}>
+                        {/* Afdeling-header */}
+                        <div style={{ display: 'flex', alignItems: 'center', background: isSelAfd ? 'var(--green-soft)' : '#f8f9fa', borderBottom: '1px solid var(--sep)' }}>
+                          <button
+                            onClick={() => { setScopeId(afd.id); setGruppeType('afdeling'); setPreview(null) }}
+                            style={{ flex: 1, textAlign: 'left', padding: '8px 12px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: isSelAfd ? 'var(--green)' : 'var(--text)' }}>
+                            {afd.navn}
+                            <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text3)', marginLeft: 6 }}>
+                              {(afdHoldMap[afd.id] || []).length} hold
+                            </span>
+                          </button>
+                          <button
+                            onClick={() => setOpenAfds(prev => { const n = new Set(prev); n.has(afd.id) ? n.delete(afd.id) : n.add(afd.id); return n })}
+                            style={{ padding: '8px 12px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 12 }}>
+                            {isOpen ? '▲' : '▼'}
+                          </button>
+                        </div>
+                        {/* Hold under afdeling */}
+                        {isOpen && afdHolds.map(h => {
+                          const hid      = String(h.conventus_id)
+                          const isSel    = gruppeType === 'hold' && scopeId === hid
+                          return (
+                            <button key={h.id}
+                              onClick={() => { setScopeId(hid); setGruppeType('hold'); setPreview(null) }}
+                              style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '7px 12px 7px 24px', background: isSel ? '#f0fdf4' : 'white', border: 'none', borderBottom: '1px solid var(--sep)', cursor: 'pointer', fontSize: 13, color: isSel ? 'var(--green)' : 'var(--text)' }}>
+                              {isSel && <Icon name="check" size={12} color="var(--green)" sw={2.5} />}
+                              {!isSel && <span style={{ width: 12 }} />}
+                              {h.titel}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )
+                  })}
+                  {/* Hold uden afdeling */}
+                  {orphanHolds.filter(holdMatchesSearch).map(h => {
+                    const hid   = String(h.conventus_id)
+                    const isSel = gruppeType === 'hold' && scopeId === hid
+                    return (
+                      <button key={h.id}
+                        onClick={() => { setScopeId(hid); setGruppeType('hold'); setPreview(null) }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '7px 12px', background: isSel ? '#f0fdf4' : 'white', border: 'none', borderBottom: '1px solid var(--sep)', cursor: 'pointer', fontSize: 13, color: isSel ? 'var(--green)' : 'var(--text)' }}>
+                        {isSel && <Icon name="check" size={12} color="var(--green)" sw={2.5} />}
+                        {!isSel && <span style={{ width: 12 }} />}
+                        {h.titel}
+                      </button>
+                    )
+                  })}
+                  {holds.length === 0 && (
+                    <p style={{ padding: 12, fontSize: 13, color: 'var(--text3)', textAlign: 'center' }}>Indlæser hold…</p>
+                  )}
+                </div>
+                <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>
+                  Klik på en afdeling for at sende til alle hold i den · Klik på et hold for kun det hold
+                </p>
+              </div>
             )}
             {scope === 'manual' && (
               <>
