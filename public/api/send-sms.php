@@ -69,6 +69,8 @@ $action      = trim($input['action']       ?? 'preview');
 $scope       = trim($input['scope']        ?? 'all');
 $scopeLabel  = trim($input['scope_label']  ?? '');
 $manualInput = trim($input['manual_input'] ?? '');
+$smsSender   = preg_replace('/[^a-zA-Z0-9\x{00C0}-\x{024F} ]/u', '', trim($input['sender'] ?? 'SSIF'));
+$smsSender   = substr($smsSender, 0, 11) ?: 'SSIF';
 $text        = trim($input['text']         ?? '');
 
 if (!$text)                   { http_response_code(400); echo json_encode(['error' => 'Besked er tom']); exit; }
@@ -248,7 +250,7 @@ function send_and_log(array $msisdns, string $text, int $parts, string $scope, s
 
     // GatewayAPI REST-kald
     $recipients = array_map(function($m) { return ['msisdn' => $m]; }, $msisdns);
-    $payload    = json_encode(['sender' => 'SSIF', 'message' => $text, 'recipients' => $recipients]);
+    $payload    = json_encode(['sender' => $smsSender, 'message' => $text, 'recipients' => $recipients]);
 
     $gwResp = @file_get_contents('https://gatewayapi.com/rest/mtsms', false, stream_context_create(['http' => [
         'method'        => 'POST',
@@ -267,13 +269,15 @@ function send_and_log(array $msisdns, string $text, int $parts, string $scope, s
     // Firestore-log: ingen persondata
     $logDoc = [
         'sentAt'        => ['timestampValue' => gmdate('Y-m-d\TH:i:s\Z')],
+        'channel'       => ['stringValue'    => 'sms'],
         'senderUid'     => ['stringValue'    => $uid],
         'senderName'    => ['stringValue'    => $name],
+        'smsSender'     => ['stringValue'    => $smsSender],
         'scope'         => ['stringValue'    => $scope . ($scope !== 'manual' && $scope !== 'all' ? ":{$scopeLabel}" : '')],
         'recipients'    => ['integerValue'   => (string)count($msisdns)],
         'parts'         => ['integerValue'   => (string)$parts],
         'text'          => ['stringValue'    => $text],
-        'gatewayOk'     => ['booleanValue'   => $gwOk],
+        'ok'            => ['booleanValue'   => $gwOk],
         'gatewayIds'    => ['arrayValue'     => ['values' => array_map(function($id) { return ['integerValue' => (string)$id]; }, $gwIds)]],
         'estimatedCost' => ['doubleValue'    => round(count($msisdns) * $parts * SMS_PRICE_DKK, 2)],
     ];
@@ -281,7 +285,7 @@ function send_and_log(array $msisdns, string $text, int $parts, string $scope, s
     if ($currency)            $logDoc['currency']   = ['stringValue' => $currency];
 
     @file_get_contents(
-        "https://firestore.googleapis.com/v1/projects/{$projectId}/databases/(default)/documents/sms_logs",
+        "https://firestore.googleapis.com/v1/projects/{$projectId}/databases/(default)/documents/kommunikation_logs",
         false, stream_context_create(['http' => [
             'method'        => 'POST',
             'header'        => "Authorization: Bearer {$fsToken}\r\nContent-Type: application/json\r\n",
