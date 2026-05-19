@@ -2731,8 +2731,13 @@ function KommunikationPage({ authUser, userDoc }) {
   }
 
   const canSend = text.trim() && (scope === 'all' || (scope === 'gruppe' && scopeId)) && (channel === 'email' ? !!subject.trim() : true)
-  const charCount = text.length
-  const smsParts  = charCount <= 160 ? 1 : charCount <= 306 ? 2 : Math.ceil(charCount / 153)
+  // UCS-2 encoding ved emoji/ikke-GSM7-tegn — reducerer tegn pr. SMS fra 160 til 70
+  const GSM7 = '@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜäöñüàÅ§¿abcdefghijklmnopqrstuvwxyz\t\x0b\x0c{}\\[~]|^€'
+  const ucs2     = text.length > 0 && [...text].some(c => !GSM7.includes(c))
+  const charCount = [...text].length   // code points, ikke UTF-16 units
+  const smsLimit  = ucs2 ? 70 : 160
+  const smsCont   = ucs2 ? 67 : 153
+  const smsParts  = charCount <= smsLimit ? 1 : Math.ceil(charCount / smsCont)
   const endpoint  = channel === 'sms' ? `${BASE}api/send-sms.php` : `${BASE}api/send-bulk-email.php`
 
   function buildBody(action) {
@@ -2864,25 +2869,46 @@ function KommunikationPage({ authUser, userDoc }) {
             )}
 
             {/* Besked */}
-            <div style={{ position: 'relative' }}>
-              <textarea className="form-control" rows={channel === 'sms' ? 5 : 7}
-                style={{ resize: 'none', fontFamily: 'inherit', fontSize: 14, lineHeight: 1.6,
-                         paddingBottom: channel === 'sms' ? 26 : 10 }}
-                placeholder={channel === 'sms' ? 'Skriv din SMS-besked…' : 'Skriv din email-besked…'}
-                value={text}
-                onChange={e => { setText(e.target.value); setPreview(null); setResult(null) }}
-                maxLength={channel === 'sms' ? 480 : undefined}
-                autoComplete="off" data-form-type="other" autoFocus
-              />
-              {channel === 'sms' && (
-                <div style={{ position: 'absolute', bottom: 8, left: 12, right: 12, display: 'flex', justifyContent: 'space-between', pointerEvents: 'none' }}>
-                  <span style={{ fontSize: 11, color: 'var(--text3)' }}>{charCount}/480</span>
-                  <span style={{ fontSize: 11, color: smsParts > 1 ? '#f59e0b' : 'var(--text3)', fontWeight: smsParts > 1 ? 600 : 400 }}>
-                    {smsParts > 1 ? `⚠ ${smsParts} SMS-dele` : '1 SMS pr. modtager'}
-                  </span>
-                </div>
-              )}
-            </div>
+            <textarea className="form-control" rows={channel === 'sms' ? 5 : 7}
+              style={{ resize: 'none', fontFamily: 'inherit', fontSize: 14, lineHeight: 1.6 }}
+              placeholder={channel === 'sms' ? 'Skriv din SMS-besked…' : 'Skriv din email-besked…'}
+              value={text}
+              onChange={e => { setText(e.target.value); setPreview(null); setResult(null) }}
+              autoComplete="off" data-form-type="other" autoFocus
+            />
+
+            {/* SMS-tæller */}
+            {channel === 'sms' && text.length > 0 && (() => {
+              const costPerRecipient = (smsParts * 0.40).toFixed(2)
+              const overLimit = charCount > smsLimit
+              return (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: -4 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: ucs2 ? '#f59e0b' : overLimit ? '#f59e0b' : 'var(--text3)' }}>
+                      {charCount}/{smsLimit}{ucs2 ? ' · emoji' : ''}
+                    </span>
+                    <span style={{ fontSize: 12, color: 'var(--text3)' }}>
+                      {smsParts} SMS-del{smsParts > 1 ? 'e' : ''} · ~{costPerRecipient} kr./modtager
+                    </span>
+                  </div>
+                  {smsParts > 1 && (
+                    <div style={{ padding: '6px 10px', background: '#fff8ed', border: '1px solid #fed7aa', borderRadius: 7, fontSize: 12, color: '#92400e', display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <span>⚠</span>
+                      <span>
+                        Beskeden splittes i <strong>{smsParts} SMS-dele</strong> pr. modtager
+                        {ucs2 && ' (emoji kræver UCS-2 encoding — maks. 67 tegn pr. del)'}.
+                        Pris: ~{costPerRecipient} kr. pr. modtager.
+                      </span>
+                    </div>
+                  )}
+                  {ucs2 && smsParts === 1 && (
+                    <div style={{ padding: '5px 10px', background: '#fefce8', border: '1px solid #fde68a', borderRadius: 7, fontSize: 11, color: '#713f12' }}>
+                      Emoji aktiverer UCS-2 encoding · maks. {smsLimit} tegn pr. SMS
+                    </div>
+                  )}
+                </>
+              )
+            })()}
           </div>
 
           {/* Modtagere */}
@@ -3032,7 +3058,10 @@ function KommunikationPage({ authUser, userDoc }) {
                 <div style={{ width: 1, background: 'var(--sep)' }} />
                 <div style={{ flex: 1, textAlign: 'center' }}>
                   <div style={{ fontSize: 24, fontWeight: 800, lineHeight: 1 }}>{preview.parts}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 3 }}>SMS-{preview.parts > 1 ? 'dele' : 'del'}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 3 }}>
+                    SMS-{preview.parts > 1 ? 'dele' : 'del'}
+                    {preview.ucs2 && <span style={{ color: '#f59e0b', display: 'block' }}>emoji/UCS-2</span>}
+                  </div>
                 </div>
               </>}
             </div>

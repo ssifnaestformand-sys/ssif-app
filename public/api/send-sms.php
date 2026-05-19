@@ -114,6 +114,7 @@ $msisdns = $result['msisdns'];
 
 if ($action === 'preview') {
     $resp = ['ok' => true, 'count' => count($msisdns), 'parts' => $parts,
+             'ucs2'          => sms_is_ucs2($text),
              'estimatedCost' => round(count($msisdns) * $parts * SMS_PRICE_DKK, 2),
              'debug' => [
                  'hold_ids_received'  => $targetGroupIds,
@@ -133,10 +134,32 @@ send_and_log($msisdns, $text, $parts, $scope, $scopeLabel, $callerUid, $callerNa
 // ── SMS-hjælpere ──────────────────────────────────────────────────────────────
 
 function sms_parts(string $text): int {
-    $len = mb_strlen($text);
-    if ($len <= 160) return 1;
-    if ($len <= 306) return 2;
-    return (int)ceil($len / 153);
+    // GSM-7 basic + extended characters
+    static $gsm7 = null;
+    if ($gsm7 === null) {
+        $gsm7 = '@£$¥èéùìòÇ' . "\n" . 'Øø' . "\r" . 'ÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜäöñüàÅ§¿abcdefghijklmnopqrstuvwxyz' . "\t\x0b\x0c" . '{}\\[~]|^€';
+    }
+    $len   = mb_strlen($text, 'UTF-8');
+    $chars = preg_split('//u', $text, -1, PREG_SPLIT_NO_EMPTY);
+    $ucs2  = false;
+    foreach ($chars as $c) {
+        if (mb_strpos($gsm7, $c, 0, 'UTF-8') === false) { $ucs2 = true; break; }
+    }
+    if ($ucs2) {
+        return $len <= 70 ? 1 : (int)ceil($len / 67);
+    }
+    return $len <= 160 ? 1 : (int)ceil($len / 153);
+}
+
+function sms_is_ucs2(string $text): bool {
+    static $gsm7 = null;
+    if ($gsm7 === null) {
+        $gsm7 = '@£$¥èéùìòÇ' . "\n" . 'Øø' . "\r" . 'ÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜäöñüàÅ§¿abcdefghijklmnopqrstuvwxyz' . "\t\x0b\x0c" . '{}\\[~]|^€';
+    }
+    foreach (preg_split('//u', $text, -1, PREG_SPLIT_NO_EMPTY) as $c) {
+        if (mb_strpos($gsm7, $c, 0, 'UTF-8') === false) return true;
+    }
+    return false;
 }
 
 function parse_manual_numbers(string $input): array {
