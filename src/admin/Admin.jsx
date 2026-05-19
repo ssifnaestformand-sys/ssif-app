@@ -2694,7 +2694,7 @@ function SmsPage({ authUser, userDoc }) {
     getDocs(collection(db, 'afdelinger'))
       .then(s => setAfdelinger(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (a.navn||'').localeCompare(b.navn||'','da'))))
       .catch(() => {})
-    getDocs(query(collection(db, 'holds'), where('aktiv', '==', true)))
+    getDocs(collection(db, 'holds'))
       .then(s => setHolds(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (a.titel||'').localeCompare(b.titel||'','da'))))
       .catch(() => {})
     loadLogs()
@@ -2724,10 +2724,7 @@ function SmsPage({ authUser, userDoc }) {
     return ''
   }
 
-  async function doPreview() {
-    if (!text.trim()) { setError('Skriv en besked først'); return }
-    if (scope !== 'manual' && scope !== 'all' && !scopeId) { setError('Vælg en modtager-gruppe'); return }
-    if (scope === 'manual' && !manualInput.trim()) { setError('Indtast mindst ét telefonnummer'); return }
+  async function fetchPreview() {
     setError(''); setPreview(null); setPreviewing(true)
     try {
       const idToken = await auth.currentUser?.getIdToken() ?? ''
@@ -2738,10 +2735,26 @@ function SmsPage({ authUser, userDoc }) {
                                scope_label: scopeLabel(), manual_input: manualInput, text }),
       })
       const data = await res.json()
-      if (data.error) { setError(data.error + (data.detail ? ` (${data.detail})` : '')); return }
+      if (data.error) { setError(data.error + (data.detail ? ` (${data.detail})` : '')); return null }
       setPreview(data)
-    } catch (err) { setError('Netværksfejl: ' + err.message) }
+      return data
+    } catch (err) { setError('Netværksfejl: ' + err.message); return null }
     finally { setPreviewing(false) }
+  }
+
+  async function doPreview() {
+    if (!text.trim()) { setError('Skriv en besked først'); return }
+    if (scope !== 'manual' && scope !== 'all' && !scopeId) { setError('Vælg en modtager-gruppe'); return }
+    if (scope === 'manual' && !manualInput.trim()) { setError('Indtast mindst ét telefonnummer'); return }
+    await fetchPreview()
+  }
+
+  async function handleSendClick() {
+    if (!text.trim()) { setError('Skriv en besked først'); return }
+    if (scope !== 'manual' && scope !== 'all' && !scopeId) { setError('Vælg en modtager-gruppe'); return }
+    if (scope === 'manual' && !manualInput.trim()) { setError('Indtast mindst ét telefonnummer'); return }
+    const p = preview ?? await fetchPreview()
+    if (p) setConfirm(true)
   }
 
   async function doSend() {
@@ -2818,6 +2831,8 @@ function SmsPage({ authUser, userDoc }) {
                 value={text}
                 onChange={e => { setText(e.target.value); setPreview(null); setResult(null) }}
                 maxLength={480}
+                autoComplete="off"
+                data-form-type="other"
                 autoFocus
               />
               <div style={{ position: 'absolute', bottom: 10, left: 12, right: 12, display: 'flex', justifyContent: 'space-between', pointerEvents: 'none' }}>
@@ -2887,8 +2902,8 @@ function SmsPage({ authUser, userDoc }) {
             <button className="btn btn-ghost" onClick={doPreview} disabled={previewing || sending || !canSend} style={{ flex: 1 }}>
               {previewing ? 'Henter fra Conventus…' : 'Beregn modtagere + pris'}
             </button>
-            <button className="btn btn-primary" onClick={() => setConfirm(true)}
-                    disabled={sending || !canSend} style={{ flex: 1 }}>
+            <button className="btn btn-primary" onClick={handleSendClick}
+                    disabled={sending || previewing || !canSend} style={{ flex: 1 }}>
               {sending ? 'Sender…' : preview ? `Send til ${preview.count} · ~${preview.estimatedCost} kr.` : 'Send besked'}
             </button>
           </div>
