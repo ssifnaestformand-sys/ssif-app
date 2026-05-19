@@ -108,15 +108,25 @@ $rawIds         = (array)($input['hold_ids'] ?? []);
 $targetGroupIds = array_values(array_unique(array_filter(array_map('intval', $rawIds))));
 
 // ── Hent telefonnumre fra Conventus ───────────────────────────────────────────
-$msisdns = fetch_conventus_msisdns($conventusKey, $targetGroupIds);
+$dbg     = ($action === 'preview');
+$result  = fetch_conventus_msisdns_debug($conventusKey, $targetGroupIds, $dbg);
+$msisdns = $result['msisdns'];
 
 if ($action === 'preview') {
-    echo json_encode(['ok' => true, 'count' => count($msisdns), 'parts' => $parts,
-                      'estimatedCost' => round(count($msisdns) * $parts * SMS_PRICE_DKK, 2)]);
+    $resp = ['ok' => true, 'count' => count($msisdns), 'parts' => $parts,
+             'estimatedCost' => round(count($msisdns) * $parts * SMS_PRICE_DKK, 2),
+             'debug' => [
+                 'hold_ids_received'  => $targetGroupIds,
+                 'conventus_fetched'  => $result['total'],
+                 'conventus_ok'       => $result['api_ok'],
+                 'sample_groups'      => $result['sample_groups'],
+             ]];
+    echo json_encode($resp);
     exit;
 }
 
 send_and_log($msisdns, $text, $parts, $scope, $scopeLabel, $callerUid, $callerName, $projectId, $fsToken, $sa);
+
 
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -154,8 +164,8 @@ function to_msisdn(string $number, string $dialCode = '45'): ?int {
     return $msisdn;
 }
 
-// ── Hent MSISDNs fra Conventus ────────────────────────────────────────────────
-function fetch_conventus_msisdns(string $apiKey, array $targetGroupIds): array {
+// ── Hent MSISDNs fra Conventus (med debug-info) ───────────────────────────────
+function fetch_conventus_msisdns_debug(string $apiKey, array $targetGroupIds, bool $debug): array {
     $ctx = stream_context_create(['http' => ['timeout' => 90, 'ignore_errors' => true]]);
     $url = 'https://www.conventus.dk/dataudv/api/adressebog/get_membres.php?' . http_build_query([
         'forening'   => '1031',
@@ -163,25 +173,33 @@ function fetch_conventus_msisdns(string $apiKey, array $targetGroupIds): array {
         'relationer' => 'true',
     ]);
     $raw = @file_get_contents($url, false, $ctx);
-    if (!$raw) return [];
+    if (!$raw) return ['msisdns' => [], 'total' => 0, 'api_ok' => false, 'sample_groups' => []];
 
     if (preg_match('/encoding=["\']ISO-8859-1["\']/i', $raw)) {
         $raw = mb_convert_encoding($raw, 'UTF-8', 'ISO-8859-1');
         $raw = preg_replace('/encoding=["\']ISO-8859-1["\']/i', 'encoding="UTF-8"', $raw);
     }
-    if (strpos(ltrim($raw), '<') !== 0) return [];
+    if (strpos(ltrim($raw), '<') !== 0) return ['msisdns' => [], 'total' => 0, 'api_ok' => false, 'sample_groups' => []];
 
-    return parse_msisdns_from_xml($raw, $targetGroupIds);
+    return parse_msisdns_from_xml($raw, $targetGroupIds, $debug);
 }
 
-function parse_msisdns_from_xml(string $raw, array $targetGroupIds): array {
-    $targetSet = array_flip($targetGroupIds); // O(1) lookup
+// Behold den gamle signatur som alias (bruges af send_and_log indirekte)
+function fetch_conventus_msisdns(string $apiKey, array $targetGroupIds): array {
+    return fetch_conventus_msisdns_debug($apiKey, $targetGroupIds, false)['msisdns'];
+}
+
+function parse_msisdns_from_xml(string $raw, array $targetGroupIds, bool $debug = false): array {
+    $targetSet     = array_flip($targetGroupIds);
     $filterByGroup = !empty($targetGroupIds);
     libxml_use_internal_errors(true);
     $reader = new XMLReader();
-    if (!$reader->XML($raw, 'UTF-8', LIBXML_NOERROR | LIBXML_NOWARNING)) return [];
+    if (!$reader->XML($raw, 'UTF-8', LIBXML_NOERROR | LIBXML_NOWARNING))
+        return ['msisdns' => [], 'total' => 0, 'api_ok' => false, 'sample_groups' => []];
 
-    $seen = [];
+    $seen         = [];
+    $total        = 0;
+    $sampleGroups = []; // gruppe-IDs fra de første 3 membres (til debug)
 
     while ($reader->read()) {
         if ($reader->nodeType !== XMLReader::ELEMENT) continue;
@@ -195,10 +213,23 @@ function parse_msisdns_from_xml(string $raw, array $targetGroupIds): array {
         $k = @simplexml_load_string($xml, 'SimpleXMLElement', LIBXML_NOERROR | LIBXML_NOWARNING);
         if (!$k) continue;
 
-        // Tjek slettede
-        if (strtolower(trim((string)($k->slettet ?? ''))) === 'true') continue;
+        if (strtolower(trim((string)($k->slettet ?? ''))) === 'true') { unset($k); continue; }
 
-        // Scope-filtrering: tjek om personen tilhører en af målgrupperne
+        $total++;
+
+        // Indsaml gruppe-IDs fra de første 3 membres til debug
+        if ($debug && count($sampleGroups) < 3 && isset($k->relationer)) {
+            $gids = [];
+            foreach ($k->relationer->children() as $relType) {
+                foreach ($relType->children() as $child) {
+                    if (strtolower($child->getName()) === 'gruppe') {
+                        $gids[] = (int)trim((string)$child);
+                    }
+                }
+            }
+            $sampleGroups[] = ['name' => trim((string)($k->navn ?? '')), 'groups' => $gids];
+        }
+
         if ($filterByGroup) {
             $inGroup = false;
             if (isset($k->relationer)) {
@@ -209,10 +240,9 @@ function parse_msisdns_from_xml(string $raw, array $targetGroupIds): array {
                     }
                 }
             }
-            if (!$inGroup) continue;
+            if (!$inGroup) { unset($k); continue; }
         }
 
-        // Hent mobil → fallback til tlf
         $mobil     = trim((string)($k->mobil     ?? ''));
         $mobilCode = trim((string)($k->mobil_dialCode ?? '45'));
         $tlf       = trim((string)($k->tlf       ?? ''));
@@ -220,17 +250,16 @@ function parse_msisdns_from_xml(string $raw, array $targetGroupIds): array {
 
         $msisdn = $mobil ? to_msisdn($mobil, $mobilCode) : null;
         if (!$msisdn && $tlf) $msisdn = to_msisdn($tlf, $tlfCode);
-        if (!$msisdn) continue;
+        if (!$msisdn) { unset($k); continue; }
 
-        // off_mobil=false → privat nummer, spring over
-        if ($mobil && strtolower(trim((string)($k->off_mobil ?? 'true'))) === 'false') continue;
+        if ($mobil && strtolower(trim((string)($k->off_mobil ?? 'true'))) === 'false') { unset($k); continue; }
 
         $seen[$msisdn] = true;
         unset($k);
     }
     $reader->close();
     libxml_clear_errors();
-    return array_keys($seen);
+    return ['msisdns' => array_keys($seen), 'total' => $total, 'api_ok' => true, 'sample_groups' => $sampleGroups];
 }
 
 // ── GatewayAPI + Firestore-log ────────────────────────────────────────────────

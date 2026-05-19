@@ -2685,7 +2685,6 @@ function KommunikationPage({ authUser, userDoc }) {
   const [holdSearch, setHoldSearch] = useState('')
   const [afdelinger, setAfdelinger] = useState([])
   const [holds,      setHolds]      = useState([])
-  const [openAfds,   setOpenAfds]   = useState(new Set())
   const [preview,    setPreview]    = useState(null)
   const [previewing, setPreviewing] = useState(false)
   const [sending,    setSending]    = useState(false)
@@ -2749,6 +2748,7 @@ function KommunikationPage({ authUser, userDoc }) {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
         body: buildBody('preview') })
       const data = await res.json()
+      if (data.debug) console.log('[SMS debug]', data.debug)
       if (data.error) { setError(data.error + (data.detail ? ` (${data.detail})` : '')); return null }
       setPreview(data); return data
     } catch (err) { setError('Netværksfejl: ' + err.message); return null }
@@ -2903,72 +2903,106 @@ function KommunikationPage({ authUser, userDoc }) {
 
             {scope === 'gruppe' && (
               <>
-                <div style={{ position: 'relative', marginBottom: 8 }}>
+                {/* Søgefelt */}
+                <div style={{ position: 'relative', marginBottom: 10 }}>
                   <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', display: 'flex', pointerEvents: 'none' }}>
                     <Icon name="search" size={14} color="var(--text3)" />
                   </span>
                   <input className="form-control" style={{ paddingLeft: 32, height: 36, fontSize: 13 }}
-                    placeholder="Søg afdeling eller hold…" value={holdSearch}
-                    onChange={e => setHoldSearch(e.target.value)} autoComplete="off" />
+                    placeholder="Søg…" value={holdSearch}
+                    onChange={e => { setHoldSearch(e.target.value) }} autoComplete="off" />
                 </div>
 
+                {/* Valgt — vises øverst */}
                 {scopeId && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', background: 'var(--green-soft)', borderRadius: 7, marginBottom: 8 }}>
-                    <Icon name="check" size={13} color="var(--green)" sw={2.5} />
-                    <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: 'var(--green)' }}>{scopeLabel()}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--green-soft)', borderRadius: 8, marginBottom: 10, border: '1.5px solid var(--green)' }}>
+                    <Icon name="check" size={14} color="var(--green)" sw={2.5} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--green)' }}>{scopeLabel()}</div>
+                      <div style={{ fontSize: 11, color: 'var(--green)', opacity: .7 }}>
+                        {gruppeType === 'afdeling' ? `Alle hold i afdelingen · ${(afdHoldMap[scopeId]||[]).length} hold` : 'Specifikt hold'}
+                      </div>
+                    </div>
                     <button onClick={() => { setScopeId(''); setGruppeType(''); setPreview(null) }}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, display: 'flex' }}>
-                      <Icon name="x" size={13} color="var(--text3)" />
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', borderRadius: 4 }}>
+                      <Icon name="x" size={14} color="var(--green)" />
                     </button>
                   </div>
                 )}
 
-                <div style={{ maxHeight: 240, overflowY: 'auto', border: '1px solid var(--sep)', borderRadius: 8 }}>
-                  {afdelinger.filter(afdMatchesSearch).map(afd => {
-                    const afdHolds = (afdHoldMap[afd.id] || []).filter(holdMatchesSearch)
-                    const isOpen   = openAfds.has(afd.id) || !!holdSearchQ
-                    const isSelAfd = gruppeType === 'afdeling' && scopeId === afd.id
+                {/* Liste */}
+                <div style={{ maxHeight: 300, overflowY: 'auto', borderRadius: 10, border: '1px solid var(--sep)', background: 'white' }}>
+
+                  {/* Afdelinger — øverst, med tydelig label */}
+                  {(() => {
+                    const matchedAfds = afdelinger.filter(afdMatchesSearch)
+                    if (!matchedAfds.length) return null
                     return (
-                      <div key={afd.id}>
-                        <div style={{ display: 'flex', alignItems: 'center', background: isSelAfd ? 'var(--green-soft)' : '#f8f9fa', borderBottom: '1px solid var(--sep)' }}>
-                          <button onClick={() => { setScopeId(afd.id); setGruppeType('afdeling'); setPreview(null) }}
-                            style={{ flex: 1, textAlign: 'left', padding: '8px 12px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: isSelAfd ? 'var(--green)' : 'var(--text)' }}>
-                            {afd.navn}
-                            <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text3)', marginLeft: 6 }}>{(afdHoldMap[afd.id]||[]).length} hold</span>
-                          </button>
-                          <button onClick={() => setOpenAfds(p => { const n=new Set(p); n.has(afd.id)?n.delete(afd.id):n.add(afd.id); return n })}
-                            style={{ padding: '8px 12px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 11 }}>
-                            {isOpen ? '▲' : '▼'}
-                          </button>
+                      <>
+                        <div style={{ padding: '6px 12px 4px', fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.07em', background: '#fafafa', borderBottom: '1px solid var(--sep)', position: 'sticky', top: 0 }}>
+                          Hele afdelingen
                         </div>
-                        {isOpen && afdHolds.map(h => {
-                          const hid  = String(h.conventus_id)
-                          const isSel = gruppeType === 'hold' && scopeId === hid
+                        {matchedAfds.map(afd => {
+                          const count = (afdHoldMap[afd.id] || []).length
+                          const isSel = gruppeType === 'afdeling' && scopeId === afd.id
                           return (
-                            <button key={h.id} onClick={() => { setScopeId(hid); setGruppeType('hold'); setPreview(null) }}
-                              style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '7px 12px 7px 24px', background: isSel ? '#f0fdf4' : 'white', border: 'none', borderBottom: '1px solid var(--sep)', cursor: 'pointer', fontSize: 13, color: isSel ? 'var(--green)' : 'var(--text)' }}>
-                              {isSel ? <Icon name="check" size={12} color="var(--green)" sw={2.5} /> : <span style={{ width: 12 }} />}
-                              {h.titel}
+                            <button key={afd.id}
+                              onClick={() => { setScopeId(afd.id); setGruppeType('afdeling'); setPreview(null) }}
+                              style={{ display: 'flex', alignItems: 'center', width: '100%', textAlign: 'left', padding: '10px 12px', background: isSel ? 'var(--green-soft)' : 'white', border: 'none', borderBottom: '1px solid var(--sep)', cursor: 'pointer', gap: 10 }}>
+                              <div style={{ width: 32, height: 32, borderRadius: 8, background: isSel ? 'var(--green)' : '#f0f2f5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                <Icon name="users" size={15} color={isSel ? 'white' : 'var(--text3)'} />
+                              </div>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: isSel ? 'var(--green)' : 'var(--text)' }}>{afd.navn}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>{count} hold · alle medlemmer</div>
+                              </div>
+                              {isSel && <Icon name="check" size={14} color="var(--green)" sw={2.5} />}
                             </button>
                           )
                         })}
-                      </div>
+                      </>
                     )
-                  })}
-                  {orphanHolds.filter(holdMatchesSearch).map(h => {
-                    const hid  = String(h.conventus_id)
-                    const isSel = gruppeType === 'hold' && scopeId === hid
+                  })()}
+
+                  {/* Holds — nedenunder, med tydelig label */}
+                  {(() => {
+                    const matchedHolds = holds.filter(holdMatchesSearch)
+                    if (!matchedHolds.length) return null
                     return (
-                      <button key={h.id} onClick={() => { setScopeId(hid); setGruppeType('hold'); setPreview(null) }}
-                        style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '7px 12px', background: isSel ? '#f0fdf4' : 'white', border: 'none', borderBottom: '1px solid var(--sep)', cursor: 'pointer', fontSize: 13, color: isSel ? 'var(--green)' : 'var(--text)' }}>
-                        {isSel ? <Icon name="check" size={12} color="var(--green)" sw={2.5} /> : <span style={{ width: 12 }} />}
-                        {h.titel}
-                      </button>
+                      <>
+                        <div style={{ padding: '6px 12px 4px', fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.07em', background: '#fafafa', borderBottom: '1px solid var(--sep)', position: 'sticky', top: 0 }}>
+                          Specifikt hold
+                        </div>
+                        {matchedHolds.map(h => {
+                          const hid   = String(h.conventus_id)
+                          const isSel = gruppeType === 'hold' && scopeId === hid
+                          const afdNavn = afdelinger.find(a => a.id === String(h.afdeling_id))?.navn || ''
+                          return (
+                            <button key={h.id}
+                              onClick={() => { setScopeId(hid); setGruppeType('hold'); setPreview(null) }}
+                              style={{ display: 'flex', alignItems: 'center', width: '100%', textAlign: 'left', padding: '9px 12px', background: isSel ? '#f0fdf4' : 'white', border: 'none', borderBottom: '1px solid var(--sep)', cursor: 'pointer', gap: 10 }}>
+                              <div style={{ width: 32, height: 32, borderRadius: 8, background: isSel ? '#dcfce7' : '#f0f2f5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 12, fontWeight: 700, color: isSel ? 'var(--green)' : 'var(--text3)' }}>
+                                {(h.titel || '?')[0].toUpperCase()}
+                              </div>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 13, fontWeight: isSel ? 600 : 400, color: isSel ? 'var(--green)' : 'var(--text)' }}>{h.titel}</div>
+                                {afdNavn && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>{afdNavn}</div>}
+                              </div>
+                              {isSel && <Icon name="check" size={14} color="var(--green)" sw={2.5} />}
+                            </button>
+                          )
+                        })}
+                      </>
                     )
-                  })}
-                  {holds.length === 0 && <p style={{ padding: 12, fontSize: 13, color: 'var(--text3)', textAlign: 'center' }}>Indlæser hold…</p>}
+                  })()}
+
+                  {holds.length === 0 && (
+                    <div style={{ padding: 20, textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>Indlæser hold…</div>
+                  )}
+                  {holds.length > 0 && !afdelinger.filter(afdMatchesSearch).length && !holds.filter(holdMatchesSearch).length && (
+                    <div style={{ padding: 20, textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>Ingen resultater for "{holdSearch}"</div>
+                  )}
                 </div>
-                <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>Klik afdeling = alle hold · Klik hold = kun det hold</p>
               </>
             )}
           </div>
