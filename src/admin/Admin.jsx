@@ -2753,7 +2753,6 @@ function KommunikationPage({ authUser, userDoc }) {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
         body: buildBody('preview') })
       const data = await res.json()
-      if (data.debug) console.log('[SMS debug]', data.debug)
       if (data.error) { setError(data.error + (data.detail ? ` (${data.detail})` : '')); return null }
       setPreview(data); return data
     } catch (err) { setError('Netværksfejl: ' + err.message); return null }
@@ -3040,6 +3039,49 @@ function KommunikationPage({ authUser, userDoc }) {
               {channel === 'sms'
                 ? `✓ SMS sendt til ${result.sent} modtagere · ${result.cost}`
                 : `✓ Email sendt til ${result.sent} modtagere${result.failed > 0 ? ` · ${result.failed} fejlede` : ''}`}
+            </div>
+          )}
+
+          {/* Debug-panel: vises kun når count=0 og der er debug-data */}
+          {preview && preview.count === 0 && preview.debug && !error && (
+            <div style={{ background: '#fafafa', border: '1px solid var(--sep)', borderRadius: 10, padding: '14px 16px', fontSize: 12 }}>
+              <p style={{ fontWeight: 700, marginBottom: 10, color: 'var(--text2)' }}>🔍 Ingen modtagere fundet — diagnostik</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <span style={{ color: preview.debug.conventus_ok ? 'var(--green)' : '#dc2626', fontWeight: 700 }}>
+                    {preview.debug.conventus_ok ? '✓' : '✗'}
+                  </span>
+                  <span>
+                    {preview.debug.conventus_ok
+                      ? `Conventus svarede — ${preview.debug.conventus_fetched} aktive membres fundet`
+                      : 'Conventus API svarede ikke (timeout eller nøglefejl)'}
+                  </span>
+                </div>
+                {preview.debug.conventus_ok && (
+                  <>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <span style={{ color: 'var(--text3)', minWidth: 16 }}>→</span>
+                      <span>Hold-ID sendt til server: <code style={{ background: '#f0f0f0', padding: '1px 5px', borderRadius: 4 }}>{JSON.stringify(preview.debug.hold_ids_received)}</code></span>
+                    </div>
+                    {preview.debug.sample_groups?.length > 0 && (
+                      <div style={{ marginTop: 4 }}>
+                        <p style={{ color: 'var(--text3)', marginBottom: 4 }}>
+                          Gruppe-IDs fra de første {preview.debug.sample_groups.length} membres i Conventus:
+                        </p>
+                        {preview.debug.sample_groups.map((s, i) => (
+                          <div key={i} style={{ padding: '4px 8px', background: '#f5f5f5', borderRadius: 5, marginBottom: 3, fontFamily: 'monospace', fontSize: 11 }}>
+                            <strong>{s.name || '–'}</strong>: [{s.groups?.join(', ') || 'ingen'}]
+                          </div>
+                        ))}
+                        <p style={{ marginTop: 6, color: '#dc2626', fontSize: 11 }}>
+                          Kontrollér at et af disse IDs matcher det sendte hold-ID ovenfor.
+                          Matcher ingen → hold-ID'et i Firestore stemmer ikke overens med Conventus-gruppen.
+                        </p>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           )}
 

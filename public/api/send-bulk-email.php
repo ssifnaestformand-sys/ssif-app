@@ -77,10 +77,16 @@ if (!$conventusKey) {
 if (!$conventusKey) { http_response_code(500); echo json_encode(['error' => 'CONVENTUS_KEY ikke konfigureret']); exit; }
 
 // ── Hent emails fra Conventus ─────────────────────────────────────────────────
-$emails = fetch_conventus_emails($conventusKey, $targetGroupIds);
+$dbgResult = fetch_conventus_emails_debug($conventusKey, $targetGroupIds);
+$emails    = $dbgResult['emails'];
 
 if ($action === 'preview') {
-    echo json_encode(['ok' => true, 'count' => count($emails)]);
+    echo json_encode(['ok' => true, 'count' => count($emails), 'debug' => [
+        'hold_ids_received' => $targetGroupIds,
+        'conventus_fetched' => $dbgResult['total'],
+        'conventus_ok'      => $dbgResult['api_ok'],
+        'sample_groups'     => $dbgResult['sample_groups'],
+    ]]);
     exit;
 }
 
@@ -127,26 +133,30 @@ if ($result['sent'] === 0 && $result['failed'] > 0) {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function fetch_conventus_emails(string $apiKey, array $targetGroupIds): array {
+function fetch_conventus_emails_debug(string $apiKey, array $targetGroupIds): array {
     $ctx = stream_context_create(['http' => ['timeout' => 90, 'ignore_errors' => true]]);
     $url = 'https://www.conventus.dk/dataudv/api/adressebog/get_membres.php?' . http_build_query([
         'forening' => '1031', 'key' => $apiKey, 'relationer' => 'true',
     ]);
     $raw = @file_get_contents($url, false, $ctx);
-    if (!$raw) return [];
+    if (!$raw) return ['emails' => [], 'total' => 0, 'api_ok' => false, 'sample_groups' => []];
+
     if (preg_match('/encoding=["\']ISO-8859-1["\']/i', $raw)) {
         $raw = mb_convert_encoding($raw, 'UTF-8', 'ISO-8859-1');
         $raw = preg_replace('/encoding=["\']ISO-8859-1["\']/i', 'encoding="UTF-8"', $raw);
     }
-    if (strpos(ltrim($raw), '<') !== 0) return [];
+    if (strpos(ltrim($raw), '<') !== 0)
+        return ['emails' => [], 'total' => 0, 'api_ok' => false, 'sample_groups' => []];
 
     $targetSet     = array_flip($targetGroupIds);
     $filterByGroup = !empty($targetGroupIds);
     libxml_use_internal_errors(true);
     $reader = new XMLReader();
-    if (!$reader->XML($raw, 'UTF-8', LIBXML_NOERROR | LIBXML_NOWARNING)) return [];
+    if (!$reader->XML($raw, 'UTF-8', LIBXML_NOERROR | LIBXML_NOWARNING))
+        return ['emails' => [], 'total' => 0, 'api_ok' => false, 'sample_groups' => []];
 
-    $seen = [];
+    $seen = []; $total = 0; $sampleGroups = [];
+
     while ($reader->read()) {
         if ($reader->nodeType !== XMLReader::ELEMENT) continue;
         if (strtolower($reader->localName) !== 'membre') continue;
@@ -155,9 +165,21 @@ function fetch_conventus_emails(string $apiKey, array $targetGroupIds): array {
         if (!$xml) continue;
         $k = @simplexml_load_string($xml, 'SimpleXMLElement', LIBXML_NOERROR | LIBXML_NOWARNING);
         if (!$k) continue;
-        if (strtolower(trim((string)($k->slettet ?? ''))) === 'true') continue;
-        // off_email=false → privat email, spring over
+        if (strtolower(trim((string)($k->slettet ?? ''))) === 'true') { unset($k); continue; }
         if (strtolower(trim((string)($k->off_email ?? 'true'))) === 'false') { unset($k); continue; }
+
+        $total++;
+
+        // Indsaml gruppe-IDs fra de første 3 membres til debug
+        if (count($sampleGroups) < 3 && isset($k->relationer)) {
+            $gids = [];
+            foreach ($k->relationer->children() as $relType) {
+                foreach ($relType->children() as $child) {
+                    if (strtolower($child->getName()) === 'gruppe') $gids[] = (int)trim((string)$child);
+                }
+            }
+            $sampleGroups[] = ['name' => trim((string)($k->navn ?? '')), 'groups' => $gids];
+        }
 
         if ($filterByGroup) {
             $inGroup = false;
@@ -178,7 +200,12 @@ function fetch_conventus_emails(string $apiKey, array $targetGroupIds): array {
     }
     $reader->close();
     libxml_clear_errors();
-    return array_keys($seen);
+    return ['emails' => array_keys($seen), 'total' => $total, 'api_ok' => true, 'sample_groups' => $sampleGroups];
+}
+
+// Alias uden debug (bruges ved send)
+function fetch_conventus_emails(string $apiKey, array $targetGroupIds): array {
+    return fetch_conventus_emails_debug($apiKey, $targetGroupIds)['emails'];
 }
 
 // Bulk SMTP: én forbindelse, alle emails igennem den
