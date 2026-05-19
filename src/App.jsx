@@ -2288,6 +2288,7 @@ export default function App() {
   async function loadAndSetUser(fbUser) {
     let profile = {}
     let memberHoldIds = []
+    let lederHoldIds  = []
     try {
       const ref  = doc(db, 'users', fbUser.uid)
       const snap = await getDoc(ref)
@@ -2307,7 +2308,6 @@ export default function App() {
       }
 
       // Hent hold-IDs + leder-relationer fra members-samlingen (synkroniseret fra Conventus).
-      let lederHoldIds = []
       if (fbUser.email) {
         const mSnap = await getDocs(query(
           collection(db, 'members'),
