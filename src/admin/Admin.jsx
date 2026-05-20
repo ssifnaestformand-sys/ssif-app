@@ -2675,11 +2675,12 @@ function UsersPage({ authUser }) {
 // ─── Kommunikation ────────────────────────────────────────────────────────────
 
 function KommunikationPage({ authUser, userDoc }) {
-  const [channel,    setChannel]    = useState('sms')  // 'sms' | 'email'
+  const [channel,    setChannel]    = useState('email') // 'email' | 'sms'
   const [sender,     setSender]     = useState('SSIF') // SMS afsender-ID
   const [subject,    setSubject]    = useState('')      // Email emne
   const [text,       setText]       = useState('')
-  const [scope,      setScope]      = useState('all')  // 'all' | 'gruppe'
+  const [scope,      setScope]      = useState('all')  // 'all' | 'gruppe' | 'manual'
+  const [manualInput,setManualInput]= useState('')      // SMS-kun: manuelle numre
   const [gruppeType, setGruppeType] = useState('')     // 'afdeling' | 'hold'
   const [scopeId,    setScopeId]    = useState('')
   const [holdSearch,    setHoldSearch]    = useState('')
@@ -2719,6 +2720,7 @@ function KommunikationPage({ authUser, userDoc }) {
   // Recipient helpers — hold-IDs beregnes klientside
   function scopeLabel() {
     if (scope === 'all') return 'Alle aktive medlemmer'
+    if (scope === 'manual') return 'Manuelt nummer'
     if (gruppeType === 'afdeling') { const a = afdelinger.find(x => x.id === scopeId); return a ? `Afd: ${a.navn}` : '' }
     if (gruppeType === 'hold') { const h = holds.find(x => String(x.conventus_id) === scopeId); return h ? h.titel : '' }
     return ''
@@ -2731,7 +2733,9 @@ function KommunikationPage({ authUser, userDoc }) {
     return []
   }
 
-  const canSend = text.trim() && (scope === 'all' || (scope === 'gruppe' && scopeId)) && (channel === 'email' ? !!subject.trim() : true)
+  const canSend = text.trim()
+    && (scope === 'all' || (scope === 'gruppe' && scopeId) || (scope === 'manual' && manualInput.trim()))
+    && (channel === 'email' ? !!subject.trim() : true)
   // UCS-2 encoding ved emoji/ikke-GSM7-tegn — reducerer tegn pr. SMS fra 160 til 70
   const GSM7 = '@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜäöñüàÅ§¿abcdefghijklmnopqrstuvwxyz\t\x0b\x0c{}\\[~]|^€'
   const ucs2     = text.length > 0 && [...text].some(c => !GSM7.includes(c))
@@ -2743,7 +2747,8 @@ function KommunikationPage({ authUser, userDoc }) {
 
   function buildBody(action) {
     return JSON.stringify({ action, scope, hold_ids: getHoldIds(), scope_label: scopeLabel(),
-                            sender: sender.trim() || 'SSIF', subject: subject.trim(), text })
+                            sender: sender.trim() || 'SSIF', subject: subject.trim(),
+                            manual_input: manualInput, text })
   }
 
   async function fetchPreview() {
@@ -2761,9 +2766,10 @@ function KommunikationPage({ authUser, userDoc }) {
   }
 
   async function handleSendClick() {
-    if (!text.trim())                          { setError('Skriv en besked'); return }
-    if (channel === 'email' && !subject.trim()){ setError('Skriv et emne'); return }
-    if (scope === 'gruppe' && !scopeId)        { setError('Vælg en gruppe eller et hold'); return }
+    if (!text.trim())                             { setError('Skriv en besked'); return }
+    if (channel === 'email' && !subject.trim())   { setError('Skriv et emne'); return }
+    if (scope === 'gruppe' && !scopeId)           { setError('Vælg en gruppe eller et hold'); return }
+    if (scope === 'manual' && !manualInput.trim()){ setError('Indtast mindst ét telefonnummer'); return }
     const p = preview ?? await fetchPreview()
     if (p) setConfirm(true)
   }
@@ -2778,7 +2784,7 @@ function KommunikationPage({ authUser, userDoc }) {
       const data = await res.json()
       if (data.error) { setError(data.error + (data.detail ? ` (${data.detail})` : '')); return }
       setResult(data)
-      setText(''); setSubject(''); setScopeId(''); setGruppeType(''); setPreview(null)
+      setText(''); setSubject(''); setScopeId(''); setGruppeType(''); setManualInput(''); setPreview(null)
       loadLogs()
     } catch (err) { setError('Netværksfejl: ' + err.message) }
     finally { setSending(false) }
@@ -2822,8 +2828,8 @@ function KommunikationPage({ authUser, userDoc }) {
           {/* Kanal-switcher */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', background: '#f1f3f5', borderRadius: 12, padding: 4, gap: 4 }}>
             {[
-              { key: 'sms',   icon: 'sms',  label: 'SMS',   sub: 'Via GatewayAPI · ~0,40 kr./besked' },
               { key: 'email', icon: 'mail', label: 'Email', sub: 'Via SMTP · gratis' },
+              { key: 'sms',   icon: 'sms',  label: 'SMS',   sub: 'Via GatewayAPI · ~0,40 kr./SMS' },
             ].map(ch => (
               <button key={ch.key} onClick={() => switchChannel(ch.key)} style={{
                 display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
@@ -2916,7 +2922,11 @@ function KommunikationPage({ authUser, userDoc }) {
             <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>Modtagere</p>
 
             <div style={{ display: 'flex', background: '#f1f3f5', borderRadius: 8, padding: 3, gap: 3, marginBottom: 14 }}>
-              {[{ v: 'all', l: 'Alle aktive' }, { v: 'gruppe', l: 'Gruppe / Hold' }].map(o => (
+              {[
+                { v: 'all',    l: 'Alle aktive' },
+                { v: 'gruppe', l: 'Gruppe / Hold' },
+                ...(channel === 'sms' ? [{ v: 'manual', l: 'Manuelt nr.' }] : []),
+              ].map(o => (
                 <button key={o.v} onClick={() => { setScope(o.v); setScopeId(''); setGruppeType(''); setPreview(null) }}
                   style={{ flex: 1, padding: '7px 0', fontSize: 13, fontWeight: scope === o.v ? 600 : 400,
                            background: scope === o.v ? 'white' : 'transparent', border: 'none', borderRadius: 6,
@@ -2926,6 +2936,19 @@ function KommunikationPage({ authUser, userDoc }) {
                 </button>
               ))}
             </div>
+
+            {scope === 'manual' && channel === 'sms' && (
+              <>
+                <textarea className="form-control" rows={2}
+                  style={{ fontFamily: 'monospace', fontSize: 13, resize: 'none' }}
+                  placeholder={'22391328, +4512345678, …  (komma, semikolon eller linjeskift)'}
+                  value={manualInput}
+                  onChange={e => { setManualInput(e.target.value); setPreview(null) }}
+                  autoComplete="off"
+                />
+                <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 5 }}>Danske numre antages +45</p>
+              </>
+            )}
 
             {scope === 'gruppe' && (
               <>
