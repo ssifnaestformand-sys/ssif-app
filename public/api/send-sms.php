@@ -121,6 +121,7 @@ if ($action === 'preview') {
                  'conventus_fetched'  => $result['total'],
                  'conventus_ok'       => $result['api_ok'],
                  'sample_groups'      => $result['sample_groups'],
+                 'raw_prefix'         => $result['raw_prefix'] ?? '',
              ]];
     echo json_encode($resp);
     exit;
@@ -202,9 +203,11 @@ function fetch_conventus_msisdns_debug(string $apiKey, array $targetGroupIds, bo
         $raw = mb_convert_encoding($raw, 'UTF-8', 'ISO-8859-1');
         $raw = preg_replace('/encoding=["\']ISO-8859-1["\']/i', 'encoding="UTF-8"', $raw);
     }
-    if (strpos(ltrim($raw), '<') !== 0) return ['msisdns' => [], 'total' => 0, 'api_ok' => false, 'sample_groups' => []];
+    if (strpos(ltrim($raw), '<') !== 0) return ['msisdns' => [], 'total' => 0, 'api_ok' => false, 'sample_groups' => [], 'raw_prefix' => substr($raw, 0, 200)];
 
-    return parse_msisdns_from_xml($raw, $targetGroupIds, $debug);
+    $result = parse_msisdns_from_xml($raw, $targetGroupIds, $debug);
+    if ($debug) $result['raw_prefix'] = substr($raw, 0, 300); // første 300 tegn af XML
+    return $result;
 }
 
 // Behold den gamle signatur som alias (bruges af send_and_log indirekte)

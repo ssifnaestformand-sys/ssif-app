@@ -3063,6 +3063,12 @@ function KommunikationPage({ authUser, userDoc }) {
                       <span style={{ color: 'var(--text3)', minWidth: 16 }}>→</span>
                       <span>Hold-ID sendt til server: <code style={{ background: '#f0f0f0', padding: '1px 5px', borderRadius: 4 }}>{JSON.stringify(preview.debug.hold_ids_received)}</code></span>
                     </div>
+                    {preview.debug.raw_prefix && (
+                      <div style={{ marginTop: 6 }}>
+                        <p style={{ color: 'var(--text3)', marginBottom: 4 }}>Første 300 tegn af Conventus XML-svar:</p>
+                        <pre style={{ background: '#f0f0f0', padding: '6px 10px', borderRadius: 6, fontSize: 10, overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all', margin: 0 }}>{preview.debug.raw_prefix}</pre>
+                      </div>
+                    )}
                     {preview.debug.sample_groups?.length > 0 && (
                       <div style={{ marginTop: 4 }}>
                         <p style={{ color: 'var(--text3)', marginBottom: 4 }}>
