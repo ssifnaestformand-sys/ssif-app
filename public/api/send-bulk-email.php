@@ -159,7 +159,7 @@ function fetch_conventus_emails_debug(string $apiKey, array $targetGroupIds): ar
 
     while ($reader->read()) {
         if ($reader->nodeType !== XMLReader::ELEMENT) continue;
-        if (strtolower($reader->localName) !== 'membre') continue;
+        if (strtolower($reader->localName) !== 'medlem') continue;
         if ($reader->depth !== 2) continue;
         $xml = $reader->readOuterXml(); $reader->next();
         if (!$xml) continue;

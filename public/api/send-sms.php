@@ -231,7 +231,7 @@ function parse_msisdns_from_xml(string $raw, array $targetGroupIds, bool $debug 
 
     while ($reader->read()) {
         if ($reader->nodeType !== XMLReader::ELEMENT) continue;
-        if (strtolower($reader->localName) !== 'membre') continue;
+        if (strtolower($reader->localName) !== 'medlem') continue;
         if ($reader->depth !== 2) continue;
 
         $xml = $reader->readOuterXml();
