@@ -88,7 +88,7 @@ if ($scope === 'manual') {
                           'estimatedCost' => round(count($msisdns) * $parts * SMS_PRICE_DKK, 2)]);
         exit;
     }
-    send_and_log($msisdns, $text, $parts, $scope, 'Manuel', $callerUid, $callerName, $projectId, $fsToken, $sa);
+    send_and_log($msisdns, $text, $parts, $scope, 'Manuel', $callerUid, $callerName, $projectId, $fsToken, $sa, $smsSender);
     exit;
 }
 
@@ -129,7 +129,7 @@ if ($action === 'preview') {
     exit;
 }
 
-send_and_log($msisdns, $text, $parts, $scope, $scopeLabel, $callerUid, $callerName, $projectId, $fsToken, $sa);
+send_and_log($msisdns, $text, $parts, $scope, $scopeLabel, $callerUid, $callerName, $projectId, $fsToken, $sa, $smsSender);
 
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -292,7 +292,8 @@ function parse_msisdns_from_xml(string $raw, array $targetGroupIds, bool $debug 
 
 // ── GatewayAPI + Firestore-log ────────────────────────────────────────────────
 function send_and_log(array $msisdns, string $text, int $parts, string $scope, string $scopeLabel,
-                      string $uid, string $name, string $projectId, string $fsToken, array $sa): void {
+                      string $uid, string $name, string $projectId, string $fsToken, array $sa,
+                      string $smsSender = 'SSIF'): void {
     if (empty($msisdns)) {
         echo json_encode(['ok' => true, 'sent' => 0, 'message' => 'Ingen modtagere fundet']);
         return;
