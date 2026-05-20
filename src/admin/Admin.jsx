@@ -3063,9 +3063,22 @@ function KommunikationPage({ authUser, userDoc }) {
                       <span style={{ color: 'var(--text3)', minWidth: 16 }}>→</span>
                       <span>Hold-ID sendt til server: <code style={{ background: '#f0f0f0', padding: '1px 5px', borderRadius: 4 }}>{JSON.stringify(preview.debug.hold_ids_received)}</code></span>
                     </div>
+                    {preview.debug.key_length != null && (
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <span style={{ color: preview.debug.key_length > 10 ? 'var(--green)' : '#dc2626', fontWeight: 700 }}>
+                          {preview.debug.key_length > 10 ? '✓' : '✗'}
+                        </span>
+                        <span>
+                          CONVENTUS_KEY: {preview.debug.key_length} tegn
+                          {preview.debug.key_hint && <code style={{ marginLeft: 6, background: '#f0f0f0', padding: '1px 5px', borderRadius: 4 }}>{preview.debug.key_hint}</code>}
+                          {preview.debug.key_length === 25 && <strong style={{ color: '#dc2626', marginLeft: 6 }}>← PLACEHOLDER ikke erstattet af deploy!</strong>}
+                          {preview.debug.key_length === 0 && <strong style={{ color: '#dc2626', marginLeft: 6 }}>← Nøgle mangler</strong>}
+                        </span>
+                      </div>
+                    )}
                     {preview.debug.raw_prefix && (
                       <div style={{ marginTop: 6 }}>
-                        <p style={{ color: 'var(--text3)', marginBottom: 4 }}>Første 300 tegn af Conventus XML-svar:</p>
+                        <p style={{ color: 'var(--text3)', marginBottom: 4 }}>Første 300 tegn af Conventus svar:</p>
                         <pre style={{ background: '#f0f0f0', padding: '6px 10px', borderRadius: 6, fontSize: 10, overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all', margin: 0 }}>{preview.debug.raw_prefix}</pre>
                       </div>
                     )}

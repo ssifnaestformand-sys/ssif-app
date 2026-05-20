@@ -122,6 +122,8 @@ if ($action === 'preview') {
                  'conventus_ok'       => $result['api_ok'],
                  'sample_groups'      => $result['sample_groups'],
                  'raw_prefix'         => $result['raw_prefix'] ?? '',
+                 'key_length'         => strlen($conventusKey),
+                 'key_hint'           => strlen($conventusKey) > 4 ? substr($conventusKey,0,2).'...'.substr($conventusKey,-2) : '(tom)',
              ]];
     echo json_encode($resp);
     exit;
