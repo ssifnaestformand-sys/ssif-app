@@ -191,7 +191,7 @@ function to_msisdn(string $number, string $dialCode = '45'): ?int {
 // ── Hent MSISDNs fra Conventus (med debug-info) ───────────────────────────────
 function fetch_conventus_msisdns_debug(string $apiKey, array $targetGroupIds, bool $debug): array {
     $ctx = stream_context_create(['http' => ['timeout' => 90, 'ignore_errors' => true]]);
-    $url = 'https://www.conventus.dk/dataudv/api/adressebog/get_membres.php?' . http_build_query([
+    $url = 'https://www.conventus.dk/dataudv/api/adressebog/get_medlemmer.php?' . http_build_query([
         'forening'   => '1031',
         'key'        => $apiKey,
         'relationer' => 'true',

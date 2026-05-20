@@ -135,7 +135,7 @@ if ($result['sent'] === 0 && $result['failed'] > 0) {
 
 function fetch_conventus_emails_debug(string $apiKey, array $targetGroupIds): array {
     $ctx = stream_context_create(['http' => ['timeout' => 90, 'ignore_errors' => true]]);
-    $url = 'https://www.conventus.dk/dataudv/api/adressebog/get_membres.php?' . http_build_query([
+    $url = 'https://www.conventus.dk/dataudv/api/adressebog/get_medlemmer.php?' . http_build_query([
         'forening' => '1031', 'key' => $apiKey, 'relationer' => 'true',
     ]);
     $raw = @file_get_contents($url, false, $ctx);
