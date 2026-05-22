@@ -15,7 +15,7 @@
  *   SMS_API_KEY  — GatewayAPI Token (https://gatewayapi.com)
  */
 
-define('SMS_PRICE_DKK', 0.40); // estimat pr. SMS-del (GatewayAPI, Danmark)
+define('SMS_PRICE_DKK', 0.29); // GatewayAPI, Danmark
 
 require_once __DIR__ . '/_auth.php';
 header('Content-Type: application/json; charset=utf-8');
@@ -307,8 +307,11 @@ function send_and_log(array $msisdns, string $text, int $parts, string $scope, s
     }
 
     // GatewayAPI REST-kald
+    // UCS2-encoding kræves eksplicit for emoji og ikke-GSM7-tegn
     $recipients = array_map(function($m) { return ['msisdn' => $m]; }, $msisdns);
-    $payload    = json_encode(['sender' => $smsSender, 'message' => $text, 'recipients' => $recipients]);
+    $gwParams   = ['sender' => $smsSender, 'message' => $text, 'recipients' => $recipients];
+    if (sms_is_ucs2($text)) $gwParams['encoding'] = 'UCS2';
+    $payload    = json_encode($gwParams);
 
     $gwResp = @file_get_contents('https://gatewayapi.com/rest/mtsms', false, stream_context_create(['http' => [
         'method'        => 'POST',
@@ -339,8 +342,11 @@ function send_and_log(array $msisdns, string $text, int $parts, string $scope, s
         'gatewayIds'    => ['arrayValue'     => ['values' => array_map(function($id) { return ['integerValue' => (string)$id]; }, $gwIds)]],
         'estimatedCost' => ['doubleValue'    => round(count($msisdns) * $parts * SMS_PRICE_DKK, 2)],
     ];
-    if ($actualCost !== null) $logDoc['actualCost'] = ['doubleValue' => (float)$actualCost];
-    if ($currency)            $logDoc['currency']   = ['stringValue' => $currency];
+    // Gem altid i DKK uanset GatewayAPI-kontoens valuta
+    if ($actualCost !== null) {
+        $actualCostDkk = strtoupper($currency) === 'EUR' ? $actualCost * 7.46 : $actualCost;
+        $logDoc['actualCost'] = ['doubleValue' => round((float)$actualCostDkk, 4)];
+    }
 
     @file_get_contents(
         "https://firestore.googleapis.com/v1/projects/{$projectId}/databases/(default)/documents/kommunikation_logs",
@@ -359,7 +365,12 @@ function send_and_log(array $msisdns, string $text, int $parts, string $scope, s
         return;
     }
 
-    $costStr = $actualCost !== null ? round($actualCost * 7.46, 2) . ' kr.' : round(count($msisdns) * $parts * SMS_PRICE_DKK, 2) . ' kr. (estimat)';
+    if ($actualCost !== null) {
+        $costDkk = strtoupper($currency) === 'EUR' ? $actualCost * 7.46 : $actualCost;
+        $costStr = round($costDkk, 2) . ' kr.';
+    } else {
+        $costStr = round(count($msisdns) * $parts * SMS_PRICE_DKK, 2) . ' kr. (estimat)';
+    }
     echo json_encode(['ok' => true, 'sent' => count($msisdns), 'cost' => $costStr]);
 }
 

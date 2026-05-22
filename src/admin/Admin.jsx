@@ -584,221 +584,214 @@ function MessagesPage({ userDoc, authUser }) {
   const afdWithHolds = afdelinger.filter(a => (afdHoldMap[a.id] || []).length > 0)
   const orphans = afdHoldMap['__ingen__'] || []
 
+  // Pill-valg til trænere med få hold, accordion til admin med mange
+  const usePills = availableHolds.length <= 10
+
+  const selHoldNames = availableHolds
+    .filter(h => selectedIds.includes(String(h.conventus_id)))
+    .map(h => h.titel)
+
   return (
     <>
-      <div className="page-header">
-        <h1 className="page-title">Beskeder</h1>
-      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 400px', gap: 24, alignItems: 'start' }}>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '480px 1fr', gap: 20, alignItems: 'start' }}>
-        <div className="card card-pad">
-          <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 14 }}>Send ny besked</h3>
-          <form onSubmit={send}>
-            <div className="form-group">
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                <label className="form-label" style={{ margin: 0 }}>Modtagere</label>
-                {selectedIds.length > 0 && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--green)' }}>
-                      {selectedIds.length} hold valgt
-                    </span>
-                    <button type="button" onClick={() => setSelectedIds([])}
-                      style={{ fontSize: 11, color: 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                      Ryd
-                    </button>
-                  </div>
-                )}
+        {/* ── Venstre: Compose ── */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          {/* Success-banner */}
+          {sendOk && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', background: 'var(--green)', borderRadius: 12, color: 'white' }}>
+              <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(255,255,255,.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Icon name="check" size={17} color="white" sw={2.5} />
               </div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>Besked sendt!</div>
+                <div style={{ fontSize: 12, opacity: .85 }}>
+                  {selHoldNames.length > 0 ? selHoldNames.join(', ') : 'Til valgte hold'}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Compose-kort */}
+          <div style={{ background: 'white', borderRadius: 16, boxShadow: '0 2px 12px rgba(0,0,0,.07)', overflow: 'hidden' }}>
+
+            {/* Hold-vælger header */}
+            <div style={{ padding: '16px 20px 12px', borderBottom: '1px solid var(--sep)' }}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 10 }}>
+                Send til
+              </p>
 
               {holdsLoading ? (
-                <p className="form-hint">Henter hold…</p>
+                <div className="loading-dots"><span/><span/><span/></div>
               ) : availableHolds.length === 0 ? (
-                <p className="form-hint" style={{ color: '#92400e' }}>
-                  Ingen aktive hold — aktivér hold under Hold-siden først.
-                </p>
+                <p style={{ fontSize: 13, color: '#92400e' }}>Ingen aktive hold — aktivér hold under Hold-siden.</p>
+              ) : usePills ? (
+                /* Pill-valg — trænere med få hold */
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {availableHolds.map(h => {
+                    const id  = String(h.conventus_id)
+                    const sel = selectedIds.includes(id)
+                    return (
+                      <button key={id} type="button" onClick={() => toggleId(h.conventus_id)}
+                        style={{ padding: '8px 16px', borderRadius: 20, border: `2px solid ${sel ? 'var(--green)' : 'var(--sep)'}`,
+                                 background: sel ? 'var(--green)' : 'white', color: sel ? 'white' : 'var(--text)',
+                                 fontWeight: sel ? 700 : 400, fontSize: 13, cursor: 'pointer', transition: 'all .15s',
+                                 display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {sel && <Icon name="check" size={12} color="white" sw={2.5} />}
+                        {h.titel}
+                      </button>
+                    )
+                  })}
+                </div>
               ) : (
+                /* Accordion — admin med mange hold */
                 <>
-                  {/* Søgefelt */}
                   <div style={{ position: 'relative', marginBottom: 8 }}>
                     <span style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', display: 'flex' }}>
                       <Icon name="search" size={14} color="var(--text3)" />
                     </span>
-                    <input className="form-control" value={holdSearch}
-                      onChange={e => setHoldSearch(e.target.value)}
-                      placeholder="Søg hold…"
-                      style={{ paddingLeft: 30, paddingRight: holdSearch ? 30 : undefined, fontSize: 13 }} />
-                    {holdSearch && (
-                      <button type="button" onClick={() => setHoldSearch('')}
-                        style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
-                        <Icon name="x" size={14} color="var(--text3)" />
-                      </button>
-                    )}
+                    <input className="form-control" value={holdSearch} onChange={e => setHoldSearch(e.target.value)}
+                      placeholder="Søg hold…" style={{ paddingLeft: 30, fontSize: 13 }} />
                   </div>
-
-                  {/* Hold-liste: flad ved søgning, afdelingsgrupperet ellers */}
-                  <div style={{ border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden', maxHeight: 340, overflowY: 'auto' }}>
-                    {searchActive ? (
-                      filteredHolds.length === 0 ? (
-                        <p style={{ padding: '12px 14px', fontSize: 13, color: 'var(--text3)', margin: 0 }}>Ingen hold matcher "{holdSearch}"</p>
-                      ) : filteredHolds.map((h, i) => {
-                        const id = String(h.conventus_id)
-                        const checked = selectedIds.includes(id)
-                        return (
-                          <div key={id}>
-                            {i > 0 && <div style={{ height: 1, background: 'var(--border)' }} />}
-                            <label className={`hold-check-label ${checked ? 'selected' : ''}`}
-                                   style={{ gridColumn: 'unset', borderRadius: 0, margin: 0 }}>
-                              <input type="checkbox" checked={checked} onChange={() => toggleId(h.conventus_id)} />
-                              <span>
-                                {h.titel}
-                                {h.aktivitet_titel && <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 6 }}>({h.aktivitet_titel})</span>}
+                  <div style={{ border: '1px solid var(--sep)', borderRadius: 8, overflow: 'hidden', maxHeight: 280, overflowY: 'auto' }}>
+                    {searchActive ? filteredHolds.map((h, i) => {
+                      const id = String(h.conventus_id); const chk = selectedIds.includes(id)
+                      return (
+                        <label key={id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', cursor: 'pointer', background: chk ? '#f0fdf4' : 'white', borderBottom: '1px solid var(--sep)' }}>
+                          <input type="checkbox" checked={chk} onChange={() => toggleId(h.conventus_id)} />
+                          <span style={{ fontSize: 13, fontWeight: chk ? 600 : 400, color: chk ? 'var(--green)' : 'var(--text)' }}>{h.titel}</span>
+                          {chk && <Icon name="check" size={13} color="var(--green)" sw={2.5} />}
+                        </label>
+                      )
+                    }) : afdWithHolds.map(afd => {
+                      const holds = afdHoldMap[afd.id] || []
+                      const isOpen = openAfd.has(afd.id)
+                      const afdIds = holds.map(h => String(h.conventus_id))
+                      const allChk = afdIds.every(id => selectedIds.includes(id))
+                      const someChk = afdIds.some(id => selectedIds.includes(id))
+                      return (
+                        <div key={afd.id} style={{ borderBottom: '1px solid var(--sep)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', background: someChk ? '#f0fdf4' : '#f8f9fa', gap: 8 }}>
+                            <input type="checkbox" checked={allChk}
+                              ref={el => { if (el) el.indeterminate = someChk && !allChk }}
+                              onChange={() => toggleAllInAfd(holds)} />
+                            <button type="button" onClick={() => toggleAfd(afd.id)}
+                              style={{ flex: 1, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <span style={{ fontSize: 13, fontWeight: 600, color: someChk ? 'var(--green)' : 'var(--text)' }}>{afd.navn || afd.id}</span>
+                              <span style={{ fontSize: 11, color: 'var(--text3)' }}>
+                                {someChk ? `${afdIds.filter(id => selectedIds.includes(id)).length}/${holds.length}` : holds.length + ' hold'} {isOpen ? '▲' : '▼'}
                               </span>
-                            </label>
+                            </button>
                           </div>
-                        )
-                      })
-                    ) : (
-                      <>
-                        {afdWithHolds.map(afd => {
-                          const holds = afdHoldMap[afd.id] || []
-                          const isOpen = openAfd.has(afd.id)
-                          const afdIds = holds.map(h => String(h.conventus_id))
-                          const allChk = afdIds.length > 0 && afdIds.every(id => selectedIds.includes(id))
-                          const someChk = afdIds.some(id => selectedIds.includes(id))
-                          return (
-                            <div key={afd.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', padding: '7px 10px', background: 'var(--bg)', gap: 8 }}>
-                                <input type="checkbox" checked={allChk} ref={el => { if (el) el.indeterminate = someChk && !allChk }}
-                                  onChange={() => toggleAllInAfd(holds)} style={{ flexShrink: 0 }} />
-                                <button type="button" onClick={() => toggleAfd(afd.id)}
-                                  style={{ flex: 1, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{afd.navn || afd.id}</span>
-                                  <span style={{ fontSize: 11, color: 'var(--text3)' }}>
-                                    {someChk ? `${afdIds.filter(id => selectedIds.includes(id)).length}/${holds.length} valgt` : holds.length + ' hold'}
-                                    {' '}{isOpen ? '▲' : '▼'}
-                                  </span>
-                                </button>
-                              </div>
-                              {isOpen && holds.map((h, i) => {
-                                const id = String(h.conventus_id)
-                                const checked = selectedIds.includes(id)
-                                return (
-                                  <div key={id}>
-                                    {<div style={{ height: 1, background: 'var(--border)', marginLeft: 36 }} />}
-                                    <label className={`hold-check-label ${checked ? 'selected' : ''}`}
-                                           style={{ gridColumn: 'unset', borderRadius: 0, margin: 0, paddingLeft: 28 }}>
-                                      <input type="checkbox" checked={checked} onChange={() => toggleId(h.conventus_id)} />
-                                      {h.titel}
-                                    </label>
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          )
-                        })}
-                        {orphans.length > 0 && (
-                          <div>
-                            <div style={{ display: 'flex', alignItems: 'center', padding: '7px 10px', background: 'var(--bg)', gap: 8 }}>
-                              <input type="checkbox"
-                                checked={orphans.map(h => String(h.conventus_id)).every(id => selectedIds.includes(id))}
-                                ref={el => { if (el) el.indeterminate = orphans.some(h => selectedIds.includes(String(h.conventus_id))) && !orphans.every(h => selectedIds.includes(String(h.conventus_id))) }}
-                                onChange={() => toggleAllInAfd(orphans)} />
-                              <button type="button" onClick={() => toggleAfd('__ingen__')}
-                                style={{ flex: 1, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>Øvrige hold</span>
-                                <span style={{ fontSize: 11, color: 'var(--text3)' }}>{openAfd.has('__ingen__') ? '▲' : '▼'}</span>
-                              </button>
-                            </div>
-                            {openAfd.has('__ingen__') && orphans.map(h => {
-                              const id = String(h.conventus_id)
-                              const checked = selectedIds.includes(id)
-                              return (
-                                <div key={id}>
-                                  <div style={{ height: 1, background: 'var(--border)', marginLeft: 36 }} />
-                                  <label className={`hold-check-label ${checked ? 'selected' : ''}`}
-                                         style={{ gridColumn: 'unset', borderRadius: 0, margin: 0, paddingLeft: 28 }}>
-                                    <input type="checkbox" checked={checked} onChange={() => toggleId(h.conventus_id)} />
-                                    {h.titel}
-                                  </label>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )}
-                      </>
-                    )}
+                          {isOpen && holds.map(h => {
+                            const id = String(h.conventus_id); const chk = selectedIds.includes(id)
+                            return (
+                              <label key={id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px 8px 32px', cursor: 'pointer', background: chk ? '#f0fdf4' : 'white', borderTop: '1px solid var(--sep)' }}>
+                                <input type="checkbox" checked={chk} onChange={() => toggleId(h.conventus_id)} />
+                                <span style={{ fontSize: 13, flex: 1, color: chk ? 'var(--green)' : 'var(--text)', fontWeight: chk ? 600 : 400 }}>{h.titel}</span>
+                              </label>
+                            )
+                          })}
+                        </div>
+                      )
+                    })}
                   </div>
-                  {selectedIds.length === 0 && <p className="form-hint" style={{ marginTop: 6 }}>Vælg mindst ét hold</p>}
                 </>
+              )}
+
+              {selectedIds.length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
+                  <span style={{ fontSize: 12, color: 'var(--green)', fontWeight: 600 }}>
+                    {selectedIds.length === 1
+                      ? selHoldNames[0]
+                      : `${selectedIds.length} hold valgt`}
+                  </span>
+                  <button type="button" onClick={() => setSelectedIds([])}
+                    style={{ fontSize: 12, color: 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                    Ryd valg
+                  </button>
+                </div>
               )}
             </div>
 
-            <div className="form-group">
-              <label className="form-label">Besked</label>
+            {/* Beskedfeltet */}
+            <div style={{ padding: '0 0 0 0' }}>
               <textarea
-                className="form-control"
                 value={text}
                 onChange={e => setText(e.target.value)}
-                placeholder="Skriv din besked her…"
-                rows={4}
-                required
+                placeholder={selectedIds.length > 0 ? `Skriv en besked til ${selHoldNames[0] || 'holdet'}…` : 'Vælg et hold og skriv din besked…'}
+                rows={5}
+                style={{ width: '100%', border: 'none', outline: 'none', resize: 'none', fontFamily: 'inherit',
+                         fontSize: 15, lineHeight: 1.6, padding: '18px 20px', background: 'transparent',
+                         color: 'var(--text)', boxSizing: 'border-box' }}
               />
             </div>
-            {sendOk && (
-              <p style={{ fontSize: 13, color: '#16a34a', fontWeight: 600, textAlign: 'center', marginBottom: 8 }}>
-                ✓ Besked sendt!
-              </p>
-            )}
-            <button
-              className="btn btn-primary"
-              style={{ width: '100%', height: 40 }}
-              disabled={!text.trim() || selectedIds.length === 0}
-            >
-              <Icon name="send" size={15} color="white" />
-              Send besked
-            </button>
-          </form>
+
+            {/* Send-knap */}
+            <div style={{ padding: '0 16px 16px' }}>
+              <button
+                type="button"
+                onClick={send}
+                disabled={!text.trim() || selectedIds.length === 0}
+                style={{ width: '100%', padding: '13px 20px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                         background: text.trim() && selectedIds.length > 0 ? 'var(--green)' : '#e5e7eb',
+                         color: text.trim() && selectedIds.length > 0 ? 'white' : 'var(--text3)',
+                         fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                         gap: 8, transition: 'all .2s' }}>
+                <Icon name="send" size={16} color={text.trim() && selectedIds.length > 0 ? 'white' : 'var(--text3)'} />
+                {selectedIds.length > 0
+                  ? selectedIds.length === 1 ? `Send til ${selHoldNames[0]}` : `Send til ${selectedIds.length} hold`
+                  : 'Vælg hold og skriv besked'}
+              </button>
+            </div>
+          </div>
         </div>
 
-        <div className="card">
-          <div className="card-header">
-            <span className="card-header-title">Sendte beskeder</span>
-            <span className="text-muted" style={{ fontSize: 12 }}>{messages.length} i alt</span>
+        {/* ── Højre: Beskedhistorik ── */}
+        <div>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
+            <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.07em' }}>Sendte beskeder</p>
+            {messages.length > 0 && <span style={{ fontSize: 12, color: 'var(--text3)' }}>{messages.length} i alt</span>}
           </div>
+
           {msgLoading ? (
             <div className="loading-dots"><span/><span/><span/></div>
           ) : messages.length === 0 ? (
-            <EmptyState icon="message" text="Ingen beskeder sendt endnu" />
+            <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text3)' }}>
+              <Icon name="message" size={32} color="var(--sep)" />
+              <p style={{ marginTop: 12, fontSize: 14 }}>Ingen beskeder sendt endnu</p>
+            </div>
           ) : (
-            <div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {messages.map(m => (
-                <div key={m.id} className="msg-item">
-                  <div className="msg-meta">
-                    <span className="msg-author">{m.afsenderNavn || m.authorName}</span>
-                    <span className="msg-time">{formatDate(m.oprettet || m.createdAt)}</span>
+                <div key={m.id} style={{ background: 'white', borderRadius: 12, padding: '14px 16px', boxShadow: '0 1px 4px rgba(0,0,0,.06)' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <div style={{ display: 'flex', align: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 10, background: 'var(--green-soft)', color: 'var(--green)', fontSize: 12, fontWeight: 700 }}>
+                        {m.holdNavn || '–'}
+                      </span>
+                    </div>
                     <button
-                      className="btn btn-ghost btn-sm"
-                      style={{ marginLeft: 'auto', color: '#dc3545', padding: '2px 6px' }}
                       onClick={async () => {
                         if (window.confirm('Slet denne besked?')) {
                           await deleteDoc(doc(db, 'messages', m.id))
                           loadMessages()
                         }
                       }}
-                    >
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', opacity: .5, flexShrink: 0 }}>
                       <Icon name="trash" size={13} color="#dc3545" />
                     </button>
                   </div>
-                  <p className="msg-text">{m.tekst || m.text}</p>
-                  <div className="msg-holds">
-                    {m.holdNavn ? (
-                      <span className="badge badge-green">{m.holdNavn}</span>
-                    ) : (m.targetHolds ?? []).map((h, i) => (
-                      <HoldPill
-                        key={typeof h === 'object' ? (h.conventus_id ?? i) : h}
-                        holdId={h}
-                      />
-                    ))}
+                  <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: '0 0 8px' }}>
+                    {m.tekst || m.text}
+                  </p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--green)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: 'white', flexShrink: 0 }}>
+                      {(m.afsenderNavn || '?')[0].toUpperCase()}
+                    </div>
+                    <span style={{ fontSize: 12, color: 'var(--text2)' }}>{m.afsenderNavn || '–'}</span>
+                    <span style={{ fontSize: 12, color: 'var(--text3)' }}>· {formatDate(m.oprettet || m.createdAt)}</span>
                   </div>
                 </div>
               ))}
@@ -2793,9 +2786,9 @@ function KommunikationPage({ authUser, userDoc }) {
   // Aktivitetslog stats
   const smsLogs = logs.filter(l => l.channel === 'sms')
   const now     = new Date()
-  const totalSmsKr  = smsLogs.reduce((s, l) => s + (l.actualCost != null ? l.actualCost * 7.46 : (l.estimatedCost ?? 0)), 0)
+  const totalSmsKr  = smsLogs.reduce((s, l) => s + (l.actualCost != null ? l.actualCost : (l.estimatedCost ?? 0)), 0)
   const monthSmsKr  = smsLogs.filter(l => { const d = l.sentAt?.toDate?.(); return d && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() })
-                             .reduce((s, l) => s + (l.actualCost != null ? l.actualCost * 7.46 : (l.estimatedCost ?? 0)), 0)
+                             .reduce((s, l) => s + (l.actualCost != null ? l.actualCost : (l.estimatedCost ?? 0)), 0)
 
   // Hold-træ
   const holdSearchQ = holdSearch.toLowerCase()
@@ -2810,7 +2803,7 @@ function KommunikationPage({ authUser, userDoc }) {
 
   // ── Confirm dialog tekst ───────────────────────────────────────────────────────
   const confirmBody = channel === 'sms'
-    ? `Send SMS til ${preview?.count ?? '?'} modtagere · estimeret ${preview?.estimatedCost ?? '?'} kr. (~0,40 kr./SMS)`
+    ? `Send SMS til ${preview?.count ?? '?'} modtagere · estimeret ${preview?.estimatedCost ?? '?'} kr. (~0,29 kr./SMS)`
     : `Send email til ${preview?.count ?? '?'} modtagere via noreply@sejssvejbaek-if.dk`
 
   return (
@@ -2829,7 +2822,7 @@ function KommunikationPage({ authUser, userDoc }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', background: '#f1f3f5', borderRadius: 12, padding: 4, gap: 4 }}>
             {[
               { key: 'email', icon: 'mail', label: 'Email', sub: 'Via SMTP · gratis' },
-              { key: 'sms',   icon: 'sms',  label: 'SMS',   sub: 'Via GatewayAPI · ~0,40 kr./SMS' },
+              { key: 'sms',   icon: 'sms',  label: 'SMS',   sub: 'Via GatewayAPI · ~0,29 kr./SMS' },
             ].map(ch => (
               <button key={ch.key} onClick={() => switchChannel(ch.key)} style={{
                 display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
@@ -2885,7 +2878,7 @@ function KommunikationPage({ authUser, userDoc }) {
 
             {/* SMS-tæller */}
             {channel === 'sms' && text.length > 0 && (() => {
-              const costPerRecipient = (smsParts * 0.40).toFixed(2)
+              const costPerRecipient = (smsParts * 0.29).toFixed(2)
               const overLimit = charCount > smsLimit
               return (
                 <>
@@ -3166,7 +3159,7 @@ function KommunikationPage({ authUser, userDoc }) {
             <div>
               {logs.slice(0, 10).map(l => {
                 const isSms  = l.channel === 'sms'
-                const cost   = isSms ? (l.actualCost != null ? `${(l.actualCost*7.46).toFixed(2)} kr.` : l.estimatedCost != null ? `~${l.estimatedCost.toFixed(2)} kr.` : null) : null
+                const cost   = isSms ? (l.actualCost != null ? `${(l.actualCost).toFixed(2)} kr.` : l.estimatedCost != null ? `~${l.estimatedCost.toFixed(2)} kr.` : null) : null
                 return (
                   <div key={l.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '9px 0', borderBottom: '1px solid var(--sep)' }}>
                     <div style={{ width: 30, height: 30, borderRadius: '50%', background: l.ok !== false ? 'var(--green-soft)' : '#fee2e2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 12, fontWeight: 700, color: l.ok !== false ? 'var(--green)' : '#dc2626' }}>
@@ -3190,7 +3183,7 @@ function KommunikationPage({ authUser, userDoc }) {
               })}
             </div>
           )}
-          <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 12, lineHeight: 1.5 }}>~0,40 kr./SMS via GatewayAPI · Email gratis via SMTP</p>
+          <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 12, lineHeight: 1.5 }}>~0,29 kr./SMS via GatewayAPI · Email gratis via SMTP</p>
         </div>
       </div>
 
@@ -3216,7 +3209,7 @@ function KommunikationPage({ authUser, userDoc }) {
                 <tbody>
                   {logs.map(l => {
                     const isSms = l.channel === 'sms'
-                    const cost  = isSms ? (l.actualCost != null ? `${(l.actualCost*7.46).toFixed(2)} kr.` : l.estimatedCost != null ? `~${l.estimatedCost.toFixed(2)} kr.` : '–') : '–'
+                    const cost  = isSms ? (l.actualCost != null ? `${(l.actualCost).toFixed(2)} kr.` : l.estimatedCost != null ? `~${l.estimatedCost.toFixed(2)} kr.` : '–') : '–'
                     return (
                       <tr key={l.id}>
                         <td style={{ fontSize: 12, whiteSpace: 'nowrap', color: 'var(--text2)' }}>{formatDate(l.sentAt)}</td>
