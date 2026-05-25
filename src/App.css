@@ -1304,3 +1304,316 @@ body {
   border-color: rgba(255,255,255,.35);
   border-top-color: white;
 }
+
+/* ─── Compose trigger (træner-knap i feed) ──────────────────────────────────── */
+.compose-trigger {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: calc(100% - 32px);
+  margin: 14px 16px 4px;
+  padding: 16px;
+  background: linear-gradient(135deg, var(--green-mid) 0%, var(--green) 100%);
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity .15s, transform .1s;
+  box-shadow: 0 4px 16px rgba(26,92,42,.35);
+}
+.compose-trigger:active { opacity: .88; transform: scale(.99); }
+
+.compose-trigger-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.compose-trigger-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.compose-trigger-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: white;
+  line-height: 1.2;
+}
+
+.compose-trigger-sub {
+  font-size: 12px;
+  color: rgba(255,255,255,.72);
+}
+
+/* ─── Compose sheet ─────────────────────────────────────────────────────────── */
+.compose-sheet {
+  padding: 20px 16px 28px;
+}
+
+.compose-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.compose-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.compose-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--green-mid) 0%, var(--green) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(26,92,42,.3);
+}
+
+.compose-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.compose-subtitle {
+  font-size: 12px;
+  color: var(--text2);
+  margin-top: 2px;
+}
+
+.compose-close {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--bg);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+  transition: background .15s;
+}
+.compose-close:active { background: var(--sep); }
+
+.compose-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.compose-section {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.compose-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: .6px;
+}
+
+/* Hold chips (≤5 hold) */
+.compose-hold-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.compose-hold-chip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  border: 1.5px solid var(--sep);
+  background: var(--surface);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+  transition: all .15s;
+  box-shadow: var(--shadow);
+}
+.compose-hold-chip:active { transform: scale(.98); }
+
+.compose-hold-chip--active {
+  border-color: var(--green);
+  background: var(--green-soft);
+}
+
+.compose-hold-initials {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--green);
+  color: white;
+  font-size: 12px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.compose-hold-name {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.compose-hold-chip--active .compose-hold-name { color: var(--green); }
+
+/* Dropdown fallback (>5 hold) */
+.compose-select {
+  width: 100%;
+  padding: 13px 14px;
+  border: 1.5px solid var(--sep);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 15px;
+  font-family: inherit;
+  color: var(--text);
+  outline: none;
+  -webkit-appearance: none;
+  box-shadow: var(--shadow);
+}
+.compose-select:focus { border-color: var(--green); }
+
+/* Textarea */
+.compose-textarea-wrap {
+  position: relative;
+}
+
+.compose-textarea {
+  width: 100%;
+  padding: 14px;
+  padding-bottom: 28px;
+  border: 1.5px solid var(--sep);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 15px;
+  font-family: inherit;
+  color: var(--text);
+  line-height: 1.55;
+  resize: none;
+  outline: none;
+  box-shadow: var(--shadow);
+  min-height: 130px;
+  -webkit-appearance: none;
+  transition: border-color .15s;
+}
+.compose-textarea:focus { border-color: var(--green); }
+.compose-textarea::placeholder { color: var(--text3); }
+
+.compose-char-count {
+  position: absolute;
+  bottom: 10px;
+  right: 12px;
+  font-size: 11px;
+  color: var(--text3);
+  pointer-events: none;
+  transition: color .2s;
+}
+.compose-char-count--warn { color: #ff9500; }
+
+/* Send-knap */
+.compose-send-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  height: 52px;
+  border-radius: 14px;
+  border: none;
+  background: linear-gradient(135deg, var(--green-mid) 0%, var(--green) 100%);
+  color: white;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  transition: opacity .15s, transform .1s;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: 0 4px 16px rgba(26,92,42,.35);
+}
+.compose-send-btn:active { opacity: .85; transform: scale(.98); }
+.compose-send-btn:disabled {
+  opacity: .4;
+  cursor: default;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Success state */
+.compose-success {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 52px 24px;
+  text-align: center;
+}
+
+.compose-success-icon {
+  width: 90px;
+  height: 90px;
+  border-radius: 26px;
+  background: linear-gradient(135deg, var(--green-mid) 0%, var(--green) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 28px rgba(26,92,42,.4);
+  margin-bottom: 6px;
+}
+
+.compose-success-title {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.compose-success-body {
+  font-size: 15px;
+  color: var(--text2);
+  line-height: 1.5;
+}
+
+.compose-success-hold {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 18px;
+  border-radius: 20px;
+  background: var(--green-soft);
+  color: var(--green);
+  font-size: 14px;
+  font-weight: 700;
+  margin-top: 2px;
+  border: 1.5px solid rgba(26,92,42,.15);
+}

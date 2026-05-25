@@ -1542,37 +1542,112 @@ function ComposeSheet({ user, onClose }) {
     }
   }
 
+  const selectedHold = holds.find(h => String(h.conventus_id) === holdId)
+  const MAX_CHARS = 500
+
   if (done) return (
-    <div style={{ padding: '60px 24px', textAlign: 'center' }}>
-      <div style={{ fontSize: 44, marginBottom: 10 }}>✅</div>
-      <p style={{ fontSize: 17, fontWeight: 700 }}>Besked sendt!</p>
+    <div className="compose-success">
+      <div className="compose-success-icon">
+        <Icon name="check-circle" size={52} color="white" />
+      </div>
+      <h3 className="compose-success-title">Besked sendt!</h3>
+      <p className="compose-success-body">Holdet modtager din besked nu</p>
+      {selectedHold && (
+        <div className="compose-success-hold">{selectedHold.titel}</div>
+      )}
     </div>
   )
 
   return (
-    <div style={{ padding: '16px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)' }}>Ny besked</h2>
-        <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
-          <Icon name="x" size={22} color="var(--text3)" />
+    <div className="compose-sheet">
+      {/* Header */}
+      <div className="compose-header">
+        <div className="compose-header-left">
+          <div className="compose-icon">
+            <Icon name="send" size={18} color="white" />
+          </div>
+          <div>
+            <h2 className="compose-title">Ny besked</h2>
+            <p className="compose-subtitle">Send til dit hold</p>
+          </div>
+        </div>
+        <button onClick={onClose} className="compose-close" type="button" aria-label="Luk">
+          <Icon name="x" size={20} color="var(--text3)" />
         </button>
       </div>
-      <form onSubmit={send}>
-        <div style={{ marginBottom: 14 }}>
-          <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 6 }}>Send til hold</label>
-          <select className="form-control" value={holdId} onChange={e => setHoldId(e.target.value)} required style={{ fontSize: 15 }}>
-            <option value="">Vælg hold…</option>
-            {holds.map(h => <option key={h.conventus_id} value={String(h.conventus_id)}>{h.titel}</option>)}
-          </select>
+
+      <form onSubmit={send} className="compose-form">
+        {/* Holdvælger */}
+        <div className="compose-section">
+          <label className="compose-label">
+            <Icon name="users" size={14} color="var(--green)" />
+            Send til hold
+          </label>
+          {holds.length > 0 && holds.length <= 5 ? (
+            <div className="compose-hold-grid">
+              {holds.map(h => {
+                const active = String(h.conventus_id) === holdId
+                return (
+                  <button
+                    key={h.conventus_id}
+                    type="button"
+                    className={`compose-hold-chip${active ? ' compose-hold-chip--active' : ''}`}
+                    onClick={() => setHoldId(String(h.conventus_id))}
+                  >
+                    <span className="compose-hold-initials">
+                      {(h.titel || '?').slice(0, 2).toUpperCase()}
+                    </span>
+                    <span className="compose-hold-name">{h.titel}</span>
+                    {active && <Icon name="check-circle" size={16} color="var(--green)" />}
+                  </button>
+                )
+              })}
+            </div>
+          ) : (
+            <select
+              className="compose-select"
+              value={holdId}
+              onChange={e => setHoldId(e.target.value)}
+              required
+            >
+              <option value="">Vælg hold…</option>
+              {holds.map(h => <option key={h.conventus_id} value={String(h.conventus_id)}>{h.titel}</option>)}
+            </select>
+          )}
         </div>
-        <div style={{ marginBottom: 20 }}>
-          <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 6 }}>Besked</label>
-          <textarea className="form-control" rows={6} value={tekst} onChange={e => setTekst(e.target.value)}
-            placeholder="Skriv din besked til holdet…" required style={{ resize: 'none', fontSize: 15 }} autoFocus />
+
+        {/* Beskedtekst */}
+        <div className="compose-section">
+          <label className="compose-label">
+            <Icon name="message" size={14} color="var(--green)" />
+            Besked
+          </label>
+          <div className="compose-textarea-wrap">
+            <textarea
+              className="compose-textarea"
+              rows={5}
+              value={tekst}
+              onChange={e => setTekst(e.target.value.slice(0, MAX_CHARS))}
+              placeholder="Skriv din besked til holdet…"
+              required
+              autoFocus
+            />
+            <span className={`compose-char-count${tekst.length > MAX_CHARS * 0.85 ? ' compose-char-count--warn' : ''}`}>
+              {tekst.length}/{MAX_CHARS}
+            </span>
+          </div>
         </div>
-        <button className="btn btn-primary" style={{ width: '100%', height: 48, fontSize: 15 }}
-                disabled={saving || !holdId || !tekst.trim()}>
-          {saving ? 'Sender…' : 'Send besked'}
+
+        {/* Send-knap */}
+        <button
+          className="compose-send-btn"
+          type="submit"
+          disabled={saving || !holdId || !tekst.trim()}
+        >
+          {saving
+            ? <><span className="spinner" /> Sender…</>
+            : <><Icon name="send" size={18} color="white" /> Send til {selectedHold?.titel || 'holdet'}</>
+          }
         </button>
       </form>
     </div>
@@ -1643,15 +1718,18 @@ function FeedScreen({ user, onSelectMsg, onMarkSeen, onEnableNotifications }) {
 
   return (
     <div className="screen">
-      {/* Compose knap for trænere */}
+      {/* Compose-hero for trænere */}
       {isTrainer && (
-        <div style={{ padding: '12px 16px 4px' }}>
-          <button className="btn btn-primary" style={{ width: '100%', height: 46, fontSize: 15, gap: 8 }}
-                  onClick={() => setCompose(true)}>
-            <Icon name="send" size={17} color="white" />
-            Send besked til hold
-          </button>
-        </div>
+        <button className="compose-trigger" onClick={() => setCompose(true)}>
+          <div className="compose-trigger-icon">
+            <Icon name="send" size={20} color="white" />
+          </div>
+          <div className="compose-trigger-body">
+            <span className="compose-trigger-title">Send besked til holdet</span>
+            <span className="compose-trigger-sub">Tryk for at skrive en ny besked</span>
+          </div>
+          <Icon name="chevron" size={18} color="rgba(255,255,255,.6)" sw={2.5} />
+        </button>
       )}
 
       <div className="section-header-row">
