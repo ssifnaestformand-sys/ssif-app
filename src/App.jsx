@@ -1504,7 +1504,7 @@ function ComposeSheet({ user, onClose }) {
       .then(snap => {
         let all = snap.docs.map(d => d.data())
         if (user.role !== 'admin') {
-          const mine = new Set((user.holds || []).map(String))
+          const mine = new Set((user.lederHoldIds || []).map(String))
           all = all.filter(h => mine.has(String(h.conventus_id)))
         }
         all.sort((a, b) =>
@@ -2409,10 +2409,8 @@ export default function App() {
         if (memberHoldIds.length > 0) {
           updates.holdIds = [...new Set([...(profile.holdIds || []).map(String), ...memberHoldIds])]
         }
-        // Auto-sæt trainer-rolle hvis personen er leder i Conventus (og ikke allerede admin)
-        if (lederHoldIds.length > 0 && profile.role !== 'admin' && profile.role !== 'trainer') {
-          updates.role = 'trainer'
-        }
+        // Skriv IKKE trainer-rolle til Firestore baseret på Conventus —
+        // app-rollen bestemmes udelukkende af lederHoldIds ved login (se setUser nedenfor)
         updateDoc(ref, updates).catch(() => {})
 
         // Synk lastMsgSeen fra Firestore → localStorage så ulæst-status bevares på tværs af sessioner
@@ -2437,9 +2435,10 @@ export default function App() {
                      || (fbUser.email?.slice(0,2).toUpperCase() ?? 'SS'),
       role:           profile.role === 'admin' ? 'admin'
                     : lederHoldIds.length > 0  ? 'trainer'
-                    : profile.role             || 'Medlem',
+                    : 'Medlem',
       holds:          profile.holds         || [],
       holdIds:        [...new Set([...(profile.holdIds || []).map(String), ...memberHoldIds])],
+      lederHoldIds:   lederHoldIds,
       familyMembers:  profile.familyMembers  || [],
       primaryEmail:   profile.primaryEmail   || fbUser.email || '',
       extraEmails:    profile.extraEmails    || [],
