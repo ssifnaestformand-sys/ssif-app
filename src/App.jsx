@@ -48,6 +48,7 @@ function Icon({ name, size = 24, color = 'currentColor', sw = 1.75 }) {
     bell:          <><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></>,
     eye:           <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>,
     'eye-off':     <><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></>,
+    check:         <polyline points="20 6 9 17 4 12"/>,
     'check-circle':<><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></>,
     'alert-circle':<><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></>,
     'person-circle':<><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></>,
@@ -60,111 +61,6 @@ function Icon({ name, size = 24, color = 'currentColor', sw = 1.75 }) {
     </svg>
   )
 }
-
-
-const TEAMS = [
-  { id: 1, name: 'U6',      category: 'Ungdom', members: 14, coach: 'Lars Jensen',          coachPhone: '50 12 34 56', nextMatch: 'Lør 10. maj · 09:00 · Hjemmebane',           record: [5,1,0], players: ['Sofie M.','Oliver B.','Emma K.','Noah P.','Ida L.','Magnus T.','Freja H.','Victor S.','Mathilde N.','Albert C.','Astrid R.','Mikkel J.','Nanna W.','Emil D.'] },
-  { id: 2, name: 'U8',      category: 'Ungdom', members: 16, coach: 'Maria Christensen',    coachPhone: '40 23 45 67', nextMatch: 'Søn 11. maj · 10:00 · Balle IF (ude)',         record: [5,0,1], players: ['Lukas A.','Clara B.','Benjamin F.','Amalie G.','Sebastian H.','Isabella I.','Tobias J.','Caroline K.','Elias L.','Maja M.','Oskar N.','Silje O.','Adam P.','Lærke Q.','Frederik R.','Alma S.'] },
-  { id: 3, name: 'U10',     category: 'Ungdom', members: 18, coach: 'Søren Andersen',       coachPhone: '30 34 56 78', nextMatch: 'Lør 10. maj · 11:00 · Silkeborg BK (hjemme)', record: [4,2,1], players: ['Emil H.','Mia C.','Johan K.','Nora P.','Marcus L.','Sofia B.','Anton G.','Frida T.','Nikolaj S.','Vera N.','Rasmus V.','Lotte W.','Kasper Y.','Stella Z.','Patrick A.','Luna B.','Felix C.','Rosa D.'] },
-  { id: 4, name: 'U12',     category: 'Ungdom', members: 20, coach: 'Peter Nielsen',        coachPhone: '20 45 67 89', nextMatch: 'Ons 14. maj · 17:00 · Kjellerup IF (ude)',    record: [6,1,2], players: ['Lucas M.','Sara P.','Mikkel R.','Anna S.','Daniel T.','Maria U.','Christian V.','Line W.','Simon X.','Julie Y.','Jakob Z.','Pernille A.','Andreas B.','Camilla C.','Mathias D.','Trine E.','Oliver F.','Katrine G.','Noah H.','Sofie I.'] },
-  { id: 5, name: 'U14',     category: 'Ungdom', members: 17, coach: 'Thomas Hansen',        coachPhone: '61 56 78 90', nextMatch: 'Tir 13. maj · 17:30 · FKSS (ude)',            record: [4,3,2], players: ['Victor L.','Josefine M.','Alexander N.','Cecilie O.','William P.','Emilie Q.','Mads R.','Maja S.','Filip T.','Klara U.','Jeppe V.','Nanna W.','Nicolai X.','Helena Y.','Lasse Z.','Ida A.','Benjamin B.'] },
-  { id: 6, name: 'U16',     category: 'Ungdom', members: 15, coach: 'Mette Larsen',         coachPhone: '71 67 89 01', nextMatch: 'Søn 12. maj · 11:00 · Ikast fBK (hjemme)',   record: [7,1,0], players: ['Marcus L.','Freja M.','Tobias N.','Alberte O.','Jonas P.','Katrine Q.','Rasmus R.','Sofie S.','Christian T.','Maja U.','Oliver V.','Cecilie W.','Andreas X.','Trine Y.','Mikkel Z.'] },
-  { id: 7, name: 'Herrer A',category: 'Senior', members: 22, coach: 'Ole Svendsen',         coachPhone: '81 78 90 12', nextMatch: 'Søn 11. maj · 14:00 · Ans IF (ude)',          record: [8,2,2], players: ['Mads Nielsen','Jonas Pedersen','Henrik Christiansen','Lars Thomsen','Kasper Madsen','Jesper Rasmussen','Søren Lund','Thomas Bjerregaard','Anders Koch','Michael Vestergaard','Poul Holm','Brian Kjær','Niels Steffensen','Henrik Dahl','Claus Møller','Jens Olsen','Martin Falk','Rune Berg','Erik Nygaard','Bo Kristensen','Per Andersen','Kim Paulsen'] },
-  { id: 8, name: 'Herrer B',category: 'Senior', members: 18, coach: 'Mikkel Pedersen',      coachPhone: '91 89 01 23', nextMatch: 'Søn 12. maj · 13:00 · Balle IF (ude)',        record: [5,4,3], players: ['Peter Skov','Lasse Hansen','Carsten Berg','Ole Poulsen','René Christoffersen','Frank Jensen','Johnny Madsen','Allan Larsen','Bent Nielsen','Kurt Thomsen','Finn Andersen','Stig Pedersen','Preben Koch','Vagn Mortensen','Henrik Sørensen','Bjarne Olsen','Jørgen Mikkelsen','Peder Christensen'] },
-  { id: 9, name: 'Damer',   category: 'Senior', members: 16, coach: 'Anne-Mette Sørensen', coachPhone: '42 90 12 34', nextMatch: 'Ons 14. maj · 18:00 · Them IF (ude)',         record: [6,2,1], players: ['Rikke H.','Louise B.','Stine K.','Mette P.','Helle L.','Sanne T.','Pia J.','Dorte S.','Gitte N.','Tina W.','Kirsten V.','Susanne M.','Birgit R.','Anni C.','Lone D.','Anette F.'] },
-]
-
-const NEWS_FALLBACK = [
-  {
-    id: '1', category: 'Kamp', categoryColor: '#1a5c2a',
-    title: 'Storsejer til Herrer A – 4-1 over Balle IF',
-    date: '5. maj 2026',
-    excerpt: 'Herrer A leverede en fremragende præstation og vandt overbevisende 4-1. Mål af Nielsen (2), Pedersen og Christiansen.',
-    body: `Herrer A leverede søndag en fremragende præstation i hjemmekampen mod Balle IF og vandt overbevisende 4-1.\n\nKampen var afgjort allerede til pause, hvor SSIF førte 3-0 takket være to flotte mål fra Mads Nielsen samt et hårdt skud fra Jonas Pedersen.\n\nI anden halvleg satte Henrik Christiansen det endelige punktum til 4-0 inden Balle IF fik ærestreffen med ti minutter igen.\n\n– Det var en rigtig god holdpræstation. Alle trak i samme retning fra første til sidste fløjt, siger træner Ole Svendsen.\n\nNæste kamp er på udebane mod Ans IF søndag den 11. maj kl. 14:00.`,
-  },
-  {
-    id: '2', category: 'Klubnyt', categoryColor: '#5856d6',
-    title: 'Generalforsamling afholdt – ny bestyrelse valgt',
-    date: '28. apr 2026',
-    excerpt: 'SSIF afholdt sin årlige generalforsamling med rekorddeltagelse. Kasper Mikkelsen blev valgt som ny næstformand.',
-    body: `Sejs-Svejbæk IF afholdt mandag aften sin ordinære generalforsamling i klubhuset med rekorddeltagelse på 87 medlemmer.\n\nKasper Mikkelsen blev valgt som ny næstformand efter Peter Kjærsgaard, som valgte at træde tilbage efter seks år. Den øvrige bestyrelse fortsætter uændret.\n\nRegnskabet for 2025 blev godkendt med et lille overskud på 12.400 kr., og der er fortsat god økonomi i klubben.\n\nDer blev desuden besluttet at investere i nye drakter til U12-holdet samt renovere omklædningsrummene til næste sæson.\n\nFormand Henrik Dahl takkede alle frivillige for den store indsats i 2025.`,
-  },
-  {
-    id: '3', category: 'Ungdom', categoryColor: '#ff9500',
-    title: 'U10 vinder årets venskabsturnering i Silkeborg',
-    date: '25. apr 2026',
-    excerpt: 'Vores U10-hold havde en fantastisk dag i Silkeborg og vandt venskabsturneringen med 4 sejre og én uafgjort.',
-    body: `SSIF U10 rejste lørdag til Silkeborg og kom hjem med guldmedaljer fra årets venskabsturnering!\n\nHoldet spillede fem kampe, vandt fire og spillede én uafgjort med to af de bedste hold i rækken. Top-scorer var Emil Hansen med seks mål på dagen.\n\n– Drengene var fantastiske. De spillede teknisk flot fodbold og var mentalt stærke i alle fem kampe. Jeg er så stolt af dem, siger træner Søren Andersen.\n\nHoldet fejrer sejren med pizza og præmieuddeling i klubhuset fredag aften kl. 18:00. Forældre er meget velkomne!`,
-  },
-  {
-    id: '4', category: 'Arrangement', categoryColor: '#ff3b30',
-    title: 'Sommerfest den 21. juni – alle er velkomne!',
-    date: '20. apr 2026',
-    excerpt: 'Sæt allerede nu kryds i kalenderen! Den 21. juni holder vi stor sommerfest med BBQ, musik og sjove aktiviteter.',
-    body: `Kære SSIF-familie!\n\nDen 21. juni 2026 fra kl. 15:00 holder vi årets sommerfest på anlægget. Alle medlemmer, forældre og venner af klubben er velkomne.\n\nPå programmet:\n• BBQ og kolde drikkevarer (tilskud fra klubkassen)\n• Live-musik fra kl. 17\n• Fodboldgolf og aktiviteter for børn\n• Præmieuddeling for sæsonen\n• Hyggelig samvær\n\nTilmelding er ikke nødvendig – mød bare op! Vi glæder os til at se jer alle!`,
-  },
-  {
-    id: '5', category: 'Frivillige', categoryColor: '#34c759',
-    title: 'Tak til alle frivillige på sæsonens første banedag',
-    date: '12. apr 2026',
-    excerpt: 'Over 30 frivillige mødte op og fik anlægget klar til sæsonen. En kæmpe tak til alle der hjalp!',
-    body: `Lørdag den 12. april var der stormøde på SSIF's anlæg, og over 30 frivillige mødte op for at gøre klar til sæsonstart.\n\nOpgaverne var mange: slå græs, male linjer, sætte mål op, rydde op i redskabsskur og male omklædningsrum.\n\nAlle opgaver blev løst på rekordtid, og allerede kl. 14 var anlægget klar til brug.\n\n– Det er fantastisk at se, hvordan vores frivillige møder op og lægger et kæmpe arbejde. Det er dem, der gør SSIF til det, det er, siger formand Henrik Dahl.`,
-  },
-]
-
-const CONVERSATIONS_FALLBACK = [
-  {
-    id: 'conv-1', name: 'Herrer A – Holdsnak', avatar: 'HA', avatarColor: '#1a5c2a', isGroup: true,
-    lastMessage: 'Ole: Husk træning i morgen kl. 18:30! Vi ses på banen 💪', time: '14:22', unread: 3,
-    messages: [
-      { id: 'm1', sender: 'Ole Svendsen',   text: 'God kamp i søndags drenge! Stolt af jer alle 🙌',           time: '10:15', isMe: false },
-      { id: 'm2', sender: 'Mads Nielsen',   text: 'Tak for det! Det var en fed dag',                            time: '10:32', isMe: false },
-      { id: 'm3', sender: 'Mig',            text: 'Ja super kamp. Glæder mig til næste 🔥',                     time: '10:45', isMe: true  },
-      { id: 'm4', sender: 'Jonas Pedersen', text: 'Hvornår spiller vi Ans IF?',                                 time: '11:20', isMe: false },
-      { id: 'm5', sender: 'Ole Svendsen',   text: 'Søndag kl. 14:00. Vi kører samlet fra klubhuset kl. 12:30', time: '11:25', isMe: false },
-      { id: 'm6', sender: 'Mads Nielsen',   text: 'Perfekt, jeg er med 👍',                                     time: '11:40', isMe: false },
-      { id: 'm7', sender: 'Ole Svendsen',   text: 'Husk træning i morgen kl. 18:30! Vi ses på banen 💪',       time: '14:22', isMe: false },
-    ],
-  },
-  {
-    id: 'conv-2', name: 'Peter Hansen', avatar: 'PH', avatarColor: '#5856d6', isGroup: false,
-    lastMessage: 'Dig: Tak! Vi ses fredag 👍', time: 'I går', unread: 0,
-    messages: [
-      { id: 'm1', sender: 'Peter Hansen', text: 'Hej Lars! Kan du hjælpe med at sætte porte op fredag?', time: '09:00', isMe: false },
-      { id: 'm2', sender: 'Mig',          text: 'Ja det kan jeg godt! Hvad tid?',                        time: '09:15', isMe: true  },
-      { id: 'm3', sender: 'Peter Hansen', text: 'Fra kl. 15. Vi er 3-4 stykker i gang',                  time: '09:18', isMe: false },
-      { id: 'm4', sender: 'Mig',          text: 'Tak! Vi ses fredag 👍',                                 time: '09:20', isMe: true  },
-    ],
-  },
-  {
-    id: 'conv-3', name: 'Bestyrelsen', avatar: 'B', avatarColor: '#ff9500', isGroup: true,
-    lastMessage: 'Kasper: Dagsordenen til næste møde er sendt ud på mail', time: 'Man', unread: 1,
-    messages: [
-      { id: 'm1', sender: 'Kasper Mikkelsen', text: 'Hej alle. Næste bestyrelsesmøde er 15. maj kl. 19 i klubhuset', time: 'Man 18:30', isMe: false },
-      { id: 'm2', sender: 'Mig',              text: 'Fin. Jeg er med 👍',                                             time: 'Man 18:45', isMe: true  },
-      { id: 'm3', sender: 'Henrik Dahl',      text: 'Godt. Jeg sætter sommerfest på dagsordenen',                    time: 'Man 18:50', isMe: false },
-      { id: 'm4', sender: 'Kasper Mikkelsen', text: 'Dagsordenen til næste møde er sendt ud på mail',                time: 'Man 19:00', isMe: false },
-    ],
-  },
-  {
-    id: 'conv-4', name: 'Frivillige – Banehold', avatar: 'BH', avatarColor: '#34c759', isGroup: true,
-    lastMessage: 'Lars: Banen er klar til weekenden ✅', time: 'Søn', unread: 0,
-    messages: [
-      { id: 'm1', sender: 'Lars Jensen', text: 'Hvem kan hjælpe med at slå græs lørdag formiddag?', time: 'Søn 09:00', isMe: false },
-      { id: 'm2', sender: 'Mig',         text: 'Jeg kan fra kl. 10',                                 time: 'Søn 09:30', isMe: true  },
-      { id: 'm3', sender: 'Lars Jensen', text: 'Perfekt, tak! Mødes ved skuret',                     time: 'Søn 09:35', isMe: false },
-      { id: 'm4', sender: 'Lars Jensen', text: 'Banen er klar til weekenden ✅',                      time: 'Søn 14:00', isMe: false },
-    ],
-  },
-]
-
-const MATCHES = [
-  { id: 1, team: 'Herrer A', opponent: 'Ans IF',       date: 'Søn 11. maj', time: '14:00', isHome: false },
-  { id: 2, team: 'U10',      opponent: 'Silkeborg BK', date: 'Lør 10. maj', time: '11:00', isHome: true  },
-  { id: 3, team: 'U16',      opponent: 'Ikast fBK',    date: 'Søn 12. maj', time: '11:00', isHome: true  },
-  { id: 4, team: 'Herrer B', opponent: 'Balle IF',     date: 'Søn 12. maj', time: '13:00', isHome: false },
-  { id: 5, team: 'Damer',    opponent: 'Them IF',      date: 'Ons 14. maj', time: '18:00', isHome: false },
-]
 
 // ─── Firebase error codes → Danish messages ──────────────────────────────────
 
@@ -387,21 +283,6 @@ function LoginScreen({ initialError }) {
     } catch (e) {
       setError(AUTH_ERRORS[e.code] || e.message)
     } finally { setLoading(null) }
-  }
-
-  async function handleSubmit(e) {
-    e.preventDefault()
-    if (!email) { setError('Indtast din email'); setPhase('error'); return }
-    setPhase('sending')
-    setError('')
-    try {
-      await sendSignInLinkToEmail(auth, email, ACTION_CODE_SETTINGS)
-      localStorage.setItem(LS_EMAIL_KEY, email)
-      setPhase('sent')
-    } catch (err) {
-      setError(AUTH_ERRORS[err.code] || 'Kunne ikke sende link. Prøv igen.')
-      setPhase('error')
-    }
   }
 
   return (
@@ -1493,11 +1374,12 @@ function MessageDetailScreen({ msg, user, onBack }) {
 }
 
 function ComposeSheet({ user, onClose }) {
-  const [holds,  setHolds]  = useState([])
-  const [holdId, setHoldId] = useState('')
-  const [tekst,  setTekst]  = useState('')
-  const [saving, setSaving] = useState(false)
-  const [done,   setDone]   = useState(false)
+  const [holds,       setHolds]       = useState([])
+  const [holdsReady,  setHoldsReady]  = useState(false)
+  const [holdId,      setHoldId]      = useState('')
+  const [tekst,       setTekst]       = useState('')
+  const [saving,      setSaving]      = useState(false)
+  const [done,        setDone]        = useState(false)
 
   useEffect(() => {
     getDocs(query(collection(db, 'holds'), where('aktiv', '==', true)))
@@ -1513,8 +1395,9 @@ function ComposeSheet({ user, onClose }) {
         )
         setHolds(all)
         if (all.length === 1) setHoldId(String(all[0].conventus_id))
+        setHoldsReady(true)
       })
-      .catch(() => {})
+      .catch(() => { setHoldsReady(true) })
   }, [])
 
   async function send(e) {
@@ -1534,6 +1417,19 @@ function ComposeSheet({ user, onClose }) {
         oprettet:      serverTimestamp(),
         createdAt:     serverTimestamp(),
       })
+      // Fire-and-forget email notification — failure doesn't block UX
+      auth.currentUser?.getIdToken().then(idToken => {
+        fetch('/api/send-message-email.php', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            holdIds:    [holdId],
+            senderName: user.name || user.email,
+            text:       tekst.trim(),
+            holdNavn:   hold?.titel || holdId,
+          }),
+        }).catch(() => {})
+      }).catch(() => {})
       setDone(true)
       setTimeout(onClose, 1400)
     } catch (err) {
@@ -1583,7 +1479,11 @@ function ComposeSheet({ user, onClose }) {
             <Icon name="users" size={14} color="var(--green)" />
             Send til hold
           </label>
-          {holds.length > 0 && holds.length <= 5 ? (
+          {!holdsReady ? (
+            <p className="compose-holds-loading">Henter hold…</p>
+          ) : holds.length === 0 ? (
+            <p className="compose-holds-loading">Ingen hold tilknyttet</p>
+          ) : holds.length <= 5 ? (
             <div className="compose-hold-grid">
               {holds.map(h => {
                 const active = String(h.conventus_id) === holdId
@@ -1780,228 +1680,6 @@ function FeedScreen({ user, onSelectMsg, onMarkSeen, onEnableNotifications }) {
           </div>
         </button>
       </div>
-      <div style={{ height: 8 }} />
-    </div>
-  )
-}
-
-// ─── Familie ──────────────────────────────────────────────────────────────────
-
-const FAM_COLORS = ['#5856d6','#ff9500','#ff3b30','#34c759','#007aff','#af52de','#ff6b35']
-
-function fmtEventDate(dateStr) {
-  if (!dateStr) return '–'
-  const d = new Date(dateStr + 'T12:00:00')
-  return d.toLocaleDateString('da-DK', { weekday: 'short', day: 'numeric', month: 'short' })
-}
-
-function FamilieTab({ user }) {
-  const [holds,   setHolds]   = useState([])
-  const [members, setMembers] = useState(null)
-  const [events,  setEvents]  = useState([])
-  const [showAdd, setShowAdd] = useState(false)
-  const [form,    setForm]    = useState({ name: '', holdId: '' })
-  const [saving,  setSaving]  = useState(false)
-
-  // Hent hold fra Conventus
-  useEffect(() => {
-    fetch('holds.php').then(r => r.json())
-      .then(d => setHolds(d.groups || []))
-      .catch(() => {})
-  }, [])
-
-  // Hent familiemedlemmer fra Firestore
-  useEffect(() => {
-    if (!user?.uid) return
-    getDoc(doc(db, 'users', user.uid)).then(snap => {
-      setMembers(snap.exists() ? (snap.data().familyMembers || []) : [])
-    })
-  }, [user?.uid])
-
-  // Hent kommende begivenheder (getDocs — begivenheder ændres ikke i realtid)
-  useEffect(() => {
-    getDocs(query(collection(db, 'events'), orderBy('date'), limit(40)))
-      .then(snap => setEvents(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
-      .catch(() => {})
-  }, [])
-
-  async function persistMembers(updated) {
-    setMembers(updated)
-    await updateDoc(doc(db, 'users', user.uid), { familyMembers: updated })
-  }
-
-  async function addMember() {
-    if (!form.name.trim() || !form.holdId) return
-    setSaving(true)
-    const hold = holds.find(h => String(h.id) === form.holdId) ?? {}
-    const m = {
-      id:               Date.now().toString(),
-      name:             form.name.trim(),
-      holdId:           form.holdId,
-      holdName:         hold.name ?? '',
-      activityTypeName: hold.activityTypeName ?? '',
-      periode:          hold.periode ?? '',
-      color:            FAM_COLORS[(members?.length ?? 0) % FAM_COLORS.length],
-    }
-    await persistMembers([...(members || []), m])
-    setForm({ name: '', holdId: '' })
-    setShowAdd(false)
-    setSaving(false)
-  }
-
-  const holdIds   = new Set((members || []).map(m => String(m.holdId)))
-  const today     = new Date().toISOString().slice(0, 10)
-  const upcoming  = events
-    .filter(e => e.date >= today && holdIds.has(String(e.holdId)))
-    .slice(0, 15)
-
-  const typeColor = { kamp: '#1a5c2a', træning: '#5856d6', stævne: '#ff9500', arrangement: '#ff3b30' }
-
-  return (
-    <div className="screen">
-
-      {/* ── Egen profil ─────────────────────────────────── */}
-      <SectionHeader title="Min profil" />
-      <div className="list-group">
-        <div className="list-item" style={{ cursor: 'default' }}>
-          <Avatar initials={user.initials} size={40} />
-          <div className="list-item-body" style={{ marginLeft: 12 }}>
-            <span className="list-item-title">{user.name}</span>
-            <span className="list-item-detail">{user.email}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Familiemedlemmer ────────────────────────────── */}
-      <SectionHeader title="Familiemedlemmer" />
-
-      {members === null
-        ? <div style={{ padding: '12px 20px', color: 'var(--text2)', fontSize: 14 }}>Henter…</div>
-        : (
-          <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {members.length === 0 && !showAdd && (
-              <p style={{ fontSize: 14, color: 'var(--text2)', paddingTop: 4 }}>
-                Tilføj børn eller andre familiemedlemmer for at se fælles kalender.
-              </p>
-            )}
-
-            {members.map(m => {
-              const liveHold = holds.find(h => String(h.id) === m.holdId)
-              const periode  = liveHold?.periode || m.periode
-              return (
-                <div key={m.id} className="fam-card">
-                  <div className="fam-dot" style={{ background: m.color }} />
-                  <div className="fam-info">
-                    <span className="fam-name">{m.name}</span>
-                    <span className="fam-hold">{liveHold?.name || m.holdName || '–'}</span>
-                    {liveHold?.activityTypeName && (
-                      <span className="fam-sport">{liveHold.activityTypeName}</span>
-                    )}
-                    {periode && <span className="fam-tid">{periode}</span>}
-                  </div>
-                  <button className="fam-remove" onClick={() => persistMembers(members.filter(x => x.id !== m.id))}>
-                    <Icon name="x" size={16} color="var(--text3)" />
-                  </button>
-                </div>
-              )
-            })}
-
-            {showAdd ? (
-              <div className="fam-add-form">
-                <div className="form-group-inline">
-                  <label className="fam-label">Navn</label>
-                  <input
-                    className="fam-input"
-                    value={form.name}
-                    onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                    placeholder="Barnets navn"
-                    autoFocus
-                  />
-                </div>
-                <div className="form-group-inline">
-                  <label className="fam-label">Hold</label>
-                  <select
-                    className="fam-input"
-                    value={form.holdId}
-                    onChange={e => setForm(f => ({ ...f, holdId: e.target.value }))}
-                  >
-                    <option value="">Vælg hold fra Conventus…</option>
-                    {Object.entries(
-                      holds.reduce((acc, h) => {
-                        ;(acc[h.activityTypeName] = acc[h.activityTypeName] || []).push(h)
-                        return acc
-                      }, {})
-                    ).map(([type, hs]) => (
-                      <optgroup key={type} label={type}>
-                        {hs.map(h => (
-                          <option key={h.id} value={h.id}>{h.name}</option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
-                </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button className="btn btn-primary" style={{ flex: 1 }}
-                    disabled={!form.name.trim() || !form.holdId || saving}
-                    onClick={addMember}>
-                    {saving ? 'Gemmer…' : 'Tilføj'}
-                  </button>
-                  <button className="btn btn-secondary" onClick={() => { setShowAdd(false); setForm({ name: '', holdId: '' }) }}>
-                    Annuller
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <button className="fam-add-btn" onClick={() => setShowAdd(true)}>
-                <Icon name="user-plus" size={17} color="var(--green)" />
-                Tilføj familiemedlem
-              </button>
-            )}
-          </div>
-        )
-      }
-
-      {/* ── Samlet kalender ─────────────────────────────── */}
-      <SectionHeader title="Kommende begivenheder" />
-      {upcoming.length === 0 ? (
-        <div style={{ padding: '12px 20px', color: 'var(--text2)', fontSize: 14 }}>
-          {members?.length === 0
-            ? 'Tilføj familiemedlemmer ovenfor for at se kalender.'
-            : 'Ingen kommende begivenheder registreret endnu.'}
-        </div>
-      ) : (
-        <div className="card-list">
-          {upcoming.map(ev => {
-            const mem  = members?.find(m => String(m.holdId) === String(ev.holdId))
-            const tc   = typeColor[ev.type] || 'var(--text2)'
-            return (
-              <div key={ev.id} className="event-card">
-                <div className="event-date-col">
-                  <span className="event-day">{fmtEventDate(ev.date)}</span>
-                  {ev.time && <span className="event-time">{ev.time}</span>}
-                </div>
-                <div className="event-body">
-                  <div className="event-meta-row">
-                    {ev.type && (
-                      <span className="category-pill" style={{ background: tc + '20', color: tc }}>
-                        {ev.type}
-                      </span>
-                    )}
-                    {mem && (
-                      <span style={{ fontSize: 11, color: mem.color, fontWeight: 600 }}>
-                        {mem.name}
-                      </span>
-                    )}
-                  </div>
-                  <span className="event-title">{ev.title}</span>
-                  {ev.location && <span className="event-loc">{ev.location}</span>}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
       <div style={{ height: 8 }} />
     </div>
   )
@@ -2386,10 +2064,15 @@ export default function App() {
       }
 
       // Hent hold-IDs + leder-relationer fra members-samlingen (synkroniseret fra Conventus).
+      // Inkluder primær email + verificerede extra-emails så trænere registreret med anden email får rettigheder.
       if (fbUser.email) {
+        const verifiedExtras = (profile.extraEmails || [])
+          .filter(e => (typeof e === 'object' ? e.verified : false))
+          .map(e => (typeof e === 'object' ? e.email : e).toLowerCase())
+        const allEmails = [...new Set([fbUser.email.toLowerCase(), ...verifiedExtras])]
         const mSnap = await getDocs(query(
           collection(db, 'members'),
-          where('allEmails', 'array-contains', fbUser.email.toLowerCase())
+          where('allEmails', 'array-contains-any', allEmails.slice(0, 10))
         ))
         mSnap.docs.forEach(d => {
           const data = d.data()
@@ -2409,8 +2092,12 @@ export default function App() {
         if (memberHoldIds.length > 0) {
           updates.holdIds = [...new Set([...(profile.holdIds || []).map(String), ...memberHoldIds])]
         }
-        // Skriv IKKE trainer-rolle til Firestore baseret på Conventus —
-        // app-rollen bestemmes udelukkende af lederHoldIds ved login (se setUser nedenfor)
+        // Synk trainer-rolle med Firestore så PHP-backend kan autorisere korrekt
+        if (lederHoldIds.length > 0 && profile.role !== 'admin') {
+          updates.role = 'trainer'
+        } else if (lederHoldIds.length === 0 && profile.role === 'trainer') {
+          updates.role = 'Medlem'
+        }
         updateDoc(ref, updates).catch(() => {})
 
         // Synk lastMsgSeen fra Firestore → localStorage så ulæst-status bevares på tværs af sessioner
@@ -2617,11 +2304,6 @@ export default function App() {
     )
   }
 
-  // Ikke-verificerede brugere ser kun nyheder
-  if (!user.emailVerified && activeTab !== 'news' && activeTab !== 'profil') {
-    // Stil dem på news-tab første gang
-  }
-
   // ── Header state ─────────────────────────────────────────────────────────
   const TAB_TITLES = { dashboard: 'Hjem', profil: 'Min profil', teams: 'Hold', news: 'Nyheder', messages: 'Beskeder' }
   let headerTitle = TAB_TITLES[activeTab] ?? 'SSIF'
@@ -2629,7 +2311,7 @@ export default function App() {
   let backLabel = null
 
   if (activeTab === 'teams' && selectedTeam) {
-    headerTitle = selectedTeam.name; onBack = () => setSelectedTeam(null); backLabel = 'Hold'
+    headerTitle = selectedTeam.titel || selectedTeam.name; onBack = () => setSelectedTeam(null); backLabel = 'Hold'
   } else if (activeTab === 'news' && selectedArticle) {
     headerTitle = 'Nyhed'; onBack = () => setSelectedArticle(null); backLabel = 'Nyheder'
   } else if (activeTab === 'messages' && selectedMsg) {
