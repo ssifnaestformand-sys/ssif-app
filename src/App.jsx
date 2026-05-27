@@ -1579,7 +1579,33 @@ function TeamsScreen({ onSelectTeam, user, onGoToProfile }) {
   )
 }
 
-function TeamDetailScreen({ team: hold }) {
+function TeamDetailScreen({ team: hold, user }) {
+  const [members,        setMembers]        = useState([])
+  const [membersLoading, setMembersLoading] = useState(false)
+
+  const isTrainerForTeam = user?.role === 'admin' ||
+    (user?.lederHoldIds || []).map(String).includes(String(hold.conventus_id))
+
+  useEffect(() => {
+    if (!isTrainerForTeam) return
+    setMembersLoading(true)
+    getDocs(query(
+      collection(db, 'members'),
+      where('holdIds', 'array-contains', String(hold.conventus_id))
+    ))
+      .then(snap => {
+        const all = snap.docs.map(d => ({
+          conventus_id: d.data().conventus_id,
+          name:  d.data().name || 'Ukendt',
+          email: (d.data().allEmails || [])[0] || '',
+        }))
+        all.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'da'))
+        setMembers(all)
+      })
+      .catch(() => {})
+      .finally(() => setMembersLoading(false))
+  }, [String(hold.conventus_id), isTrainerForTeam])
+
   return (
     <div className="screen">
       <div className="team-hero">
@@ -1634,7 +1660,49 @@ function TeamDetailScreen({ team: hold }) {
         </>
       ) : null}
 
-      <div style={{ height: 8 }} />
+      {/* ── Spillerliste — kun for holdets egne trænere ── */}
+      {isTrainerForTeam && (
+        <>
+          <SectionHeader title={members.length ? `Spillere (${members.length})` : 'Spillere'} />
+          {membersLoading ? (
+            <div style={{ padding: '20px', textAlign: 'center' }}>
+              <div className="loading-dots"><span /><span /><span /></div>
+            </div>
+          ) : members.length === 0 ? (
+            <p style={{ padding: '4px 16px 12px', fontSize: 13, color: 'var(--text3)' }}>
+              Ingen spillere fundet — kør sync-members i admin-panelet.
+            </p>
+          ) : (
+            <div className="list-group">
+              {members.map((m, i) => {
+                const initials = (m.name || '??').split(' ')
+                  .map(w => w[0]).join('').slice(0, 2).toUpperCase()
+                return (
+                  <div key={m.conventus_id ?? i}>
+                    {i > 0 && <div className="list-separator" />}
+                    <div className="list-item" style={{ cursor: 'default' }}>
+                      <div className="list-item-icon"
+                           style={{ background: 'var(--green-soft)', borderRadius: '50%' }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--green)' }}>
+                          {initials}
+                        </span>
+                      </div>
+                      <div className="list-item-body">
+                        <span className="list-item-title">{m.name}</span>
+                        {m.email && (
+                          <span className="list-item-detail">{m.email}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      <div style={{ height: 20 }} />
     </div>
   )
 }
@@ -3605,7 +3673,7 @@ export default function App() {
         ) : activeTab === 'teams' && !selectedTeam ? (
           <TeamsScreen onSelectTeam={setSelectedTeam} user={user} onGoToProfile={() => switchTab('profil')} />
         ) : activeTab === 'teams' && selectedTeam ? (
-          <TeamDetailScreen team={selectedTeam} />
+          <TeamDetailScreen team={selectedTeam} user={user} />
         ) : null}
         {activeTab === 'news' && !selectedArticle && (
           <NewsScreen articles={news} isLive={newsLive} onSelectArticle={setSelectedArticle} />
