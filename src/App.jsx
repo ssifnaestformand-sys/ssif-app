@@ -1081,6 +1081,11 @@ function DashboardScreen({ user, unreadMsgs = 0, news, onNavigate, showPushBanne
     const d = new Date(monday); d.setDate(monday.getDate() + i); return d
   })
 
+  const weekStart = weekDates[0].toISOString().slice(0, 10)
+  const weekEnd   = weekDates[6].toISOString().slice(0, 10)
+  const weekEvents   = events.filter(ev => ev.dato >= weekStart && ev.dato <= weekEnd)
+  const futureEvents = events.filter(ev => ev.dato > weekEnd)
+
   const byDay = [[], [], [], [], [], [], []]
   calHolds.forEach(hold => {
     parseSessions(hold.traeningstider).forEach(({ dayIdx, time }) => {
@@ -1089,7 +1094,22 @@ function DashboardScreen({ user, unreadMsgs = 0, news, onNavigate, showPushBanne
   })
   byDay.forEach(day => day.sort((a, b) => a.time.localeCompare(b.time)))
 
-  const hasSessions = byDay.some(d => d.length > 0)
+  const weekDayItems = weekDates.map((date, i) => {
+    const dato = date.toISOString().slice(0, 10)
+    const trainings = byDay[i].map(s => ({
+      _type: 'træning', time: s.time,
+      label: s.hold.titel,
+      person: personLabel[String(s.hold.conventus_id)] || null,
+      hold: s.hold,
+    }))
+    const evs = weekEvents.filter(ev => ev.dato === dato).map(ev => ({
+      _type: ev.type || 'generel',
+      time: ev.tidStart || '', label: ev.titel, sted: ev.sted || '', ev,
+    }))
+    const items = [...trainings, ...evs].sort((a, b) => (a.time || '').localeCompare(b.time || ''))
+    return { date, i, dato, items }
+  })
+  const hasWeekActivity = weekDayItems.some(d => d.items.length > 0)
 
   return (
     <div className="screen">
@@ -1141,109 +1161,144 @@ function DashboardScreen({ user, unreadMsgs = 0, news, onNavigate, showPushBanne
       {/* ── Sponsor-/reklamebanners ────────────────── */}
       {banners.length > 0 && <BannerCarousel banners={banners} />}
 
-      {/* ── Ugeoversigt ────────────────────────────── */}
-      <SectionHeader title="Træning denne uge" />
+      {/* ── Denne uge (træning + events samlet) ── */}
+      <div style={{ display: 'flex', alignItems: 'center', padding: '20px 16px 10px' }}>
+        <span style={{ flex: 1, fontSize: 16, fontWeight: 700, color: 'var(--text)' }}>Denne uge</span>
+        <button onClick={() => onNavigate('kalender')}
+          style={{ border: 'none', background: 'none', color: 'var(--green)', fontSize: 13, fontWeight: 600, cursor: 'pointer', padding: '4px 0', WebkitTapHighlightColor: 'transparent' }}>
+          Se alt →
+        </button>
+      </div>
       <div style={{ padding: '0 16px 4px' }}>
         <div style={{ background: 'var(--surface)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', overflow: 'hidden' }}>
 
-          {/* Ugestrip */}
-          <div style={{ display: 'flex', borderBottom: '1px solid var(--sep)', padding: '10px 4px 6px' }}>
+          {/* Dag-strip */}
+          <div style={{ display: 'flex', padding: '12px 6px 10px', borderBottom: '1px solid var(--sep)' }}>
             {weekDates.map((date, i) => {
               const isToday = i === todayIdx
               const isPast  = i < todayIdx
-              const hasSess = byDay[i].length > 0
+              const dayItems = weekDayItems[i].items
               return (
-                <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-                  <span style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.3px', color: isToday ? 'var(--green)' : 'var(--text3)' }}>
+                <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.3px', textTransform: 'uppercase', color: isToday ? 'var(--green)' : 'var(--text3)' }}>
                     {DAY_SHORT[i]}
                   </span>
                   <div style={{
-                    width: 26, height: 26, borderRadius: 13,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    width: 28, height: 28, borderRadius: 14,
                     background: isToday ? 'var(--green)' : 'transparent',
                     color: isToday ? 'white' : isPast ? 'var(--text3)' : 'var(--text)',
-                    fontSize: 12, fontWeight: isToday ? 700 : 500,
+                    fontSize: 13, fontWeight: isToday ? 700 : 500,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
                   }}>
                     {date.getDate()}
                   </div>
-                  <div style={{ width: 4, height: 4, borderRadius: 2, background: hasSess ? (isPast ? '#d1d5db' : 'var(--green)') : 'transparent' }} />
+                  <div style={{ display: 'flex', gap: 2, height: 5, alignItems: 'center' }}>
+                    {dayItems.slice(0, 3).map((item, j) => (
+                      <div key={j} style={{
+                        width: 4, height: 4, borderRadius: 2,
+                        background: isPast ? '#d1d5db'
+                          : item._type === 'træning' ? 'var(--green)'
+                          : item._type === 'kamp'    ? '#e65c00'
+                          : '#5856d6',
+                      }} />
+                    ))}
+                  </div>
                 </div>
               )
             })}
           </div>
 
-          {/* Sessions — kompakte linjer */}
-          {hasSessions ? weekDates.map((date, i) => {
-            const sessions = byDay[i]
-            if (!sessions.length) return null
+          {/* Aktivitetsliste */}
+          {!hasWeekActivity ? (
+            <p style={{ padding: '16px', textAlign: 'center', fontSize: 13, color: 'var(--text3)', margin: 0 }}>
+              Ingen aktiviteter denne uge
+            </p>
+          ) : weekDayItems.map(({ date, i, dato, items }) => {
+            if (!items.length) return null
             const isToday = i === todayIdx
             const isPast  = i < todayIdx
-            const dayLabel = isToday
-              ? 'I dag'
+            const dayLabel = isToday ? 'I dag'
               : date.toLocaleDateString('da-DK', { weekday: 'long' }).replace(/^./, c => c.toUpperCase())
             return (
-              <div key={i} style={{ opacity: isPast ? .5 : 1 }}>
-                {/* Dag-label */}
-                <div style={{ padding: '8px 14px 4px', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: isToday ? 'var(--green)' : 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.3px' }}>
+              <div key={dato} style={{ opacity: isPast ? 0.5 : 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px 3px' }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: isToday ? 'var(--green)' : 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.4px' }}>
                     {dayLabel}
                   </span>
-                  {isToday && <span style={{ fontSize: 9, background: 'var(--green)', color: 'white', padding: '1px 6px', borderRadius: 8, fontWeight: 700 }}>I DAG</span>}
+                  {isToday && (
+                    <span style={{ fontSize: 9, background: 'var(--green)', color: 'white', padding: '1px 6px', borderRadius: 8, fontWeight: 800 }}>
+                      I DAG
+                    </span>
+                  )}
+                  <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text3)' }}>
+                    {date.getDate()}. {date.toLocaleDateString('da-DK', { month: 'short' })}
+                  </span>
                 </div>
-                {/* Session-rækker */}
-                {sessions.map((s, j) => {
-                  const person = personLabel[String(s.hold.conventus_id)]
-                  return (
-                    <button key={j} onClick={() => onNavigate('team-detail', s.hold)}
-                      style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '5px 14px', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', WebkitTapHighlightColor: 'transparent' }}>
-                      {/* Tid */}
-                      <span style={{ fontSize: 13, fontWeight: 700, color: isToday ? 'var(--green)' : 'var(--text2)', minWidth: 38, flexShrink: 0 }}>
-                        {s.time || '––'}
-                      </span>
-                      {/* Person + hold */}
-                      <span style={{ flex: 1, fontSize: 14, color: 'var(--text)', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {person
-                          ? <><span style={{ fontWeight: 700 }}>{person}</span><span style={{ color: 'var(--text2)', fontWeight: 400 }}> · {s.hold.titel}</span></>
-                          : <span style={{ fontWeight: 600 }}>{s.hold.titel}</span>
-                        }
-                      </span>
-                      <Icon name="chevron" size={14} color="var(--text3)" sw={2} />
-                    </button>
+                {items.map((item, j) => {
+                  const accentColor = item._type === 'træning' ? 'var(--green)'
+                    : item._type === 'kamp'   ? '#e65c00'
+                    : item._type === 'stævne' ? '#ff9500'
+                    : '#5856d6'
+                  const typeLabel = item._type === 'træning' ? 'Træning'
+                    : item._type === 'kamp'   ? 'Kamp'
+                    : item._type === 'stævne' ? 'Stævne'
+                    : 'Event'
+                  const inner = <>
+                    <div style={{ width: 3, alignSelf: 'stretch', background: accentColor, borderRadius: 2, flexShrink: 0 }} />
+                    <span style={{ fontSize: 12, fontWeight: 700, color: accentColor, minWidth: 42, flexShrink: 0 }}>
+                      {item.time || '——'}
+                    </span>
+                    <span style={{ flex: 1, fontSize: 14, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {item._type === 'træning' && item.person
+                        ? <><b style={{ fontWeight: 700 }}>{item.person}</b><span style={{ color: 'var(--text2)', fontWeight: 400 }}> · {item.label}</span></>
+                        : <span style={{ fontWeight: 600 }}>{item.label}</span>
+                      }
+                    </span>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: accentColor, background: accentColor + '1a', padding: '2px 8px', borderRadius: 20, flexShrink: 0 }}>
+                      {typeLabel}
+                    </span>
+                  </>
+                  const rowStyle = { width: '100%', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, padding: '7px 14px', textAlign: 'left', WebkitTapHighlightColor: 'transparent' }
+                  return item._type === 'træning' ? (
+                    <button key={j} onClick={() => onNavigate('team-detail', item.hold)} style={rowStyle}>{inner}</button>
+                  ) : (
+                    <button key={j} onClick={() => onNavigate('event-detail', item.ev)} style={rowStyle}>{inner}</button>
                   )
                 })}
                 <div style={{ height: 4 }} />
               </div>
             )
-          }) : (
-            <p style={{ padding: '14px', textAlign: 'center', fontSize: 13, color: 'var(--text3)', margin: 0 }}>
-              Ingen træningstider registreret for denne uge
-            </p>
-          )}
+          })}
+
+          <button onClick={() => onNavigate('kalender')}
+            style={{ display: 'block', width: '100%', padding: '11px 14px', border: 'none', background: 'none', color: 'var(--green)', fontSize: 13, fontWeight: 600, textAlign: 'center', borderTop: '1px solid var(--sep)', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}>
+            Vis fuld kalender →
+          </button>
         </div>
       </div>
 
-      {/* ── Kommende begivenheder ─────────────────── */}
-      {eventsCount > 0 && events.length > 0 && (
+      {/* ── Kommende (events efter denne uge) ─────────────────── */}
+      {futureEvents.length > 0 && eventsCount > 0 && (
         <>
-          <SectionHeader title="Kommende begivenheder" />
+          <SectionHeader title="Kommende" />
           <div className="card-list">
-            {events.slice(0, eventsCount).map(ev => {
+            {futureEvents.slice(0, eventsCount).map(ev => {
               const d = ev.dato ? new Date(ev.dato + 'T12:00:00') : null
-              const dateStr = d ? d.toLocaleDateString('da-DK', { weekday: 'short', day: 'numeric', month: 'short' }) : ''
-              const typeColor = { kamp: '#1a5c2a', træning: '#5856d6', generel: '#5856d6', stævne: '#ff9500', arrangement: '#ff3b30' }
+              const typeColor = { kamp: '#e65c00', generel: '#5856d6', stævne: '#ff9500' }
               const color = typeColor[ev.type] || '#5856d6'
               return (
-                <div key={ev.id} style={{
-                  background: 'var(--surface)', borderRadius: 'var(--radius)',
+                <button key={ev.id} onClick={() => onNavigate('event-detail', ev)} style={{
+                  width: '100%', background: 'var(--surface)', borderRadius: 'var(--radius)',
                   padding: '12px 14px', display: 'flex', alignItems: 'center',
-                  gap: 12, boxShadow: 'var(--shadow)',
+                  gap: 12, boxShadow: 'var(--shadow)', border: 'none', cursor: 'pointer',
+                  textAlign: 'left', WebkitTapHighlightColor: 'transparent',
                 }}>
                   <div style={{
                     width: 44, height: 44, borderRadius: 10, background: color + '18',
                     display: 'flex', flexDirection: 'column', alignItems: 'center',
                     justifyContent: 'center', flexShrink: 0,
                   }}>
-                    <span style={{ fontSize: 15, fontWeight: 800, color, lineHeight: 1 }}>
+                    <span style={{ fontSize: 16, fontWeight: 800, color, lineHeight: 1 }}>
                       {d ? d.getDate() : '?'}
                     </span>
                     <span style={{ fontSize: 9, fontWeight: 600, color, textTransform: 'uppercase' }}>
@@ -1252,20 +1307,16 @@ function DashboardScreen({ user, unreadMsgs = 0, news, onNavigate, showPushBanne
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)' }}>{ev.titel}</div>
-                    <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 1 }}>
-                      {dateStr}{ev.tidStart ? ` · ${ev.tidStart}` : ''}{ev.sted ? ` · ${ev.sted}` : ''}
+                    <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>
+                      {ev.holdNavn}{ev.tidStart ? ` · ${ev.tidStart}` : ''}{ev.sted ? ` · ${ev.sted}` : ''}
                     </div>
                   </div>
-                  {ev.type && (
-                    <span style={{
-                      fontSize: 10, fontWeight: 600, color,
-                      background: color + '18', padding: '2px 7px', borderRadius: 20,
-                      flexShrink: 0, textTransform: 'capitalize',
-                    }}>
-                      {ev.type === 'generel' ? 'Event' : ev.type}
+                  {ev.type && ev.type !== 'generel' && (
+                    <span style={{ fontSize: 10, fontWeight: 700, color, background: color + '18', padding: '2px 8px', borderRadius: 20, flexShrink: 0, textTransform: 'capitalize' }}>
+                      {ev.type}
                     </span>
                   )}
-                </div>
+                </button>
               )
             })}
           </div>
@@ -3211,8 +3262,9 @@ export default function App() {
   }
 
   function navigateFromDashboard(dest, data) {
-    if (dest === 'news-detail')  { setActiveTab('news');  setSelectedArticle(data) }
-    else if (dest === 'team-detail') { setActiveTab('teams'); setSelectedTeam(data) }
+    if (dest === 'news-detail')   { setActiveTab('news');     setSelectedArticle(data) }
+    else if (dest === 'team-detail')  { setActiveTab('teams');    setSelectedTeam(data) }
+    else if (dest === 'event-detail') { setActiveTab('kalender'); setSelectedEvent(data) }
     else switchTab(dest)
   }
 
