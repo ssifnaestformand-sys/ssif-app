@@ -68,38 +68,35 @@ if ($raw === false || strlen($raw) < 5) {
     exit;
 }
 
-// ── Encoding-fix (Conventus returnerer ISO-8859-1) ────────────────────────────
-if (preg_match('/encoding=["\']ISO-8859-1["\']/i', $raw)) {
+// Conventus API v2 returnerer JSON (muligvis ISO-8859-1-kodet)
+if (!mb_check_encoding($raw, 'UTF-8')) {
     $raw = mb_convert_encoding($raw, 'UTF-8', 'ISO-8859-1');
-    $raw = preg_replace('/encoding=["\']ISO-8859-1["\']/i', 'encoding="UTF-8"', $raw);
 }
 
-$xml = @simplexml_load_string($raw, 'SimpleXMLElement', LIBXML_NOERROR | LIBXML_NOWARNING);
-if ($xml === false) {
+$data = json_decode($raw, true);
+if (!is_array($data)) {
     http_response_code(502);
     echo json_encode(['error' => 'Ugyldigt svar fra Conventus']);
     exit;
 }
 
-$status = strtolower(trim((string)($xml->status ?? $xml->resultat ?? '')));
+$result = strtolower(trim($data['result'] ?? ''));
 
 // ── Forkerte loginoplysninger ─────────────────────────────────────────────────
-if (in_array($status, ['wrong_informations', 'invalid_username', 'error'], true)) {
+if (in_array($result, ['wrong_informations', 'invalid_username', 'error'], true)) {
     http_response_code(401);
     echo json_encode(['error' => 'Forkert email eller adgangskode']);
     exit;
 }
 
 // ── Success: én profil ────────────────────────────────────────────────────────
-if ($status === 'success') {
-    $profileId   = trim((string)($xml->profil_id  ?? $xml->member_id ?? $xml->id   ?? ''));
-    $fornavn     = trim((string)($xml->fornavn     ?? $xml->first_name ?? ''));
-    $efternavn   = trim((string)($xml->efternavn   ?? $xml->last_name  ?? ''));
-    $displayName = trim("$fornavn $efternavn") ?: $email;
-    $memberEmail = trim((string)($xml->email ?? '')) ?: $email;
+if ($result === 'success') {
+    $profil      = $data['profil'] ?? [];
+    $profileId   = trim((string)($profil['id'] ?? $profil['profil_id'] ?? $profil['member_id'] ?? ''));
+    $displayName = trim((string)($profil['navn'] ?? $profil['name'] ?? '')) ?: $email;
+    $memberEmail = trim((string)($profil['email'] ?? '')) ?: $email;
 
     if (!$profileId) {
-        // Conventus returnerede success men ingen profil-ID
         http_response_code(502);
         echo json_encode(['error' => 'Manglende profil-ID fra Conventus']);
         exit;
@@ -119,20 +116,19 @@ if ($status === 'success') {
 }
 
 // ── Flere profiler ────────────────────────────────────────────────────────────
-if ($status === 'multiple_profiles') {
+if ($result === 'multiple_profiles') {
     $profiles = [];
 
-    // Prøv forskellige XML-strukturer
-    $profilNodes = $xml->profiler->profil
-        ?? $xml->profiles->profile
-        ?? $xml->profil
-        ?? [];
+    // Conventus v2: profiler er enten et array direkte eller under en nøgle
+    $profilNodes = $data['profiler'] ?? $data['profiles'] ?? $data['profil'] ?? [];
+    if (!empty($profilNodes) && !isset($profilNodes[0])) {
+        // Enkelt objekt i stedet for array
+        $profilNodes = [$profilNodes];
+    }
 
     foreach ($profilNodes as $p) {
-        $id        = trim((string)($p->profil_id   ?? $p->id         ?? $p->member_id ?? ''));
-        $fornavn   = trim((string)($p->fornavn      ?? $p->first_name ?? ''));
-        $efternavn = trim((string)($p->efternavn    ?? $p->last_name  ?? ''));
-        $navn      = trim("$fornavn $efternavn") ?: "Profil $id";
+        $id   = trim((string)($p['id'] ?? $p['profil_id'] ?? $p['member_id'] ?? ''));
+        $navn = trim((string)($p['navn'] ?? $p['name'] ?? '')) ?: "Profil $id";
         if ($id) $profiles[] = ['id' => $id, 'name' => $navn];
     }
 
@@ -178,7 +174,7 @@ if ($status === 'multiple_profiles') {
 
 // ── Ukendt status ─────────────────────────────────────────────────────────────
 http_response_code(502);
-echo json_encode(['error' => 'Uventet svar fra Conventus']);
+echo json_encode(['error' => "Uventet svar fra Conventus (result: $result)"]);
 
 // ── Hjælpefunktioner ─────────────────────────────────────────────────────────
 
