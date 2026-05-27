@@ -685,14 +685,14 @@ function ConsentScreen({ user, onConsent }) {
           </p>
           <div style={{ display: 'flex', gap: 10 }}>
             <a
-              href={`${LEGAL_BASE}/privatlivspolitik.md`}
+              href={`${LEGAL_BASE}/privatlivspolitik.html`}
               target="_blank" rel="noreferrer"
               style={{ flex: 1, textAlign: 'center', padding: '9px 6px', borderRadius: 10, background: 'var(--green-soft)', color: 'var(--green)', fontSize: 13, fontWeight: 700, textDecoration: 'none', border: '1.5px solid rgba(26,92,42,.15)' }}
             >
               Privatlivs­politik
             </a>
             <a
-              href={`${LEGAL_BASE}/vilkaar-for-brug.md`}
+              href={`${LEGAL_BASE}/vilkaar-for-brug.html`}
               target="_blank" rel="noreferrer"
               style={{ flex: 1, textAlign: 'center', padding: '9px 6px', borderRadius: 10, background: 'var(--green-soft)', color: 'var(--green)', fontSize: 13, fontWeight: 700, textDecoration: 'none', border: '1.5px solid rgba(26,92,42,.15)' }}
             >
@@ -1050,12 +1050,14 @@ function DashboardScreen({ user, unreadMsgs = 0, news, onNavigate, showPushBanne
           <p className="greeting-sub">God dag</p>
           <h2 className="greeting-name">{user.firstName || user.name} 👋</h2>
         </div>
-        <button
-          onClick={() => onNavigate('profil')}
-          style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
-          aria-label="Gå til profil"
-        >
-          <Avatar initials={user.initials || user.name.slice(0, 2).toUpperCase()} size={44} />
+        <button onClick={() => onNavigate('profil')} className="dashboard-profile-btn" aria-label="Gå til profil">
+          <div style={{ position: 'relative' }}>
+            <Avatar initials={user.initials || user.name.slice(0, 2).toUpperCase()} size={44} />
+            <span className="dashboard-profile-badge">
+              <Icon name="person" size={10} color="white" sw={2.5} />
+            </span>
+          </div>
+          <span className="dashboard-profile-label">Profil</span>
         </button>
       </div>
 
@@ -2943,12 +2945,18 @@ export default function App() {
       emailVerified: fbUser.emailVerified,
       initials:      ((parts[0]?.[0] || '') + (parts[parts.length - 1]?.[0] || '')).toUpperCase()
                      || (effectiveEmail?.slice(0,2).toUpperCase() ?? 'SS'),
-      role:           profile.role === 'admin' ? 'admin'
-                    : lederHoldIds.length > 0  ? 'trainer'
+      role:           profile.role === 'admin'   ? 'admin'
+                    : lederHoldIds.length > 0   ? 'trainer'
+                    : profile.role === 'trainer' ? 'trainer'
                     : 'Medlem',
       holds:          profile.holds         || [],
       holdIds:        [...new Set([...(profile.holdIds || []).map(String), ...memberHoldIds])],
-      lederHoldIds:   lederHoldIds,
+      // Hvis lederHolds er tomme men Firestore siger trainer (evt. sync ikke kørt), brug holdIds som fallback
+      lederHoldIds:   lederHoldIds.length > 0
+                        ? lederHoldIds
+                        : profile.role === 'trainer'
+                          ? [...new Set([...(profile.holdIds || []).map(String), ...memberHoldIds])]
+                          : [],
       familyMembers:  profile.familyMembers  || [],
       primaryEmail:   profile.primaryEmail   || fbUser.email || '',
       extraEmails:    profile.extraEmails    || [],

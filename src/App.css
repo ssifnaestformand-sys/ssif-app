@@ -471,6 +471,32 @@ body {
   justify-content: space-between;
   padding: 20px 20px 4px;
 }
+.dashboard-profile-btn {
+  background: none;
+  border: none;
+  padding: 4px 0 4px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+.dashboard-profile-badge {
+  position: absolute;
+  bottom: 0; right: 0;
+  width: 18px; height: 18px;
+  border-radius: 9px;
+  background: var(--green);
+  border: 2px solid var(--bg);
+  display: flex; align-items: center; justify-content: center;
+}
+.dashboard-profile-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--green);
+  letter-spacing: 0.2px;
+}
 .greeting-sub {
   font-size: 14px;
   color: var(--text2);
