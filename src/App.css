@@ -2122,9 +2122,13 @@ body {
   font-size: 15px;
   font-weight: 600;
   text-decoration: none;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
   -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
 }
+.event-ics-btn:active { opacity: .75; }
 
 .event-delete-btn {
   display: flex;

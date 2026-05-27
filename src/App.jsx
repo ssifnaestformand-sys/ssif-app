@@ -973,6 +973,46 @@ function parseSessions(traeningstider) {
   return out
 }
 
+// ─── ICS helpers ─────────────────────────────────────────────────────────────
+
+function icsTime(dato, hhmm) {
+  return dato.replace(/-/g, '') + 'T' + (hhmm || '080000').replace(':', '') + '00'
+}
+
+function makeVEvent({ uid, summary, dato, tidStart, tidSlut, sted, rrule }) {
+  const lines = [
+    'BEGIN:VEVENT',
+    `UID:${uid}`,
+    `DTSTART:${icsTime(dato, tidStart)}`,
+    `DTEND:${icsTime(dato, tidSlut || tidStart)}`,
+    `SUMMARY:${(summary || '').replace(/[,;\\]/g, s => '\\' + s)}`,
+    sted ? `LOCATION:${sted.replace(/[,;\\]/g, s => '\\' + s)}` : null,
+    rrule ? `RRULE:${rrule}` : null,
+    'END:VEVENT',
+  ]
+  return lines.filter(Boolean).join('\r\n')
+}
+
+function downloadICSFile(filename, vevents) {
+  const cal = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//SSIF//SSIF App//DA',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'X-WR-CALNAME:SSIF',
+    ...vevents,
+    'END:VCALENDAR',
+  ].join('\r\n')
+  const blob = new Blob([cal], { type: 'text/calendar;charset=utf-8' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href = url; a.download = filename; a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 2000)
+}
+
+const RRULE_DAY = ['MO','TU','WE','TH','FR','SA','SU']
+
 function expandTrainingSessions(holds, weeksAhead = 10) {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -993,6 +1033,7 @@ function expandTrainingSessions(holds, weeksAhead = 10) {
           id: `traening_${hold.conventus_id}_${dato}_${time}`,
           type: 'træning',
           dato,
+          dayIdx,
           tidStart: time,
           titel: 'Træning',
           holdNavn: hold.titel,
@@ -2303,6 +2344,21 @@ function KalenderScreen({ user, onSelectEvent }) {
                     {grouped[dato].map(item => {
                       const ac = item.type === 'kamp' ? '#e65c00' : item.type === 'stævne' ? '#ff9500' : 'var(--green)'
                       if (item._isTraening) {
+                        function downloadHoldICS() {
+                          const hold = calHolds.find(h => String(h.conventus_id) === item.holdId)
+                          const sessions = parseSessions(hold?.traeningstider || '')
+                          const vevents = sessions.map(({ dayIdx: di, time }) =>
+                            makeVEvent({
+                              uid: `training-${item.holdId}-${di}@ssif.app`,
+                              summary: `Træning — ${item.holdNavn}`,
+                              dato: item.dato,
+                              tidStart: time,
+                              sted: hold?.sted || null,
+                              rrule: `FREQ=WEEKLY;BYDAY=${RRULE_DAY[di]};COUNT=52`,
+                            })
+                          )
+                          downloadICSFile(`traening-${item.holdNavn}.ics`, vevents)
+                        }
                         return (
                           <div key={item.id} className="kal-item">
                             <div className="kal-item-bar" style={{ background: 'var(--green)' }} />
@@ -2311,6 +2367,10 @@ function KalenderScreen({ user, onSelectEvent }) {
                               <div className="kal-item-title">{item.holdNavn}</div>
                               <EventTypeBadge type="træning" />
                             </div>
+                            <button onClick={downloadHoldICS} title="Tilføj til kalender"
+                              style={{ flexShrink: 0, background: 'var(--green-soft)', border: 'none', borderRadius: 8, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                              <Icon name="download" size={15} color="var(--green)" />
+                            </button>
                           </div>
                         )
                       }
@@ -2432,6 +2492,7 @@ function CreateEventSheet({ user, onClose, onCreated }) {
     if (!dates.length) { alert('Ingen forekomster i den valgte periode'); return }
     setSaving(true)
     try {
+      const seriesToken = crypto.randomUUID()
       await Promise.all(dates.map(d =>
         addDoc(collection(db, 'events'), {
           type: 'træning', titel: 'Træning', dato: d,
@@ -2439,6 +2500,8 @@ function CreateEventSheet({ user, onClose, onCreated }) {
           sted: sted.trim() || null, beskrivelse: null,
           holdId, holdNavn: hold?.titel || holdId,
           oprettetAf: user.uid, oprettetAfNavn: user.name,
+          icsToken: crypto.randomUUID(),
+          seriesToken,
           tilbagevendende: true, createdAt: serverTimestamp(),
         })
       ))
@@ -2795,12 +2858,30 @@ function EventDetailScreen({ event: ev, user, onEventDeleted }) {
           </div>
         )}
 
-        {ev.icsToken && (
+        {ev.tilbagevendende && ev.dato && ev.tidStart ? (
+          <button className="event-ics-btn" onClick={() => {
+            const jsDay  = new Date(ev.dato + 'T12:00:00').getDay()
+            const dayIdx = (jsDay + 6) % 7
+            downloadICSFile(`traening-${ev.holdNavn || 'ssif'}.ics`, [
+              makeVEvent({
+                uid: `series-${ev.seriesToken || ev.id}@ssif.app`,
+                summary: `Træning — ${ev.holdNavn || ''}`,
+                dato: ev.dato,
+                tidStart: ev.tidStart,
+                sted: ev.sted || null,
+                rrule: `FREQ=WEEKLY;BYDAY=${RRULE_DAY[dayIdx]};COUNT=52`,
+              })
+            ])
+          }}>
+            <Icon name="download" size={17} color="var(--green)" />
+            Tilføj træningsserie til kalender (.ics)
+          </button>
+        ) : ev.icsToken ? (
           <a href={`/api/event-ics.php?token=${ev.icsToken}`} className="event-ics-btn" download>
             <Icon name="download" size={17} color="var(--green)" />
             Tilføj til kalender (.ics)
           </a>
-        )}
+        ) : null}
 
         {ev.type === 'kamp' && Array.isArray(ev.udtagneSpillere) && ev.udtagneSpillere.length > 0 && (
           <div style={{ marginTop: 24 }}>
