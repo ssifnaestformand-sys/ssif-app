@@ -13,6 +13,7 @@ import {
   sendEmailVerification,
   sendPasswordResetEmail,
   signOut,
+  signInWithCustomToken,
   onAuthStateChanged,
 } from 'firebase/auth'
 import {
@@ -233,15 +234,79 @@ function InstallPromptScreen({ onContinue }) {
 // ─── Login ────────────────────────────────────────────────────────────────────
 
 function LoginScreen({ initialError }) {
-  const [mode, setMode]         = useState('main') // 'main' | 'forgot' | 'create'
+  const [mode, setMode]         = useState('main') // 'main' | 'forgot' | 'create' | 'conventus' | 'conventus-profiles'
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
   const [showPw, setShowPw]     = useState(false)
-  const [loading, setLoading]   = useState(null)  // null | 'google' | 'facebook' | 'email' | 'create' | 'reset'
+  const [loading, setLoading]   = useState(null)  // null | 'google' | 'email' | 'create' | 'reset'
   const [error, setError]       = useState(initialError || '')
   const [info, setInfo]         = useState('')
 
-  function reset(m = 'main') { setMode(m); setError(''); setInfo('') }
+  // Conventus-specifik tilstand
+  const [cvEmail, setCvEmail]       = useState('')
+  const [cvPass, setCvPass]         = useState('')
+  const [cvShowPw, setCvShowPw]     = useState(false)
+  const [cvError, setCvError]       = useState('')
+  const [cvLoading, setCvLoading]   = useState(false)
+  const [cvProfiles, setCvProfiles] = useState([])  // [{ id, name }] ved multiple_profiles
+  const [cvPending, setCvPending]   = useState('')  // pendingToken til profilvælger
+
+  function reset(m = 'main') { setMode(m); setError(''); setInfo(''); setCvError('') }
+
+  async function conventusLogin(e) {
+    e.preventDefault()
+    setCvLoading(true); setCvError('')
+    try {
+      const res  = await fetch('/api/conventus-login.php', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ email: cvEmail, password: cvPass }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setCvError(data.error || 'Forkert email eller adgangskode'); return }
+
+      if (data.status === 'ok') {
+        sessionStorage.setItem('_ssif_cv', JSON.stringify({
+          email:       data.email,
+          displayName: data.displayName,
+          conventusId: data.conventusId,
+        }))
+        await signInWithCustomToken(auth, data.customToken)
+      } else if (data.status === 'multiple_profiles') {
+        setCvProfiles(data.profiles)
+        setCvPending(data.pendingToken)
+        setMode('conventus-profiles')
+      }
+    } catch {
+      setCvError('Netværksfejl — prøv igen')
+    } finally {
+      setCvLoading(false)
+    }
+  }
+
+  async function conventusSelectProfile(profileId) {
+    setCvLoading(true); setCvError('')
+    try {
+      const res  = await fetch('/api/conventus-select-profile.php', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ pendingToken: cvPending, profileId }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setCvError(data.error || 'Noget gik galt — prøv igen'); return }
+
+      sessionStorage.setItem('_ssif_cv', JSON.stringify({
+        email:       data.email,
+        displayName: data.displayName,
+        conventusId: data.conventusId,
+      }))
+      await signInWithCustomToken(auth, data.customToken)
+    } catch {
+      setCvError('Netværksfejl — prøv igen')
+    } finally {
+      setCvLoading(false)
+    }
+  }
 
   async function social(ProviderClass) {
     const key = ProviderClass === GoogleAuthProvider ? 'google' : 'facebook'
@@ -302,7 +367,11 @@ function LoginScreen({ initialError }) {
         </div>
         <h1 className="login-club">Sejs-Svejbæk IF</h1>
         <p className="login-subtitle">
-          {mode === 'forgot' ? 'Nulstil adgangskode' : mode === 'create' ? 'Opret konto' : 'Log ind på din konto'}
+          {mode === 'forgot'               ? 'Nulstil adgangskode'
+           : mode === 'create'            ? 'Opret konto'
+           : mode === 'conventus'         ? 'Log ind med Conventus'
+           : mode === 'conventus-profiles'? 'Vælg profil'
+           :                               'Log ind på din konto'}
         </p>
       </div>
 
@@ -353,6 +422,58 @@ function LoginScreen({ initialError }) {
         </form>
       )}
 
+      {/* ── Conventus login ───────────────────────────── */}
+      {mode === 'conventus' && (
+        <form className="login-form" onSubmit={conventusLogin}>
+          <div className="input-group">
+            <div className="input-row">
+              <span className="input-icon"><Icon name="mail" size={18} color="var(--text3)" /></span>
+              <input className="input-field" type="email" placeholder="Conventus email" autoComplete="email" autoFocus required
+                value={cvEmail} onChange={e => setCvEmail(e.target.value)} />
+            </div>
+            <div className="input-separator" />
+            <div className="input-row">
+              <span className="input-icon"><Icon name="lock" size={18} color="var(--text3)" /></span>
+              <input className="input-field" type={cvShowPw ? 'text' : 'password'} placeholder="Conventus adgangskode"
+                autoComplete="current-password" required
+                value={cvPass} onChange={e => setCvPass(e.target.value)} />
+              <button type="button" className="input-pw-toggle" onClick={() => setCvShowPw(p => !p)}>
+                <Icon name={cvShowPw ? 'eye-off' : 'eye'} size={17} color="var(--text3)" />
+              </button>
+            </div>
+          </div>
+          {cvError && <p className="login-error">{cvError}</p>}
+          <button className="btn btn-conventus btn-full" type="submit" disabled={cvLoading}>
+            {cvLoading ? <span className="spinner" /> : 'Log ind med Conventus'}
+          </button>
+          <button className="btn btn-secondary btn-full" type="button" onClick={() => reset()}>← Tilbage</button>
+        </form>
+      )}
+
+      {/* ── Conventus profilvælger ─────────────────────── */}
+      {mode === 'conventus-profiles' && (
+        <div className="login-form">
+          <p style={{ margin: '0 0 12px', fontSize: 14, color: 'var(--text2)', textAlign: 'center' }}>
+            Din Conventus-konto har flere profiler. Vælg den du vil logge ind som:
+          </p>
+          {cvError && <p className="login-error">{cvError}</p>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {cvProfiles.map(p => (
+              <button key={p.id} className="conventus-profile-btn"
+                      onClick={() => conventusSelectProfile(p.id)} disabled={cvLoading}>
+                <span className="conventus-profile-initials">
+                  {p.name.split(' ').map(w => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase() || '?'}
+                </span>
+                <span className="conventus-profile-name">{p.name}</span>
+                {cvLoading && <span className="spinner spinner--dark" style={{ marginLeft: 'auto' }} />}
+              </button>
+            ))}
+          </div>
+          <button className="btn btn-secondary btn-full" type="button"
+                  onClick={() => reset()} style={{ marginTop: 4 }}>← Tilbage</button>
+        </div>
+      )}
+
       {/* ── Hoved login ───────────────────────────────── */}
       {mode === 'main' && (
         <div className="login-form">
@@ -366,6 +487,14 @@ function LoginScreen({ initialError }) {
               <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.962L3.964 6.294C4.672 4.169 6.656 3.58 9 3.58z" fill="#EA4335"/>
             </svg>
             {loading === 'google' ? <span className="spinner spinner--dark" /> : 'Log ind med Google'}
+          </button>
+
+          <button className="btn btn-social btn-conventus" onClick={() => reset('conventus')}
+                  disabled={!!loading}>
+            <img src="/conventus-logo_inv.svg" alt="Conventus" height="20"
+                 style={{ flexShrink: 0 }}
+                 onError={e => { e.target.style.display = 'none' }} />
+            Log ind med Conventus
           </button>
 
 <div className="login-divider"><span>eller</span></div>
@@ -2728,6 +2857,16 @@ export default function App() {
     let memberHoldIds     = []
     let lederHoldIds      = []
     let memberConventusId = null
+
+    // Conventus custom-token brugere har null fbUser.email.
+    // Email og navn gemmes i sessionStorage af conventusLogin() inden signInWithCustomToken kaldes.
+    let _cvInit = null
+    try {
+      const _raw = sessionStorage.getItem('_ssif_cv')
+      if (_raw) { _cvInit = JSON.parse(_raw); sessionStorage.removeItem('_ssif_cv') }
+    } catch {}
+    const effectiveEmail = fbUser.email || _cvInit?.email || ''
+
     try {
       const ref  = doc(db, 'users', fbUser.uid)
       const snap = await getDoc(ref)
@@ -2735,8 +2874,8 @@ export default function App() {
         profile = snap.data()
       } else {
         profile = {
-          primaryEmail:  fbUser.email  || '',
-          displayName:   fbUser.displayName || fbUser.email?.split('@')[0] || 'Bruger',
+          primaryEmail:  effectiveEmail,
+          displayName:   _cvInit?.displayName || fbUser.displayName || effectiveEmail.split('@')[0] || 'Bruger',
           emailVerified: fbUser.emailVerified,
           extraEmails:   [],
           holdIds:       [],
@@ -2748,11 +2887,11 @@ export default function App() {
 
       // Hent hold-IDs + leder-relationer fra members-samlingen (synkroniseret fra Conventus).
       // Inkluder primær email + verificerede extra-emails så trænere registreret med anden email får rettigheder.
-      if (fbUser.email) {
+      if (effectiveEmail) {
         const verifiedExtras = (profile.extraEmails || [])
           .filter(e => (typeof e === 'object' ? e.verified : false))
           .map(e => (typeof e === 'object' ? e.email : e).toLowerCase())
-        const allEmails = [...new Set([fbUser.email.toLowerCase(), ...verifiedExtras])]
+        const allEmails = [...new Set([effectiveEmail.toLowerCase(), ...verifiedExtras])]
         const mSnap = await getDocs(query(
           collection(db, 'members'),
           where('allEmails', 'array-contains-any', allEmails.slice(0, 10))
@@ -2794,16 +2933,16 @@ export default function App() {
       }
     } catch {}
 
-    const displayName = profile.displayName || fbUser.displayName || fbUser.email?.split('@')[0] || 'Bruger'
+    const displayName = profile.displayName || _cvInit?.displayName || fbUser.displayName || effectiveEmail.split('@')[0] || 'Bruger'
     const parts = displayName.trim().split(' ').filter(Boolean)
     setUser({
       name:          displayName,
       firstName:     parts[0] || 'Bruger',
-      email:         fbUser.email,
+      email:         effectiveEmail,
       uid:           fbUser.uid,
       emailVerified: fbUser.emailVerified,
       initials:      ((parts[0]?.[0] || '') + (parts[parts.length - 1]?.[0] || '')).toUpperCase()
-                     || (fbUser.email?.slice(0,2).toUpperCase() ?? 'SS'),
+                     || (effectiveEmail?.slice(0,2).toUpperCase() ?? 'SS'),
       role:           profile.role === 'admin' ? 'admin'
                     : lederHoldIds.length > 0  ? 'trainer'
                     : 'Medlem',
@@ -2813,7 +2952,7 @@ export default function App() {
       familyMembers:  profile.familyMembers  || [],
       primaryEmail:   profile.primaryEmail   || fbUser.email || '',
       extraEmails:    profile.extraEmails    || [],
-      conventus_id:         memberConventusId,
+      conventus_id:         memberConventusId || _cvInit?.conventusId || null,
       onboardingDone:       profile.onboardingDone === true,
       emailNotifications:   profile.emailNotifications !== false,
       consentGiven:         profile.consentGiven === true && profile.consentVersion === CONSENT_VERSION,

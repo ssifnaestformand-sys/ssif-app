@@ -1333,8 +1333,45 @@ body {
 .btn-social:active { opacity: .75; }
 .btn-social:disabled { opacity: .5; cursor: default; }
 
-.btn-google   { background: white; color: #3c4043; }
-.btn-facebook { background: #1877F2; color: white; border-color: #1877F2; }
+.btn-google     { background: white; color: #3c4043; }
+.btn-facebook   { background: #1877F2; color: white; border-color: #1877F2; }
+.btn-conventus  { background: #1a5276; color: white; border-color: #1a5276; }
+
+.conventus-profile-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text1);
+  text-align: left;
+  transition: border-color .15s, background .15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.conventus-profile-btn:active  { background: var(--bg); }
+.conventus-profile-btn:disabled { opacity: .5; cursor: default; }
+
+.conventus-profile-initials {
+  width: 38px;
+  height: 38px;
+  border-radius: 19px;
+  background: #1a5276;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.conventus-profile-name { flex: 1; }
 
 .input-pw-toggle {
   background: none;
