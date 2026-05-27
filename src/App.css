@@ -1894,7 +1894,7 @@ body {
 /* FAB (floating action button) */
 .kalender-fab {
   position: fixed;
-  bottom: calc(72px + env(safe-area-inset-bottom));
+  bottom: calc(var(--tab-h) + 16px);
   right: 20px;
   width: 56px;
   height: 56px;
@@ -1908,7 +1908,7 @@ body {
   box-shadow: 0 4px 20px rgba(26,92,42,.45);
   -webkit-tap-highlight-color: transparent;
   transition: transform .12s;
-  z-index: 100;
+  z-index: 200;
 }
 .kalender-fab:active { transform: scale(.92); }
 

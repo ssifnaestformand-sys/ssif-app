@@ -91,9 +91,13 @@ const AUTH_ERRORS = {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function Avatar({ initials, color = '#1a5c2a', size = 40 }) {
+  const text = initials || ''
+  const fs = text.length <= 2 ? size * 0.36
+           : text.length <= 4 ? size * 0.28
+           : size * 0.22
   return (
-    <div className="avatar" style={{ width: size, height: size, borderRadius: size / 2, background: color, fontSize: size * 0.36 }}>
-      {initials}
+    <div className="avatar" style={{ width: size, height: size, borderRadius: size / 2, background: color, fontSize: fs }}>
+      {text}
     </div>
   )
 }
@@ -1052,7 +1056,7 @@ function DashboardScreen({ user, unreadMsgs = 0, news, onNavigate, showPushBanne
         </div>
         <button onClick={() => onNavigate('profil')} className="dashboard-profile-btn" aria-label="Gå til profil">
           <div style={{ position: 'relative' }}>
-            <Avatar initials={user.initials || user.name.slice(0, 2).toUpperCase()} size={44} />
+            <Avatar initials={user.firstName || user.initials} size={44} />
             <span className="dashboard-profile-badge">
               <Icon name="person" size={10} color="white" sw={2.5} />
             </span>
