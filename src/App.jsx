@@ -1056,7 +1056,7 @@ function DashboardScreen({ user, unreadMsgs = 0, news, onNavigate, showPushBanne
         </div>
         <button onClick={() => onNavigate('profil')} className="dashboard-profile-btn" aria-label="Gå til profil">
           <div style={{ position: 'relative' }}>
-            <Avatar initials={user.firstName || user.initials} size={44} />
+            <Avatar initials={(user.firstName || user.initials || '').slice(0, 7)} size={44} />
             <span className="dashboard-profile-badge">
               <Icon name="person" size={10} color="white" sw={2.5} />
             </span>

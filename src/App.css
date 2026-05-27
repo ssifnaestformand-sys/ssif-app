@@ -403,6 +403,8 @@ body {
   font-weight: 700;
   letter-spacing: .5px;
   flex-shrink: 0;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 /* ─── Badge ─────────────────────────────────────────────────────────────────── */
@@ -1895,7 +1897,7 @@ body {
 .kalender-fab {
   position: fixed;
   bottom: calc(var(--tab-h) + 16px);
-  right: 20px;
+  right: calc(max(0px, (100vw - 430px) / 2) + 20px);
   width: 56px;
   height: 56px;
   border-radius: 28px;
