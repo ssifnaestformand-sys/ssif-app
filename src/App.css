@@ -1513,6 +1513,26 @@ body {
 }
 
 /* ─── Compose sheet ─────────────────────────────────────────────────────────── */
+.sheet-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 400;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.sheet-panel {
+  width: 100%;
+  max-width: 430px;
+  background: var(--bg);
+  border-radius: 20px 20px 0 0;
+  max-height: 90dvh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .compose-sheet {
   padding: 20px 16px 28px;
 }
@@ -1916,6 +1936,165 @@ body {
   z-index: 200;
 }
 .kalender-fab:active { transform: scale(.92); }
+
+/* ── Mini-månedkalender ── */
+.kal-month-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  margin: 12px 16px 0;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.kal-month-nav {
+  display: flex;
+  align-items: center;
+  padding: 14px 12px 8px;
+}
+.kal-month-btn {
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: var(--green-soft);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.kal-month-btn:active { opacity: .7; }
+.kal-month-title {
+  flex: 1;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+.kal-month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  padding: 0 6px 14px;
+  gap: 1px 0;
+}
+.kal-month-dayname {
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: .3px;
+  padding: 4px 0 6px;
+}
+.kal-month-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 0;
+}
+.kal-month-day {
+  width: 30px;
+  height: 30px;
+  border-radius: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text);
+}
+.kal-month-day--today {
+  background: var(--green);
+  color: white;
+  font-weight: 700;
+}
+.kal-month-day--past { color: var(--text3); }
+.kal-month-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 2px;
+  background: transparent;
+}
+.kal-month-dot--active { background: var(--green); }
+.kal-month-dot--past   { background: #d1d5db; }
+
+/* ── Dato-separator ── */
+.kal-date-sep {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 18px 16px 6px;
+  border-top: 1px solid var(--sep);
+  margin-top: 2px;
+}
+.kal-date-sep--first { border-top: none; padding-top: 14px; }
+.kal-date-sep--today .kal-date-label { color: var(--green); }
+.kal-date-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text2);
+}
+.kal-date-badge {
+  font-size: 10px;
+  background: var(--green);
+  color: white;
+  padding: 1px 8px;
+  border-radius: 20px;
+  font-weight: 700;
+}
+
+/* ── Kalender-aktivitet-rækker ── */
+.kal-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 16px;
+  min-height: 50px;
+}
+.kal-item--btn {
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+.kal-item--btn:active { background: var(--bg); }
+.kal-item-bar {
+  width: 3px;
+  align-self: stretch;
+  border-radius: 2px;
+  flex-shrink: 0;
+  min-height: 32px;
+}
+.kal-item-time {
+  font-size: 12px;
+  font-weight: 700;
+  min-width: 44px;
+  flex-shrink: 0;
+}
+.kal-item-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.kal-item-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kal-item-sub {
+  font-size: 12px;
+  color: var(--text2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* Event detail */
 .event-description {

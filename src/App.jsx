@@ -2149,12 +2149,15 @@ function EventDetailRow({ icon, children }) {
   )
 }
 
+const CAL_MO = ['Januar','Februar','Marts','April','Maj','Juni','Juli','August','September','Oktober','November','December']
+
 function KalenderScreen({ user, onSelectEvent }) {
   const [events,     setEvents]     = useState([])
   const [calHolds,   setCalHolds]   = useState([])
   const [loading,    setLoading]    = useState(true)
   const [createOpen, setCreateOpen] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [viewMonth,  setViewMonth]  = useState(() => { const d = new Date(); d.setDate(1); return d })
 
   const isTrainer = user.role === 'trainer' || user.role === 'admin'
   const myHoldIds = [...new Set([
@@ -2177,7 +2180,6 @@ function KalenderScreen({ user, onSelectEvent }) {
     const today  = new Date().toISOString().slice(0, 10)
     const chunks = []
     for (let i = 0; i < myHoldIds.length; i += 30) chunks.push(myHoldIds.slice(i, i + 30))
-
     Promise.all(chunks.map(chunk =>
       getDocs(query(collection(db, 'events'), where('holdId', 'in', chunk)))
     ))
@@ -2187,12 +2189,10 @@ function KalenderScreen({ user, onSelectEvent }) {
           .flatMap(s => s.docs.map(d => ({ id: d.id, ...d.data() })))
           .filter(ev => {
             if (seen.has(ev.id) || (ev.dato || '') < today) return false
-            seen.add(ev.id)
-            return true
+            seen.add(ev.id); return true
           })
-
         const relevant = all.filter(ev => {
-          if (ev.type === 'generel') return true
+          if (ev.type === 'generel' || ev.type === 'træning') return true
           if (isTrainer && (user.lederHoldIds || []).map(String).includes(String(ev.holdId))) return true
           return (ev.udtagneSpillere || []).some(s =>
             s.email?.toLowerCase() === user.email?.toLowerCase() ||
@@ -2205,11 +2205,33 @@ function KalenderScreen({ user, onSelectEvent }) {
       .finally(() => setLoading(false))
   }, [refreshKey])
 
+  // Synthetic training items — skip any date+hold covered by a real Firestore træning event
+  const realTrainingKeys = new Set(
+    events.filter(e => e.type === 'træning').map(e => `${e.dato}_${e.holdId}`)
+  )
   const trainingItems = expandTrainingSessions(calHolds)
+    .filter(item => !realTrainingKeys.has(`${item.dato}_${item.holdId}`))
+
   const allItems = [...events, ...trainingItems].sort((a, b) =>
     (a.dato || '').localeCompare(b.dato || '') ||
     (a.tidStart || '').localeCompare(b.tidStart || '')
   )
+
+  // Mini-calendar data
+  const todayStr  = new Date().toISOString().slice(0, 10)
+  const yr = viewMonth.getFullYear()
+  const mo = viewMonth.getMonth()
+  const firstDOW  = (new Date(yr, mo, 1).getDay() + 6) % 7
+  const daysInMo  = new Date(yr, mo + 1, 0).getDate()
+  const activeDates = new Set(allItems.map(i => i.dato))
+
+  // Group by date
+  const grouped = {}
+  allItems.forEach(item => {
+    if (!grouped[item.dato]) grouped[item.dato] = []
+    grouped[item.dato].push(item)
+  })
+  const sortedDates = Object.keys(grouped).sort()
 
   return (
     <div className="screen">
@@ -2217,77 +2239,102 @@ function KalenderScreen({ user, onSelectEvent }) {
         <div style={{ textAlign: 'center', padding: '60px 0' }}>
           <div className="loading-dots"><span /><span /><span /></div>
         </div>
-      ) : allItems.length === 0 ? (
-        <div className="kalender-empty">
-          <Icon name="calendar" size={48} color="var(--text3)" />
-          <h3 className="kalender-empty-title">Ingen kommende aktiviteter</h3>
-          <p className="kalender-empty-body">
-            {isTrainer
-              ? 'Tryk + for at oprette et event for dit hold.'
-              : 'Trænerne på dine hold har ikke oprettet nogen kommende events.'}
-          </p>
-        </div>
       ) : (
-        <div className="kalender-list">
-          {allItems.map(item => {
-            const d = item.dato ? new Date(item.dato + 'T12:00:00') : null
-            if (item._isTraening) {
-              return (
-                <div key={item.id} className="event-card event-card--traening">
-                  <div className="event-card-date">
-                    <span className="event-card-day">{d ? d.getDate() : '—'}</span>
-                    <span className="event-card-month">{d ? DK_MONTHS[d.getMonth()] : ''}</span>
-                  </div>
-                  <div className="event-card-body">
-                    <EventTypeBadge type="træning" />
-                    <div className="event-card-title">{item.holdNavn}</div>
-                    {item.tidStart && (
-                      <div className="event-card-meta">
-                        <span className="event-card-meta-item">
-                          <Icon name="clock" size={12} color="var(--text3)" />
-                          {item.tidStart}
-                        </span>
-                      </div>
-                    )}
-                  </div>
+        <>
+          {/* ── Mini-månedkalender ── */}
+          <div className="kal-month-card">
+            <div className="kal-month-nav">
+              <button className="kal-month-btn" onClick={() => setViewMonth(new Date(yr, mo - 1, 1))} aria-label="Forrige måned">
+                <div style={{ transform: 'rotate(180deg)', display: 'flex' }}>
+                  <Icon name="chevron" size={16} color="var(--green)" sw={2.5} />
                 </div>
-              )
-            }
-            return (
-              <button key={item.id} className="event-card" onClick={() => onSelectEvent(item)}>
-                <div className="event-card-date">
-                  <span className="event-card-day">{d ? d.getDate() : '—'}</span>
-                  <span className="event-card-month">{d ? DK_MONTHS[d.getMonth()] : ''}</span>
-                </div>
-                <div className="event-card-body">
-                  <EventTypeBadge type={item.type} />
-                  <div className="event-card-title">{item.titel}</div>
-                  <div className="event-card-meta">
-                    {item.tidStart && (
-                      <span className="event-card-meta-item">
-                        <Icon name="clock" size={12} color="var(--text3)" />
-                        {item.tidStart}{item.tidSlut ? `–${item.tidSlut}` : ''}
-                      </span>
-                    )}
-                    {item.sted && (
-                      <span className="event-card-meta-item">
-                        <Icon name="location" size={12} color="var(--text3)" />
-                        {item.sted}
-                      </span>
-                    )}
-                    {item.holdNavn && (
-                      <span className="event-card-meta-item">
-                        <Icon name="users" size={12} color="var(--text3)" />
-                        {item.holdNavn}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <Icon name="chevron" size={18} color="var(--text3)" />
               </button>
-            )
-          })}
-        </div>
+              <span className="kal-month-title">{CAL_MO[mo]} {yr}</span>
+              <button className="kal-month-btn" onClick={() => setViewMonth(new Date(yr, mo + 1, 1))} aria-label="Næste måned">
+                <Icon name="chevron" size={16} color="var(--green)" sw={2.5} />
+              </button>
+            </div>
+            <div className="kal-month-grid">
+              {['Ma','Ti','On','To','Fr','Lø','Sø'].map(d => (
+                <div key={d} className="kal-month-dayname">{d}</div>
+              ))}
+              {Array.from({ length: firstDOW }, (_, i) => <div key={`e${i}`} />)}
+              {Array.from({ length: daysInMo }, (_, i) => {
+                const day     = i + 1
+                const dateStr = `${yr}-${String(mo + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`
+                const isToday = dateStr === todayStr
+                const hasAct  = activeDates.has(dateStr)
+                const isPast  = dateStr < todayStr
+                return (
+                  <div key={day} className="kal-month-cell">
+                    <div className={`kal-month-day${isToday ? ' kal-month-day--today' : isPast ? ' kal-month-day--past' : ''}`}>
+                      {day}
+                    </div>
+                    <div className={`kal-month-dot${hasAct ? (isPast ? ' kal-month-dot--past' : ' kal-month-dot--active') : ''}`} />
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* ── Aktivitetsliste ── */}
+          {sortedDates.length === 0 ? (
+            <div className="kalender-empty">
+              <Icon name="calendar" size={48} color="var(--text3)" />
+              <h3 className="kalender-empty-title">Ingen kommende aktiviteter</h3>
+              <p className="kalender-empty-body">
+                {isTrainer ? 'Tryk + for at oprette et event for dit hold.'
+                           : 'Trænerne på dine hold har ikke oprettet nogen kommende events.'}
+              </p>
+            </div>
+          ) : (
+            <div style={{ paddingBottom: 88 }}>
+              {sortedDates.map((dato, di) => {
+                const d        = new Date(dato + 'T12:00:00')
+                const isToday  = dato === todayStr
+                const dayLabel = d.toLocaleDateString('da-DK', { weekday: 'long', day: 'numeric', month: 'long' })
+                  .replace(/^./, c => c.toUpperCase())
+                return (
+                  <div key={dato}>
+                    <div className={`kal-date-sep${di === 0 ? ' kal-date-sep--first' : ''}${isToday ? ' kal-date-sep--today' : ''}`}>
+                      <span className="kal-date-label">{dayLabel}</span>
+                      {isToday && <span className="kal-date-badge">I dag</span>}
+                    </div>
+                    {grouped[dato].map(item => {
+                      const ac = item.type === 'kamp' ? '#e65c00' : item.type === 'stævne' ? '#ff9500' : 'var(--green)'
+                      if (item._isTraening) {
+                        return (
+                          <div key={item.id} className="kal-item">
+                            <div className="kal-item-bar" style={{ background: 'var(--green)' }} />
+                            <span className="kal-item-time" style={{ color: 'var(--green)' }}>{item.tidStart || '——'}</span>
+                            <div className="kal-item-body">
+                              <div className="kal-item-title">{item.holdNavn}</div>
+                              <EventTypeBadge type="træning" />
+                            </div>
+                          </div>
+                        )
+                      }
+                      return (
+                        <button key={item.id} className="kal-item kal-item--btn" onClick={() => onSelectEvent(item)}>
+                          <div className="kal-item-bar" style={{ background: ac }} />
+                          <span className="kal-item-time" style={{ color: ac }}>{item.tidStart || '——'}</span>
+                          <div className="kal-item-body">
+                            <div className="kal-item-title">{item.titel}</div>
+                            {(item.holdNavn || item.sted) && (
+                              <div className="kal-item-sub">{[item.holdNavn, item.sted].filter(Boolean).join(' · ')}</div>
+                            )}
+                          </div>
+                          <EventTypeBadge type={item.type} />
+                          <Icon name="chevron" size={16} color="var(--text3)" />
+                        </button>
+                      )
+                    })}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </>
       )}
 
       {isTrainer && (
@@ -2307,7 +2354,10 @@ function KalenderScreen({ user, onSelectEvent }) {
   )
 }
 
+const WEEKDAY_LABELS = ['Man','Tir','Ons','Tor','Fre','Lør','Søn']
+
 function CreateEventSheet({ user, onClose, onCreated }) {
+  const [createMode,   setCreateMode]   = useState('single') // 'single' | 'recurring'
   const [type,        setType]        = useState('generel')
   const [holdId,      setHoldId]      = useState('')
   const [holds,       setHolds]       = useState([])
@@ -2322,6 +2372,11 @@ function CreateEventSheet({ user, onClose, onCreated }) {
   const [membersReady, setMembersReady] = useState(false)
   const [udtagne,     setUdtagne]     = useState([])
   const [saving,      setSaving]      = useState(false)
+  // Recurring training state
+  const [recurDays,   setRecurDays]   = useState([]) // 0=Mon … 6=Sun
+  const [recurTime,   setRecurTime]   = useState('')
+  const [recurFrom,   setRecurFrom]   = useState('')
+  const [recurTo,     setRecurTo]     = useState('')
 
   useEffect(() => {
     getDocs(query(collection(db, 'holds'), where('aktiv', '==', true)))
@@ -2363,8 +2418,37 @@ function CreateEventSheet({ user, onClose, onCreated }) {
     })
   }
 
+  async function handleRecurringSubmit() {
+    if (!holdId || !recurDays.length || !recurTime || !recurFrom || !recurTo) return
+    const hold = holds.find(h => String(h.conventus_id) === holdId)
+    const from = new Date(recurFrom + 'T00:00:00')
+    const to   = new Date(recurTo   + 'T00:00:00')
+    const dates = []
+    const cur = new Date(from)
+    while (cur <= to && dates.length < 60) {
+      if (recurDays.includes((cur.getDay() + 6) % 7)) dates.push(cur.toISOString().slice(0, 10))
+      cur.setDate(cur.getDate() + 1)
+    }
+    if (!dates.length) { alert('Ingen forekomster i den valgte periode'); return }
+    setSaving(true)
+    try {
+      await Promise.all(dates.map(d =>
+        addDoc(collection(db, 'events'), {
+          type: 'træning', titel: 'Træning', dato: d,
+          tidStart: recurTime, tidSlut: null,
+          sted: sted.trim() || null, beskrivelse: null,
+          holdId, holdNavn: hold?.titel || holdId,
+          oprettetAf: user.uid, oprettetAfNavn: user.name,
+          tilbagevendende: true, createdAt: serverTimestamp(),
+        })
+      ))
+      onCreated()
+    } catch (err) { alert('Fejl: ' + err.message); setSaving(false) }
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
+    if (createMode === 'recurring') { await handleRecurringSubmit(); return }
     if (!holdId || !titel.trim() || !dato || !tidStart) return
     if (type === 'kamp' && udtagne.length === 0) { alert('Vælg mindst én spiller til udtagelse'); return }
     setSaving(true)
@@ -2407,7 +2491,9 @@ function CreateEventSheet({ user, onClose, onCreated }) {
   const selectedHold = holds.find(h => String(h.conventus_id) === holdId)
 
   return (
-    <div className="compose-sheet" style={{ overflowY: 'auto', maxHeight: '100dvh' }}>
+    <div className="sheet-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="sheet-panel">
+    <div className="compose-sheet">
       <div className="compose-header">
         <div className="compose-header-left">
           <div className="compose-icon">
@@ -2424,7 +2510,24 @@ function CreateEventSheet({ user, onClose, onCreated }) {
       </div>
 
       <form onSubmit={handleSubmit} className="compose-form">
-        {/* Type */}
+        {/* Oprettelsestype */}
+        <div className="compose-section">
+          <div style={{ display: 'flex', gap: 8 }}>
+            {[
+              { id: 'single',    label: '📅 Enkelt event'      },
+              { id: 'recurring', label: '🔁 Træningsserie'     },
+            ].map(m => (
+              <button key={m.id} type="button"
+                className={`compose-hold-chip${createMode === m.id ? ' compose-hold-chip--active' : ''}`}
+                style={{ flex: 1, justifyContent: 'center' }}
+                onClick={() => setCreateMode(m.id)}>
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {createMode === 'single' && (
         <div className="compose-section">
           <label className="compose-label">
             <Icon name="calendar" size={14} color="var(--green)" /> Type
@@ -2446,6 +2549,7 @@ function CreateEventSheet({ user, onClose, onCreated }) {
             ))}
           </div>
         </div>
+        )}
 
         {/* Hold */}
         <div className="compose-section">
@@ -2483,6 +2587,61 @@ function CreateEventSheet({ user, onClose, onCreated }) {
           )}
         </div>
 
+        {/* ── Recurring: ugedage + tidspunkt + periode ── */}
+        {createMode === 'recurring' && (
+          <>
+            <div className="compose-section">
+              <label className="compose-label">
+                <Icon name="calendar" size={14} color="var(--green)" /> Ugedag(e)
+              </label>
+              <div style={{ display: 'flex', gap: 5 }}>
+                {WEEKDAY_LABELS.map((day, i) => (
+                  <button key={i} type="button"
+                    className={`compose-hold-chip${recurDays.includes(i) ? ' compose-hold-chip--active' : ''}`}
+                    style={{ flex: 1, justifyContent: 'center', minWidth: 0, padding: '8px 2px', fontSize: 12 }}
+                    onClick={() => setRecurDays(prev => prev.includes(i) ? prev.filter(d => d !== i) : [...prev, i].sort())}>
+                    {day}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="compose-section">
+              <label className="compose-label">
+                <Icon name="clock" size={14} color="var(--green)" /> Tidspunkt
+              </label>
+              <input className="compose-select" type="time" value={recurTime}
+                onChange={e => setRecurTime(e.target.value)} required={createMode === 'recurring'} />
+            </div>
+            <div className="compose-section">
+              <label className="compose-label">
+                <Icon name="calendar" size={14} color="var(--green)" /> Periode (fra – til)
+              </label>
+              <div className="event-time-row">
+                <input className="compose-select" type="date" value={recurFrom}
+                  onChange={e => setRecurFrom(e.target.value)} required={createMode === 'recurring'} />
+                <input className="compose-select" type="date" value={recurTo}
+                  onChange={e => setRecurTo(e.target.value)} required={createMode === 'recurring'} />
+              </div>
+              {recurDays.length > 0 && recurFrom && recurTo && recurFrom <= recurTo && (() => {
+                let count = 0
+                const cur = new Date(recurFrom + 'T00:00:00')
+                const end = new Date(recurTo + 'T00:00:00')
+                while (cur <= end && count < 61) { if (recurDays.includes((cur.getDay()+6)%7)) count++; cur.setDate(cur.getDate()+1) }
+                return <p className="event-time-hint">{count > 60 ? 'Max 60 forekomster' : `${count} træningsgange oprettes`}</p>
+              })()}
+            </div>
+            <div className="compose-section">
+              <label className="compose-label">
+                <Icon name="location" size={14} color="var(--green)" /> Sted (valgfrit)
+              </label>
+              <input className="compose-select" type="text" value={sted} onChange={e => setSted(e.target.value)} placeholder="F.eks. Sejs Idrætsanlæg" />
+            </div>
+          </>
+        )}
+
+        {/* ── Single event fields ── */}
+        {createMode === 'single' && (
+        <>
         {/* Titel */}
         <div className="compose-section">
           <label className="compose-label">
@@ -2526,9 +2685,11 @@ function CreateEventSheet({ user, onClose, onCreated }) {
           </label>
           <textarea className="compose-textarea" rows={3} value={beskrivelse} onChange={e => setBeskrivelse(e.target.value)} placeholder="Ekstra info om eventen…" />
         </div>
+        </>
+        )}
 
         {/* Spillervælger — kun ved kamp */}
-        {type === 'kamp' && holdId && (
+        {createMode === 'single' && type === 'kamp' && holdId && (
           <div className="compose-section">
             <label className="compose-label">
               <Icon name="users" size={14} color="var(--green)" />
@@ -2566,14 +2727,22 @@ function CreateEventSheet({ user, onClose, onCreated }) {
         <button
           className="compose-send-btn"
           type="submit"
-          disabled={saving || !holdId || !titel.trim() || !dato || !tidStart || (type === 'kamp' && udtagne.length === 0)}
+          disabled={saving || !holdId || (
+            createMode === 'single'
+              ? (!titel.trim() || !dato || !tidStart || (type === 'kamp' && udtagne.length === 0))
+              : (!recurDays.length || !recurTime || !recurFrom || !recurTo || recurFrom > recurTo)
+          )}
         >
           {saving
             ? <><span className="spinner" /> Opretter…</>
-            : <><Icon name="send" size={18} color="white" /> Opret og notificér</>
+            : createMode === 'recurring'
+              ? <><Icon name="calendar" size={18} color="white" /> Opret træningsserie</>
+              : <><Icon name="send" size={18} color="white" /> Opret og notificér</>
           }
         </button>
       </form>
+    </div>
+    </div>
     </div>
   )
 }
