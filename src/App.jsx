@@ -973,6 +973,41 @@ function parseSessions(traeningstider) {
   return out
 }
 
+function expandTrainingSessions(holds, weeksAhead = 10) {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const daysFromMonday = (today.getDay() + 6) % 7
+  const monday = new Date(today)
+  monday.setDate(today.getDate() - daysFromMonday)
+
+  const results = []
+  holds.forEach(hold => {
+    parseSessions(hold.traeningstider).forEach(({ dayIdx, time }) => {
+      for (let week = 0; week < weeksAhead; week++) {
+        const d = new Date(monday)
+        d.setDate(monday.getDate() + week * 7 + dayIdx)
+        if (d < today) continue
+        const dato = d.toISOString().slice(0, 10)
+        results.push({
+          _isTraening: true,
+          id: `traening_${hold.conventus_id}_${dato}_${time}`,
+          type: 'træning',
+          dato,
+          tidStart: time,
+          titel: 'Træning',
+          holdNavn: hold.titel,
+          holdId: String(hold.conventus_id),
+        })
+      }
+    })
+  })
+  results.sort((a, b) =>
+    (a.dato || '').localeCompare(b.dato || '') ||
+    (a.tidStart || '').localeCompare(b.tidStart || '')
+  )
+  return results
+}
+
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 function DashboardScreen({ user, unreadMsgs = 0, news, onNavigate, showPushBanner, onEnableNotifications }) {
@@ -997,10 +1032,32 @@ function DashboardScreen({ user, unreadMsgs = 0, news, onNavigate, showPushBanne
   }, [JSON.stringify(user.holdIds), JSON.stringify(user.familyMembers)])
 
   useEffect(() => {
-    const today = new Date().toISOString().slice(0, 10)
-    getDocs(query(collection(db, 'events'), where('date', '>=', today), orderBy('date'), limit(10)))
-      .then(snap => setEvents(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
-      .catch(() => {})
+    const today   = new Date().toISOString().slice(0, 10)
+    const dashIds = [...new Set([
+      ...(user.holdIds      || []).map(String),
+      ...(user.lederHoldIds || []).map(String),
+    ])]
+    if (dashIds.length) {
+      const chunks = []
+      for (let i = 0; i < dashIds.length; i += 30) chunks.push(dashIds.slice(i, i + 30))
+      Promise.all(chunks.map(chunk =>
+        getDocs(query(collection(db, 'events'), where('holdId', 'in', chunk)))
+      ))
+        .then(snaps => {
+          const seen = new Set()
+          const all  = snaps.flatMap(s => s.docs.map(d => ({ id: d.id, ...d.data() })))
+            .filter(ev => {
+              if (seen.has(ev.id) || (ev.dato || '') < today) return false
+              seen.add(ev.id); return true
+            })
+          all.sort((a, b) =>
+            (a.dato || '').localeCompare(b.dato || '') ||
+            (a.tidStart || '').localeCompare(b.tidStart || '')
+          )
+          setEvents(all)
+        })
+        .catch(() => {})
+    }
     getDocs(query(collection(db, 'banners'), orderBy('order')))
       .then(snap => setBanners(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(b => b.aktiv !== false)))
       .catch(() => {})
@@ -1171,9 +1228,9 @@ function DashboardScreen({ user, unreadMsgs = 0, news, onNavigate, showPushBanne
           <SectionHeader title="Kommende begivenheder" />
           <div className="card-list">
             {events.slice(0, eventsCount).map(ev => {
-              const d = ev.date ? new Date(ev.date + 'T12:00:00') : null
+              const d = ev.dato ? new Date(ev.dato + 'T12:00:00') : null
               const dateStr = d ? d.toLocaleDateString('da-DK', { weekday: 'short', day: 'numeric', month: 'short' }) : ''
-              const typeColor = { kamp: '#1a5c2a', træning: '#5856d6', stævne: '#ff9500', arrangement: '#ff3b30' }
+              const typeColor = { kamp: '#1a5c2a', træning: '#5856d6', generel: '#5856d6', stævne: '#ff9500', arrangement: '#ff3b30' }
               const color = typeColor[ev.type] || '#5856d6'
               return (
                 <div key={ev.id} style={{
@@ -1194,9 +1251,9 @@ function DashboardScreen({ user, unreadMsgs = 0, news, onNavigate, showPushBanne
                     </span>
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)' }}>{ev.title}</div>
+                    <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)' }}>{ev.titel}</div>
                     <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 1 }}>
-                      {dateStr}{ev.time ? ` · ${ev.time}` : ''}{ev.location ? ` · ${ev.location}` : ''}
+                      {dateStr}{ev.tidStart ? ` · ${ev.tidStart}` : ''}{ev.sted ? ` · ${ev.sted}` : ''}
                     </div>
                   </div>
                   {ev.type && (
@@ -1205,7 +1262,7 @@ function DashboardScreen({ user, unreadMsgs = 0, news, onNavigate, showPushBanne
                       background: color + '18', padding: '2px 7px', borderRadius: 20,
                       flexShrink: 0, textTransform: 'capitalize',
                     }}>
-                      {ev.type}
+                      {ev.type === 'generel' ? 'Event' : ev.type}
                     </span>
                   )}
                 </div>
@@ -2027,12 +2084,9 @@ function fmtEventWeekday(dato) {
 }
 
 function EventTypeBadge({ type }) {
-  const isKamp = type === 'kamp'
-  return (
-    <span className={`event-type-badge ${isKamp ? 'event-type-badge--kamp' : 'event-type-badge--generel'}`}>
-      {isKamp ? '⚽ Kamp' : '📅 Event'}
-    </span>
-  )
+  if (type === 'kamp')    return <span className="event-type-badge event-type-badge--kamp">⚽ Kamp</span>
+  if (type === 'træning') return <span className="event-type-badge event-type-badge--traening">🏃 Træning</span>
+  return <span className="event-type-badge event-type-badge--generel">📅 Event</span>
 }
 
 function EventDetailRow({ icon, children }) {
@@ -2046,6 +2100,7 @@ function EventDetailRow({ icon, children }) {
 
 function KalenderScreen({ user, onSelectEvent }) {
   const [events,     setEvents]     = useState([])
+  const [calHolds,   setCalHolds]   = useState([])
   const [loading,    setLoading]    = useState(true)
   const [createOpen, setCreateOpen] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -2055,6 +2110,16 @@ function KalenderScreen({ user, onSelectEvent }) {
     ...(user.holdIds     || []).map(String),
     ...(user.lederHoldIds || []).map(String),
   ])]
+
+  useEffect(() => {
+    const ids = new Set(myHoldIds)
+    if (!ids.size) return
+    getDocs(collection(db, 'holds'))
+      .then(snap => setCalHolds(
+        snap.docs.map(d => d.data()).filter(h => ids.has(String(h.conventus_id)) && h.traeningstider)
+      ))
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (!myHoldIds.length) { setLoading(false); return }
@@ -2083,15 +2148,17 @@ function KalenderScreen({ user, onSelectEvent }) {
             (user.conventus_id && s.conventus_id === user.conventus_id)
           )
         })
-        relevant.sort((a, b) =>
-          (a.dato || '').localeCompare(b.dato || '') ||
-          (a.tidStart || '').localeCompare(b.tidStart || '')
-        )
         setEvents(relevant)
       })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [refreshKey])
+
+  const trainingItems = expandTrainingSessions(calHolds)
+  const allItems = [...events, ...trainingItems].sort((a, b) =>
+    (a.dato || '').localeCompare(b.dato || '') ||
+    (a.tidStart || '').localeCompare(b.tidStart || '')
+  )
 
   return (
     <div className="screen">
@@ -2099,10 +2166,10 @@ function KalenderScreen({ user, onSelectEvent }) {
         <div style={{ textAlign: 'center', padding: '60px 0' }}>
           <div className="loading-dots"><span /><span /><span /></div>
         </div>
-      ) : events.length === 0 ? (
+      ) : allItems.length === 0 ? (
         <div className="kalender-empty">
           <Icon name="calendar" size={48} color="var(--text3)" />
-          <h3 className="kalender-empty-title">Ingen kommende events</h3>
+          <h3 className="kalender-empty-title">Ingen kommende aktiviteter</h3>
           <p className="kalender-empty-body">
             {isTrainer
               ? 'Tryk + for at oprette et event for dit hold.'
@@ -2111,34 +2178,56 @@ function KalenderScreen({ user, onSelectEvent }) {
         </div>
       ) : (
         <div className="kalender-list">
-          {events.map(ev => {
-            const d = ev.dato ? new Date(ev.dato + 'T12:00:00') : null
+          {allItems.map(item => {
+            const d = item.dato ? new Date(item.dato + 'T12:00:00') : null
+            if (item._isTraening) {
+              return (
+                <div key={item.id} className="event-card event-card--traening">
+                  <div className="event-card-date">
+                    <span className="event-card-day">{d ? d.getDate() : '—'}</span>
+                    <span className="event-card-month">{d ? DK_MONTHS[d.getMonth()] : ''}</span>
+                  </div>
+                  <div className="event-card-body">
+                    <EventTypeBadge type="træning" />
+                    <div className="event-card-title">{item.holdNavn}</div>
+                    {item.tidStart && (
+                      <div className="event-card-meta">
+                        <span className="event-card-meta-item">
+                          <Icon name="clock" size={12} color="var(--text3)" />
+                          {item.tidStart}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            }
             return (
-              <button key={ev.id} className="event-card" onClick={() => onSelectEvent(ev)}>
+              <button key={item.id} className="event-card" onClick={() => onSelectEvent(item)}>
                 <div className="event-card-date">
                   <span className="event-card-day">{d ? d.getDate() : '—'}</span>
                   <span className="event-card-month">{d ? DK_MONTHS[d.getMonth()] : ''}</span>
                 </div>
                 <div className="event-card-body">
-                  <EventTypeBadge type={ev.type} />
-                  <div className="event-card-title">{ev.titel}</div>
+                  <EventTypeBadge type={item.type} />
+                  <div className="event-card-title">{item.titel}</div>
                   <div className="event-card-meta">
-                    {ev.tidStart && (
+                    {item.tidStart && (
                       <span className="event-card-meta-item">
                         <Icon name="clock" size={12} color="var(--text3)" />
-                        {ev.tidStart}{ev.tidSlut ? `–${ev.tidSlut}` : ''}
+                        {item.tidStart}{item.tidSlut ? `–${item.tidSlut}` : ''}
                       </span>
                     )}
-                    {ev.sted && (
+                    {item.sted && (
                       <span className="event-card-meta-item">
                         <Icon name="location" size={12} color="var(--text3)" />
-                        {ev.sted}
+                        {item.sted}
                       </span>
                     )}
-                    {ev.holdNavn && (
+                    {item.holdNavn && (
                       <span className="event-card-meta-item">
                         <Icon name="users" size={12} color="var(--text3)" />
-                        {ev.holdNavn}
+                        {item.holdNavn}
                       </span>
                     )}
                   </div>

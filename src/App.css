@@ -1890,8 +1890,11 @@ body {
   font-weight: 700;
   flex-shrink: 0;
 }
-.event-type-badge--kamp    { background: #fff3e0; color: #e65c00; }
-.event-type-badge--generel { background: var(--green-soft); color: var(--green); }
+.event-type-badge--kamp     { background: #fff3e0; color: #e65c00; }
+.event-type-badge--generel  { background: var(--green-soft); color: var(--green); }
+.event-type-badge--traening { background: #ede9fe; color: #5b21b6; }
+
+.event-card--traening { cursor: default; }
 
 /* FAB (floating action button) */
 .kalender-fab {
