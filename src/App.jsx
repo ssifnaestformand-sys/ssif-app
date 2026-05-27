@@ -2482,10 +2482,7 @@ function KalenderScreen({ user, onSelectEvent }) {
   )
 }
 
-const WEEKDAY_LABELS = ['Man','Tir','Ons','Tor','Fre','Lør','Søn']
-
 function CreateEventSheet({ user, onClose, onCreated }) {
-  const [createMode,   setCreateMode]   = useState('single') // 'single' | 'recurring'
   const [type,        setType]        = useState('generel')
   const [holdId,      setHoldId]      = useState('')
   const [holds,       setHolds]       = useState([])
@@ -2500,11 +2497,6 @@ function CreateEventSheet({ user, onClose, onCreated }) {
   const [membersReady, setMembersReady] = useState(false)
   const [udtagne,     setUdtagne]     = useState([])
   const [saving,      setSaving]      = useState(false)
-  // Recurring training state
-  const [recurDays,   setRecurDays]   = useState([]) // 0=Mon … 6=Sun
-  const [recurTime,   setRecurTime]   = useState('')
-  const [recurFrom,   setRecurFrom]   = useState('')
-  const [recurTo,     setRecurTo]     = useState('')
 
   useEffect(() => {
     getDocs(query(collection(db, 'holds'), where('aktiv', '==', true)))
@@ -2546,40 +2538,8 @@ function CreateEventSheet({ user, onClose, onCreated }) {
     })
   }
 
-  async function handleRecurringSubmit() {
-    if (!holdId || !recurDays.length || !recurTime || !recurFrom || !recurTo) return
-    const hold = holds.find(h => String(h.conventus_id) === holdId)
-    const from = new Date(recurFrom + 'T00:00:00')
-    const to   = new Date(recurTo   + 'T00:00:00')
-    const dates = []
-    const cur = new Date(from)
-    while (cur <= to && dates.length < 60) {
-      if (recurDays.includes((cur.getDay() + 6) % 7)) dates.push(cur.toISOString().slice(0, 10))
-      cur.setDate(cur.getDate() + 1)
-    }
-    if (!dates.length) { alert('Ingen forekomster i den valgte periode'); return }
-    setSaving(true)
-    try {
-      const seriesToken = crypto.randomUUID()
-      await Promise.all(dates.map(d =>
-        addDoc(collection(db, 'events'), {
-          type: 'træning', titel: 'Træning', dato: d,
-          tidStart: recurTime, tidSlut: null,
-          sted: sted.trim() || null, beskrivelse: null,
-          holdId, holdNavn: hold?.titel || holdId,
-          oprettetAf: user.uid, oprettetAfNavn: user.name,
-          icsToken: crypto.randomUUID(),
-          seriesToken,
-          tilbagevendende: true, createdAt: serverTimestamp(),
-        })
-      ))
-      onCreated()
-    } catch (err) { alert('Fejl: ' + err.message); setSaving(false) }
-  }
-
   async function handleSubmit(e) {
     e.preventDefault()
-    if (createMode === 'recurring') { await handleRecurringSubmit(); return }
     if (!holdId || !titel.trim() || !dato || !tidStart) return
     if (type === 'kamp' && udtagne.length === 0) { alert('Vælg mindst én spiller til udtagelse'); return }
     setSaving(true)
@@ -2641,32 +2601,15 @@ function CreateEventSheet({ user, onClose, onCreated }) {
       </div>
 
       <form onSubmit={handleSubmit} className="compose-form">
-        {/* Oprettelsestype */}
-        <div className="compose-section">
-          <div style={{ display: 'flex', gap: 8 }}>
-            {[
-              { id: 'single',    label: '📅 Enkelt event'      },
-              { id: 'recurring', label: '🔁 Træningsserie'     },
-            ].map(m => (
-              <button key={m.id} type="button"
-                className={`compose-hold-chip${createMode === m.id ? ' compose-hold-chip--active' : ''}`}
-                style={{ flex: 1, justifyContent: 'center' }}
-                onClick={() => setCreateMode(m.id)}>
-                {m.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {createMode === 'single' && (
+        {/* Type */}
         <div className="compose-section">
           <label className="compose-label">
             <Icon name="calendar" size={14} color="var(--green)" /> Type
           </label>
           <div style={{ display: 'flex', gap: 8 }}>
             {[
-              { id: 'generel', label: '📅 Generel event'     },
-              { id: 'kamp',   label: '⚽ Kamp / udtagelse'  },
+              { id: 'generel', label: '📅 Generel event'    },
+              { id: 'kamp',   label: '⚽ Kamp / udtagelse' },
             ].map(t => (
               <button
                 key={t.id}
@@ -2680,7 +2623,6 @@ function CreateEventSheet({ user, onClose, onCreated }) {
             ))}
           </div>
         </div>
-        )}
 
         {/* Hold */}
         <div className="compose-section">
@@ -2718,61 +2660,6 @@ function CreateEventSheet({ user, onClose, onCreated }) {
           )}
         </div>
 
-        {/* ── Recurring: ugedage + tidspunkt + periode ── */}
-        {createMode === 'recurring' && (
-          <>
-            <div className="compose-section">
-              <label className="compose-label">
-                <Icon name="calendar" size={14} color="var(--green)" /> Ugedag(e)
-              </label>
-              <div style={{ display: 'flex', gap: 5 }}>
-                {WEEKDAY_LABELS.map((day, i) => (
-                  <button key={i} type="button"
-                    className={`compose-hold-chip${recurDays.includes(i) ? ' compose-hold-chip--active' : ''}`}
-                    style={{ flex: 1, justifyContent: 'center', minWidth: 0, padding: '8px 2px', fontSize: 12 }}
-                    onClick={() => setRecurDays(prev => prev.includes(i) ? prev.filter(d => d !== i) : [...prev, i].sort())}>
-                    {day}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="compose-section">
-              <label className="compose-label">
-                <Icon name="clock" size={14} color="var(--green)" /> Tidspunkt
-              </label>
-              <input className="compose-select" type="time" value={recurTime}
-                onChange={e => setRecurTime(e.target.value)} required={createMode === 'recurring'} />
-            </div>
-            <div className="compose-section">
-              <label className="compose-label">
-                <Icon name="calendar" size={14} color="var(--green)" /> Periode (fra – til)
-              </label>
-              <div className="event-time-row">
-                <input className="compose-select" type="date" value={recurFrom}
-                  onChange={e => setRecurFrom(e.target.value)} required={createMode === 'recurring'} />
-                <input className="compose-select" type="date" value={recurTo}
-                  onChange={e => setRecurTo(e.target.value)} required={createMode === 'recurring'} />
-              </div>
-              {recurDays.length > 0 && recurFrom && recurTo && recurFrom <= recurTo && (() => {
-                let count = 0
-                const cur = new Date(recurFrom + 'T00:00:00')
-                const end = new Date(recurTo + 'T00:00:00')
-                while (cur <= end && count < 61) { if (recurDays.includes((cur.getDay()+6)%7)) count++; cur.setDate(cur.getDate()+1) }
-                return <p className="event-time-hint">{count > 60 ? 'Max 60 forekomster' : `${count} træningsgange oprettes`}</p>
-              })()}
-            </div>
-            <div className="compose-section">
-              <label className="compose-label">
-                <Icon name="location" size={14} color="var(--green)" /> Sted (valgfrit)
-              </label>
-              <input className="compose-select" type="text" value={sted} onChange={e => setSted(e.target.value)} placeholder="F.eks. Sejs Idrætsanlæg" />
-            </div>
-          </>
-        )}
-
-        {/* ── Single event fields ── */}
-        {createMode === 'single' && (
-        <>
         {/* Titel */}
         <div className="compose-section">
           <label className="compose-label">
@@ -2816,11 +2703,9 @@ function CreateEventSheet({ user, onClose, onCreated }) {
           </label>
           <textarea className="compose-textarea" rows={3} value={beskrivelse} onChange={e => setBeskrivelse(e.target.value)} placeholder="Ekstra info om eventen…" />
         </div>
-        </>
-        )}
 
         {/* Spillervælger — kun ved kamp */}
-        {createMode === 'single' && type === 'kamp' && holdId && (
+        {type === 'kamp' && holdId && (
           <div className="compose-section">
             <label className="compose-label">
               <Icon name="users" size={14} color="var(--green)" />
@@ -2858,17 +2743,11 @@ function CreateEventSheet({ user, onClose, onCreated }) {
         <button
           className="compose-send-btn"
           type="submit"
-          disabled={saving || !holdId || (
-            createMode === 'single'
-              ? (!titel.trim() || !dato || !tidStart || (type === 'kamp' && udtagne.length === 0))
-              : (!recurDays.length || !recurTime || !recurFrom || !recurTo || recurFrom > recurTo)
-          )}
+          disabled={saving || !holdId || !titel.trim() || !dato || !tidStart || (type === 'kamp' && udtagne.length === 0)}
         >
           {saving
             ? <><span className="spinner" /> Opretter…</>
-            : createMode === 'recurring'
-              ? <><Icon name="calendar" size={18} color="white" /> Opret træningsserie</>
-              : <><Icon name="send" size={18} color="white" /> Opret og notificér</>
+            : <><Icon name="send" size={18} color="white" /> Opret og notificér</>
           }
         </button>
       </form>
@@ -2878,7 +2757,163 @@ function CreateEventSheet({ user, onClose, onCreated }) {
   )
 }
 
-function EventDetailScreen({ event: ev, user, onEventDeleted }) {
+function EditEventSheet({ event: ev, user, onClose, onSaved }) {
+  const [titel,       setTitel]       = useState(ev.titel || '')
+  const [dato,        setDato]        = useState(ev.dato || '')
+  const [tidStart,    setTidStart]    = useState(ev.tidStart || '')
+  const [tidSlut,     setTidSlut]     = useState(ev.tidSlut || '')
+  const [sted,        setSted]        = useState(ev.sted || '')
+  const [beskrivelse, setBeskrivelse] = useState(ev.beskrivelse || '')
+  const [members,     setMembers]     = useState([])
+  const [membersReady, setMembersReady] = useState(false)
+  const [udtagne,     setUdtagne]     = useState(ev.udtagneSpillere || [])
+  const [saving,      setSaving]      = useState(false)
+
+  useEffect(() => {
+    if (!ev.holdId) return
+    getDocs(query(collection(db, 'members'), where('holdIds', 'array-contains', String(ev.holdId))))
+      .then(snap => {
+        const all = snap.docs.map(d => ({
+          conventus_id: d.data().conventus_id,
+          name:  d.data().name || 'Ukendt',
+          email: (d.data().allEmails || [])[0] || '',
+        })).filter(m => m.email)
+        all.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'da'))
+        setMembers(all)
+        setMembersReady(true)
+      })
+      .catch(() => setMembersReady(true))
+  }, [ev.holdId])
+
+  function togglePlayer(player) {
+    setUdtagne(prev => {
+      const idx = prev.findIndex(p => p.conventus_id === player.conventus_id)
+      return idx >= 0 ? prev.filter((_, i) => i !== idx) : [...prev, player]
+    })
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    if (!titel.trim() || !dato || !tidStart) return
+    setSaving(true)
+    try {
+      const updates = {
+        titel:          titel.trim(),
+        dato,
+        tidStart,
+        tidSlut:        tidSlut || null,
+        sted:           sted.trim() || null,
+        beskrivelse:    beskrivelse.trim() || null,
+        udtagneSpillere: udtagne,
+      }
+      await updateDoc(doc(db, 'events', ev.id), updates)
+      onSaved({ ...ev, ...updates })
+    } catch (err) {
+      alert('Fejl: ' + err.message)
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="sheet-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="sheet-panel">
+    <div className="compose-sheet">
+      <div className="compose-header">
+        <div className="compose-header-left">
+          <div className="compose-icon">
+            <Icon name="calendar" size={18} color="white" />
+          </div>
+          <div>
+            <h2 className="compose-title">Rediger kamp</h2>
+            <p className="compose-subtitle">{ev.holdNavn || ''}</p>
+          </div>
+        </div>
+        <button onClick={onClose} className="compose-close" type="button" aria-label="Luk">
+          <Icon name="x" size={20} color="var(--text3)" />
+        </button>
+      </div>
+
+      <form onSubmit={handleSubmit} className="compose-form">
+        <div className="compose-section">
+          <label className="compose-label">
+            <Icon name="send" size={14} color="var(--green)" /> Titel
+          </label>
+          <input className="compose-select" type="text" value={titel} onChange={e => setTitel(e.target.value)} required />
+        </div>
+
+        <div className="compose-section">
+          <label className="compose-label">
+            <Icon name="clock" size={14} color="var(--green)" /> Dato og tidspunkt
+          </label>
+          <div className="event-time-row">
+            <input className="compose-select" type="date" value={dato} onChange={e => setDato(e.target.value)} required />
+            <input className="compose-select event-time-input" type="time" value={tidStart} onChange={e => setTidStart(e.target.value)} required title="Start" />
+            <input className="compose-select event-time-input" type="time" value={tidSlut}  onChange={e => setTidSlut(e.target.value)}  title="Slut (valgfrit)" />
+          </div>
+          <p className="event-time-hint">Sluttidspunkt er valgfrit</p>
+        </div>
+
+        <div className="compose-section">
+          <label className="compose-label">
+            <Icon name="location" size={14} color="var(--green)" /> Sted (valgfrit)
+          </label>
+          <input className="compose-select" type="text" value={sted} onChange={e => setSted(e.target.value)} placeholder="F.eks. Sejs Idrætsanlæg" />
+        </div>
+
+        <div className="compose-section">
+          <label className="compose-label">
+            <Icon name="message" size={14} color="var(--green)" /> Beskrivelse (valgfrit)
+          </label>
+          <textarea className="compose-textarea" rows={3} value={beskrivelse} onChange={e => setBeskrivelse(e.target.value)} placeholder="Ekstra info om kampen…" />
+        </div>
+
+        <div className="compose-section">
+          <label className="compose-label">
+            <Icon name="users" size={14} color="var(--green)" />
+            Udtagne spillere
+            {udtagne.length > 0 && <span className="player-count-badge">{udtagne.length} valgt</span>}
+          </label>
+          {!membersReady ? (
+            <p className="compose-holds-loading">Henter spillere…</p>
+          ) : members.length === 0 ? (
+            <p className="compose-holds-loading">Ingen spillere fundet</p>
+          ) : (
+            <div className="player-grid">
+              {members.map(p => {
+                const sel = udtagne.some(u => u.conventus_id === p.conventus_id)
+                return (
+                  <button key={p.conventus_id} type="button"
+                    className={`player-chip${sel ? ' player-chip--selected' : ''}`}
+                    onClick={() => togglePlayer(p)}>
+                    <span className="player-chip-initials">
+                      {(p.name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+                    </span>
+                    <span className="player-chip-name">{(p.name || '').split(' ')[0]}</span>
+                    {sel && <Icon name="check" size={13} color="var(--green)" sw={2.5} />}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        <button className="compose-send-btn" type="submit"
+          disabled={saving || !titel.trim() || !dato || !tidStart}>
+          {saving
+            ? <><span className="spinner" /> Gemmer…</>
+            : <><Icon name="check" size={18} color="white" /> Gem ændringer</>
+          }
+        </button>
+      </form>
+    </div>
+    </div>
+    </div>
+  )
+}
+
+function EventDetailScreen({ event: initialEv, user, onEventDeleted, onEventUpdated }) {
+  const [ev,      setEv]      = useState(initialEv)
+  const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
   const isMyEvent = user.role === 'admin' ||
@@ -2968,6 +3003,17 @@ function EventDetailScreen({ event: ev, user, onEventDeleted }) {
           </div>
         )}
 
+        {isMyEvent && ev.type === 'kamp' && (
+          <button
+            onClick={() => setEditing(true)}
+            className="event-ics-btn"
+            style={{ marginTop: 12 }}
+          >
+            <Icon name="send" size={17} color="var(--green)" />
+            Rediger kamp og udtagelse
+          </button>
+        )}
+
         {isMyEvent && (
           <button
             onClick={handleDelete}
@@ -2979,6 +3025,19 @@ function EventDetailScreen({ event: ev, user, onEventDeleted }) {
           </button>
         )}
       </div>
+
+      {editing && (
+        <EditEventSheet
+          event={ev}
+          user={user}
+          onClose={() => setEditing(false)}
+          onSaved={updated => {
+            setEv(updated)
+            setEditing(false)
+            if (onEventUpdated) onEventUpdated(updated)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -3704,7 +3763,7 @@ export default function App() {
         ) : activeTab === 'kalender' && !selectedEvent ? (
           <KalenderScreen user={user} onSelectEvent={setSelectedEvent} />
         ) : activeTab === 'kalender' && selectedEvent ? (
-          <EventDetailScreen event={selectedEvent} user={user} onEventDeleted={() => setSelectedEvent(null)} />
+          <EventDetailScreen event={selectedEvent} user={user} onEventDeleted={() => setSelectedEvent(null)} onEventUpdated={updated => setSelectedEvent(prev => ({ ...prev, ...updated }))} />
         ) : null}
       </main>
 
