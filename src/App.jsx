@@ -1255,7 +1255,7 @@ function relevantHoldIds(user) {
   return ids
 }
 
-function TeamsScreen({ onSelectTeam, user }) {
+function TeamsScreen({ onSelectTeam, user, onGoToProfile }) {
   const [holds,         setHolds]         = useState([])
   const [afdelinger,    setAfdelinger]    = useState([])
   const [loading,       setLoading]       = useState(true)
@@ -1299,8 +1299,17 @@ function TeamsScreen({ onSelectTeam, user }) {
   )
 
   if (!linkedMembers.length) return (
-    <div className="screen" style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text2)', fontSize: 14 }}>
-      Ingen holdtilmeldinger fundet. Tilføj din email under Profil for at se dine hold.
+    <div className="screen" style={{ padding: '48px 24px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+      <Icon name="users" size={44} color="var(--text3)" />
+      <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', margin: 0 }}>Ingen holdtilmeldinger fundet</p>
+      <p style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.55, margin: 0, maxWidth: 280 }}>
+        Din email er muligvis ikke tilknyttet Conventus. Prøv at tilføje den email du bruger i din klub.
+      </p>
+      {onGoToProfile && (
+        <button type="button" className="btn btn-primary" style={{ marginTop: 4 }} onClick={onGoToProfile}>
+          Gå til Profil og tilføj email
+        </button>
+      )}
     </div>
   )
 
@@ -1371,6 +1380,21 @@ function TeamsScreen({ onSelectTeam, user }) {
           )}
         </div>
       ))}
+      {/* Hint: tilføj email */}
+      {onGoToProfile && (
+        <div style={{ margin: '16px 16px 0', padding: '12px 14px', background: 'var(--surface)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <Icon name="mail" size={18} color="var(--text3)" />
+          <span style={{ flex: 1, fontSize: 13, color: 'var(--text2)', lineHeight: 1.45 }}>
+            Mangler du et hold? Tilføj den email du bruger i Conventus under{' '}
+            <button type="button" onClick={onGoToProfile}
+                    style={{ background: 'none', border: 'none', padding: 0, color: 'var(--green)', fontWeight: 700, fontSize: 13, cursor: 'pointer', textDecoration: 'underline', fontFamily: 'inherit' }}>
+              Profil
+            </button>
+            .
+          </span>
+        </div>
+      )}
+
       {/* Tilmeldingslink */}
       <div style={{ margin: '20px 16px 0' }}>
         <a href="https://www.sejssvejbaek-if.dk/tilmelding"
@@ -2776,7 +2800,7 @@ function ProfileScreen({ user, onLogout, onUserUpdate, verifyMsg, onEnableNotifi
 
       <div style={{ height: 16 }} />
       <div style={{ padding: '0 16px' }}>
-        <button className="btn btn-secondary btn-full" onClick={onLogout}>
+        <button type="button" className="btn btn-secondary btn-full" onClick={onLogout}>
           <Icon name="logout" size={17} color="var(--green)" />
           Log ud
         </button>
@@ -3106,8 +3130,8 @@ export default function App() {
   async function handleLogout() {
     setUser(null); setActiveTab('dashboard')
     setSelectedTeam(null); setSelectedArticle(null); setSelectedMsg(null)
-    setNewsLive(false)
-    setNews([])
+    setNewsLive(false); setNews([])
+    setInstallDone(true) // Gå direkte til login-siden, ikke installationsprompt
     try { await signOut(auth) } catch {}
   }
 
@@ -3188,7 +3212,7 @@ export default function App() {
         {activeTab === 'teams' && !user.emailVerified ? (
           <UnverifiedScreen user={user} onLogout={handleLogout} />
         ) : activeTab === 'teams' && !selectedTeam ? (
-          <TeamsScreen onSelectTeam={setSelectedTeam} user={user} />
+          <TeamsScreen onSelectTeam={setSelectedTeam} user={user} onGoToProfile={() => switchTab('profil')} />
         ) : activeTab === 'teams' && selectedTeam ? (
           <TeamDetailScreen team={selectedTeam} />
         ) : null}
