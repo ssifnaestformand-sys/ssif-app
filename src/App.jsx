@@ -66,6 +66,9 @@ function Icon({ name, size = 24, color = 'currentColor', sw = 1.75 }) {
   )
 }
 
+// ─── Consent version — bump to re-show consent screen to all users ───────────
+const CONSENT_VERSION = '1.0'
+
 // ─── Firebase error codes → Danish messages ──────────────────────────────────
 
 const AUTH_ERRORS = {
@@ -483,6 +486,165 @@ const WELCOME_FEATURES = [
     desc:  'Under Hold-fanen ser du alle de hold, du eller dine børn er tilmeldt via Conventus.',
   },
 ]
+
+// ─── Consent screen ───────────────────────────────────────────────────────────
+
+function ConsentScreen({ user, onConsent }) {
+  const [termsChecked, setTermsChecked] = useState(false)
+  const [emailChecked, setEmailChecked] = useState(false)
+  const [saving,       setSaving]       = useState(false)
+
+  async function handleAccept() {
+    if (!termsChecked || saving) return
+    setSaving(true)
+    try {
+      await updateDoc(doc(db, 'users', user.uid), {
+        consentGiven:       true,
+        consentVersion:     CONSENT_VERSION,
+        consentTimestamp:   serverTimestamp(),
+        emailNotifications: emailChecked,
+      })
+      onConsent({ emailNotifications: emailChecked })
+    } catch {
+      alert('Der opstod en fejl. Prøv igen.')
+      setSaving(false)
+    }
+  }
+
+  async function handleDecline() {
+    if (window.confirm('Uden accept af privatlivspolitikken kan du ikke bruge appen.\n\nVil du logge ud?')) {
+      await signOut(auth)
+    }
+  }
+
+  const LEGAL_BASE = '/legal'
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 999,
+      background: 'var(--bg)', overflowY: 'auto',
+      paddingTop: 'env(safe-area-inset-top, 0)',
+      maxWidth: 430, margin: '0 auto',
+    }}>
+      {/* Header */}
+      <div style={{ background: 'var(--green)', padding: '36px 28px 32px', textAlign: 'center' }}>
+        <div style={{
+          width: 64, height: 64, borderRadius: 18,
+          background: 'rgba(255,255,255,.18)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          margin: '0 auto 18px',
+        }}>
+          <Icon name="lock" size={28} color="white" sw={2} />
+        </div>
+        <h1 style={{ color: 'white', fontSize: 22, fontWeight: 800, margin: '0 0 8px' }}>
+          Dine oplysninger
+        </h1>
+        <p style={{ color: 'rgba(255,255,255,.82)', fontSize: 14, lineHeight: 1.55, margin: 0, maxWidth: 280, marginInline: 'auto' }}>
+          Inden du fortsætter, beder vi dig om at læse og acceptere, hvordan vi håndterer dine data.
+        </p>
+      </div>
+
+      {/* Content */}
+      <div style={{ padding: '20px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+        {/* Info card */}
+        <div style={{ background: 'var(--surface)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', padding: '16px' }}>
+          <p style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.65, margin: '0 0 14px' }}>
+            SSIF-appen bruger din email, dit navn og din holdtilknytning for at vise dig de rigtige
+            beskeder og events. Dine oplysninger behandles i overensstemmelse med GDPR og opbevares
+            sikkert i Firebase (Google).
+          </p>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <a
+              href={`${LEGAL_BASE}/privatlivspolitik.md`}
+              target="_blank" rel="noreferrer"
+              style={{ flex: 1, textAlign: 'center', padding: '9px 6px', borderRadius: 10, background: 'var(--green-soft)', color: 'var(--green)', fontSize: 13, fontWeight: 700, textDecoration: 'none', border: '1.5px solid rgba(26,92,42,.15)' }}
+            >
+              Privatlivs­politik
+            </a>
+            <a
+              href={`${LEGAL_BASE}/vilkaar-for-brug.md`}
+              target="_blank" rel="noreferrer"
+              style={{ flex: 1, textAlign: 'center', padding: '9px 6px', borderRadius: 10, background: 'var(--green-soft)', color: 'var(--green)', fontSize: 13, fontWeight: 700, textDecoration: 'none', border: '1.5px solid rgba(26,92,42,.15)' }}
+            >
+              Vilkår for brug
+            </a>
+          </div>
+        </div>
+
+        {/* Required consent */}
+        <label className="consent-row consent-row--required">
+          <div className="consent-checkbox-wrap">
+            <input
+              type="checkbox"
+              className="consent-checkbox"
+              checked={termsChecked}
+              onChange={e => setTermsChecked(e.target.checked)}
+            />
+            <div className={`consent-check-box ${termsChecked ? 'consent-check-box--on' : ''}`}>
+              {termsChecked && <Icon name="check" size={14} color="white" sw={3} />}
+            </div>
+          </div>
+          <div>
+            <span className="consent-row-title">Jeg accepterer privatlivspolitikken og vilkårene for brug</span>
+            <span className="consent-row-sub">Krævet for at bruge appen</span>
+          </div>
+        </label>
+
+        {/* Optional: email */}
+        <label className="consent-row">
+          <div className="consent-checkbox-wrap">
+            <input
+              type="checkbox"
+              className="consent-checkbox"
+              checked={emailChecked}
+              onChange={e => setEmailChecked(e.target.checked)}
+            />
+            <div className={`consent-check-box ${emailChecked ? 'consent-check-box--on' : ''}`}>
+              {emailChecked && <Icon name="check" size={14} color="white" sw={3} />}
+            </div>
+          </div>
+          <div>
+            <span className="consent-row-title">Email-notifikationer</span>
+            <span className="consent-row-sub">Modtag en email når din træner sender en besked eller opretter et event. Du kan ændre dette til enhver tid under Profil.</span>
+          </div>
+        </label>
+
+        {/* Push info */}
+        <div style={{ display: 'flex', gap: 12, padding: '12px 14px', background: '#eff6ff', borderRadius: 12, border: '1px solid #bfdbfe' }}>
+          <Icon name="bell" size={18} color="#2563eb" />
+          <p style={{ margin: 0, fontSize: 13, color: '#1e40af', lineHeight: 1.55 }}>
+            <strong>Push-notifikationer</strong> aktiveres separat via din telefons systemprompt.
+            Vi spørger dig om tilladelse, første gang du tilgår notifikationsindstillinger.
+          </p>
+        </div>
+      </div>
+
+      {/* Sticky buttons */}
+      <div style={{
+        position: 'sticky', bottom: 0,
+        padding: `12px 16px calc(12px + env(safe-area-inset-bottom, 0))`,
+        background: 'linear-gradient(to top, var(--bg) 75%, transparent)',
+        display: 'flex', flexDirection: 'column', gap: 10,
+      }}>
+        <button
+          className="btn btn-primary"
+          style={{ width: '100%', height: 52, fontSize: 17, fontWeight: 700, borderRadius: 14, opacity: termsChecked ? 1 : .45 }}
+          onClick={handleAccept}
+          disabled={!termsChecked || saving}
+        >
+          {saving ? 'Gemmer…' : 'Acceptér og fortsæt'}
+        </button>
+        <button
+          onClick={handleDecline}
+          style={{ background: 'none', border: 'none', color: 'var(--text3)', fontSize: 13, cursor: 'pointer', padding: '4px 0' }}
+        >
+          Afvis og log ud
+        </button>
+      </div>
+    </div>
+  )
+}
 
 function WelcomeScreen({ user, onDone }) {
   const [saving, setSaving] = useState(false)
@@ -2654,6 +2816,7 @@ export default function App() {
       conventus_id:         memberConventusId,
       onboardingDone:       profile.onboardingDone === true,
       emailNotifications:   profile.emailNotifications !== false,
+      consentGiven:         profile.consentGiven === true && profile.consentVersion === CONSENT_VERSION,
     })
   }
 
@@ -2814,6 +2977,18 @@ export default function App() {
   if (!user) {
     return (
       <LoginScreen initialError={loginError} />
+    )
+  }
+
+  // Samtykkeskærm — vises til alle brugere der ikke har accepteret gældende version
+  if (!user.consentGiven) {
+    return (
+      <ConsentScreen
+        user={user}
+        onConsent={({ emailNotifications }) =>
+          setUser(u => ({ ...u, consentGiven: true, emailNotifications }))
+        }
+      />
     )
   }
 

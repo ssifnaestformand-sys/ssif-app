@@ -171,6 +171,75 @@ body {
 /* ─── Screen ────────────────────────────────────────────────────────────────── */
 .screen { padding-bottom: 8px; }
 
+/* ─── Consent screen ─────────────────────────────────────────────────────────── */
+
+.consent-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  border: 1.5px solid transparent;
+  transition: border-color .15s;
+}
+.consent-row--required {
+  border-color: rgba(26,92,42,.12);
+}
+.consent-row:has(.consent-check-box--on) {
+  border-color: var(--green);
+}
+
+.consent-checkbox-wrap {
+  position: relative;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  margin-top: 1px;
+}
+.consent-checkbox {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  margin: 0;
+  width: 100%;
+  height: 100%;
+}
+.consent-check-box {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  border: 2px solid var(--border);
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .15s, border-color .15s;
+  pointer-events: none;
+}
+.consent-check-box--on {
+  background: var(--green);
+  border-color: var(--green);
+}
+
+.consent-row-title {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 3px;
+}
+.consent-row-sub {
+  display: block;
+  font-size: 13px;
+  color: var(--text3);
+  line-height: 1.5;
+}
+
 /* ─── Login ─────────────────────────────────────────────────────────────────── */
 .login-screen {
   min-height: 100vh;
