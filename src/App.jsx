@@ -3412,7 +3412,10 @@ export default function App() {
       const _raw = sessionStorage.getItem('_ssif_cv')
       if (_raw) { _cvInit = JSON.parse(_raw); sessionStorage.removeItem('_ssif_cv') }
     } catch {}
-    const effectiveEmail = fbUser.email || _cvInit?.email || ''
+    const effectiveEmail  = fbUser.email || _cvInit?.email || ''
+    // Conventus-login er i sig selv et bevis på verificeret email — Firebase custom tokens har altid emailVerified=false
+    const isConventusUser = fbUser.uid.startsWith('conventus_')
+    const emailVerified   = isConventusUser || fbUser.emailVerified
 
     try {
       const ref  = doc(db, 'users', fbUser.uid)
@@ -3423,7 +3426,7 @@ export default function App() {
         profile = {
           primaryEmail:  effectiveEmail,
           displayName:   _cvInit?.displayName || fbUser.displayName || effectiveEmail.split('@')[0] || 'Bruger',
-          emailVerified: fbUser.emailVerified,
+          emailVerified,
           extraEmails:   [],
           holdIds:       [],
           role:          'Medlem',
@@ -3458,7 +3461,7 @@ export default function App() {
       // Skriv lastSeen + sammenslåede holdIds + evt. rolle til Firestore
       if (snap.exists()) {
         const updates = { lastSeen: serverTimestamp() }
-        if (profile.emailVerified !== fbUser.emailVerified) updates.emailVerified = fbUser.emailVerified
+        if (profile.emailVerified !== emailVerified) updates.emailVerified = emailVerified
         if (memberHoldIds.length > 0) {
           updates.holdIds = [...new Set([...(profile.holdIds || []).map(String), ...memberHoldIds])]
         }
@@ -3487,7 +3490,7 @@ export default function App() {
       firstName:     parts[0] || 'Bruger',
       email:         effectiveEmail,
       uid:           fbUser.uid,
-      emailVerified: fbUser.emailVerified,
+      emailVerified,
       initials:      ((parts[0]?.[0] || '') + (parts[parts.length - 1]?.[0] || '')).toUpperCase()
                      || (effectiveEmail?.slice(0,2).toUpperCase() ?? 'SS'),
       role:           profile.role === 'admin'   ? 'admin'
