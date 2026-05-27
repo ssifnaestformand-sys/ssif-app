@@ -17,7 +17,7 @@ import {
 } from 'firebase/auth'
 import {
   collection, query, where, orderBy, onSnapshot,
-  addDoc, updateDoc, deleteField, arrayUnion, arrayRemove, serverTimestamp, limit, increment,
+  addDoc, updateDoc, deleteDoc, deleteField, arrayUnion, arrayRemove, serverTimestamp, limit, increment,
   doc, getDoc, setDoc, getDocs,
 } from 'firebase/firestore'
 
@@ -52,6 +52,10 @@ function Icon({ name, size = 24, color = 'currentColor', sw = 1.75 }) {
     'check-circle':<><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></>,
     'alert-circle':<><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></>,
     'person-circle':<><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></>,
+    clock:    <><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>,
+    plus:     <><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></>,
+    download: <><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></>,
+    trash:    <><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></>,
   }
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -422,11 +426,11 @@ function AppHeader({ title, onBack, backLabel, right }) {
 
 function BottomNav({ activeTab, onChange, unreadCount }) {
   const tabs = [
-    { id: 'dashboard', label: 'Hjem',     icon: 'home'          },
-    { id: 'teams',     label: 'Hold',     icon: 'users'         },
-    { id: 'news',      label: 'Nyheder',  icon: 'news'          },
-    { id: 'messages',  label: 'Beskeder', icon: 'message'       },
-    { id: 'profil',    label: 'Profil',   icon: 'person-circle' },
+    { id: 'dashboard', label: 'Hjem',     icon: 'home'     },
+    { id: 'teams',     label: 'Hold',     icon: 'users'    },
+    { id: 'news',      label: 'Nyheder',  icon: 'news'     },
+    { id: 'messages',  label: 'Beskeder', icon: 'message'  },
+    { id: 'kalender',  label: 'Kalender', icon: 'calendar' },
   ]
   return (
     <nav className="tab-bar">
@@ -1685,6 +1689,521 @@ function FeedScreen({ user, onSelectMsg, onMarkSeen, onEnableNotifications }) {
   )
 }
 
+// ─── Kalender / Events ────────────────────────────────────────────────────────
+
+const DK_MONTHS      = ['jan','feb','mar','apr','maj','jun','jul','aug','sep','okt','nov','dec']
+const DK_MONTHS_LONG = ['januar','februar','marts','april','maj','juni','juli','august','september','oktober','november','december']
+const DK_DAYS        = ['søndag','mandag','tirsdag','onsdag','torsdag','fredag','lørdag']
+
+function fmtEventDate(dato) {
+  if (!dato) return ''
+  const [y, m, d] = dato.split('-').map(Number)
+  return `${d}. ${DK_MONTHS_LONG[m - 1]} ${y}`
+}
+function fmtEventWeekday(dato) {
+  if (!dato) return ''
+  return DK_DAYS[new Date(dato + 'T12:00:00').getDay()]
+}
+
+function EventTypeBadge({ type }) {
+  const isKamp = type === 'kamp'
+  return (
+    <span className={`event-type-badge ${isKamp ? 'event-type-badge--kamp' : 'event-type-badge--generel'}`}>
+      {isKamp ? '⚽ Kamp' : '📅 Event'}
+    </span>
+  )
+}
+
+function EventDetailRow({ icon, children }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, color: 'var(--text2)', fontSize: 15 }}>
+      <span style={{ flexShrink: 0, marginTop: 2 }}><Icon name={icon} size={17} color="var(--green)" /></span>
+      <span>{children}</span>
+    </div>
+  )
+}
+
+function KalenderScreen({ user, onSelectEvent }) {
+  const [events,     setEvents]     = useState([])
+  const [loading,    setLoading]    = useState(true)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
+
+  const isTrainer = user.role === 'trainer' || user.role === 'admin'
+  const myHoldIds = [...new Set([
+    ...(user.holdIds     || []).map(String),
+    ...(user.lederHoldIds || []).map(String),
+  ])]
+
+  useEffect(() => {
+    if (!myHoldIds.length) { setLoading(false); return }
+    const today  = new Date().toISOString().slice(0, 10)
+    const chunks = []
+    for (let i = 0; i < myHoldIds.length; i += 30) chunks.push(myHoldIds.slice(i, i + 30))
+
+    Promise.all(chunks.map(chunk =>
+      getDocs(query(collection(db, 'events'), where('holdId', 'in', chunk)))
+    ))
+      .then(snaps => {
+        const seen = new Set()
+        const all  = snaps
+          .flatMap(s => s.docs.map(d => ({ id: d.id, ...d.data() })))
+          .filter(ev => {
+            if (seen.has(ev.id) || (ev.dato || '') < today) return false
+            seen.add(ev.id)
+            return true
+          })
+
+        const relevant = all.filter(ev => {
+          if (ev.type === 'generel') return true
+          if (isTrainer && (user.lederHoldIds || []).map(String).includes(String(ev.holdId))) return true
+          return (ev.udtagneSpillere || []).some(s =>
+            s.email?.toLowerCase() === user.email?.toLowerCase() ||
+            (user.conventus_id && s.conventus_id === user.conventus_id)
+          )
+        })
+        relevant.sort((a, b) =>
+          (a.dato || '').localeCompare(b.dato || '') ||
+          (a.tidStart || '').localeCompare(b.tidStart || '')
+        )
+        setEvents(relevant)
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [refreshKey])
+
+  return (
+    <div className="screen">
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: '60px 0' }}>
+          <div className="loading-dots"><span /><span /><span /></div>
+        </div>
+      ) : events.length === 0 ? (
+        <div className="kalender-empty">
+          <Icon name="calendar" size={48} color="var(--text3)" />
+          <h3 className="kalender-empty-title">Ingen kommende events</h3>
+          <p className="kalender-empty-body">
+            {isTrainer
+              ? 'Tryk + for at oprette et event for dit hold.'
+              : 'Trænerne på dine hold har ikke oprettet nogen kommende events.'}
+          </p>
+        </div>
+      ) : (
+        <div className="kalender-list">
+          {events.map(ev => {
+            const d = ev.dato ? new Date(ev.dato + 'T12:00:00') : null
+            return (
+              <button key={ev.id} className="event-card" onClick={() => onSelectEvent(ev)}>
+                <div className="event-card-date">
+                  <span className="event-card-day">{d ? d.getDate() : '—'}</span>
+                  <span className="event-card-month">{d ? DK_MONTHS[d.getMonth()] : ''}</span>
+                </div>
+                <div className="event-card-body">
+                  <EventTypeBadge type={ev.type} />
+                  <div className="event-card-title">{ev.titel}</div>
+                  <div className="event-card-meta">
+                    {ev.tidStart && (
+                      <span className="event-card-meta-item">
+                        <Icon name="clock" size={12} color="var(--text3)" />
+                        {ev.tidStart}{ev.tidSlut ? `–${ev.tidSlut}` : ''}
+                      </span>
+                    )}
+                    {ev.sted && (
+                      <span className="event-card-meta-item">
+                        <Icon name="location" size={12} color="var(--text3)" />
+                        {ev.sted}
+                      </span>
+                    )}
+                    {ev.holdNavn && (
+                      <span className="event-card-meta-item">
+                        <Icon name="users" size={12} color="var(--text3)" />
+                        {ev.holdNavn}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <Icon name="chevron" size={18} color="var(--text3)" />
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {isTrainer && (
+        <button className="kalender-fab" onClick={() => setCreateOpen(true)} aria-label="Opret event">
+          <Icon name="plus" size={26} color="white" sw={2.5} />
+        </button>
+      )}
+
+      {createOpen && (
+        <CreateEventSheet
+          user={user}
+          onClose={() => setCreateOpen(false)}
+          onCreated={() => { setCreateOpen(false); setRefreshKey(k => k + 1) }}
+        />
+      )}
+    </div>
+  )
+}
+
+function CreateEventSheet({ user, onClose, onCreated }) {
+  const [type,        setType]        = useState('generel')
+  const [holdId,      setHoldId]      = useState('')
+  const [holds,       setHolds]       = useState([])
+  const [holdsReady,  setHoldsReady]  = useState(false)
+  const [titel,       setTitel]       = useState('')
+  const [dato,        setDato]        = useState('')
+  const [tidStart,    setTidStart]    = useState('')
+  const [tidSlut,     setTidSlut]     = useState('')
+  const [sted,        setSted]        = useState('')
+  const [beskrivelse, setBeskrivelse] = useState('')
+  const [members,     setMembers]     = useState([])
+  const [membersReady, setMembersReady] = useState(false)
+  const [udtagne,     setUdtagne]     = useState([])
+  const [saving,      setSaving]      = useState(false)
+
+  useEffect(() => {
+    getDocs(query(collection(db, 'holds'), where('aktiv', '==', true)))
+      .then(snap => {
+        let all = snap.docs.map(d => d.data())
+        if (user.role !== 'admin') {
+          const mine = new Set((user.lederHoldIds || []).map(String))
+          all = all.filter(h => mine.has(String(h.conventus_id)))
+        }
+        all.sort((a, b) => (a.titel || '').localeCompare(b.titel || '', 'da'))
+        setHolds(all)
+        if (all.length === 1) setHoldId(String(all[0].conventus_id))
+        setHoldsReady(true)
+      })
+      .catch(() => setHoldsReady(true))
+  }, [])
+
+  useEffect(() => {
+    if (!holdId || type !== 'kamp') { setMembers([]); setMembersReady(false); return }
+    setMembersReady(false)
+    getDocs(query(collection(db, 'members'), where('holdIds', 'array-contains', holdId)))
+      .then(snap => {
+        const all = snap.docs.map(d => ({
+          conventus_id: d.data().conventus_id,
+          name:  d.data().name || 'Ukendt',
+          email: (d.data().allEmails || [])[0] || '',
+        })).filter(m => m.email)
+        all.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'da'))
+        setMembers(all)
+        setMembersReady(true)
+      })
+      .catch(() => setMembersReady(true))
+  }, [holdId, type])
+
+  function togglePlayer(player) {
+    setUdtagne(prev => {
+      const idx = prev.findIndex(p => p.conventus_id === player.conventus_id)
+      return idx >= 0 ? prev.filter((_, i) => i !== idx) : [...prev, player]
+    })
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    if (!holdId || !titel.trim() || !dato || !tidStart) return
+    if (type === 'kamp' && udtagne.length === 0) { alert('Vælg mindst én spiller til udtagelse'); return }
+    setSaving(true)
+    const hold     = holds.find(h => String(h.conventus_id) === holdId)
+    const icsToken = crypto.randomUUID()
+    try {
+      const eventData = {
+        type,
+        titel:         titel.trim(),
+        dato,
+        tidStart,
+        tidSlut:       tidSlut  || null,
+        sted:          sted.trim() || null,
+        beskrivelse:   beskrivelse.trim() || null,
+        holdId,
+        holdNavn:      hold?.titel || holdId,
+        oprettetAf:    user.uid,
+        oprettetAfNavn: user.name,
+        icsToken,
+        createdAt:     serverTimestamp(),
+        ...(type === 'kamp' ? { udtagneSpillere: udtagne } : {}),
+      }
+      const ref = await addDoc(collection(db, 'events'), eventData)
+
+      auth.currentUser?.getIdToken().then(idToken => {
+        fetch('/api/send-event-notifications.php', {
+          method:  'POST',
+          headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ eventId: ref.id }),
+        }).catch(() => {})
+      }).catch(() => {})
+
+      onCreated()
+    } catch (err) {
+      alert('Fejl: ' + err.message)
+      setSaving(false)
+    }
+  }
+
+  const selectedHold = holds.find(h => String(h.conventus_id) === holdId)
+
+  return (
+    <div className="compose-sheet" style={{ overflowY: 'auto', maxHeight: '100dvh' }}>
+      <div className="compose-header">
+        <div className="compose-header-left">
+          <div className="compose-icon">
+            <Icon name="calendar" size={18} color="white" />
+          </div>
+          <div>
+            <h2 className="compose-title">Nyt event</h2>
+            <p className="compose-subtitle">Opret og notificér holdet</p>
+          </div>
+        </div>
+        <button onClick={onClose} className="compose-close" type="button" aria-label="Luk">
+          <Icon name="x" size={20} color="var(--text3)" />
+        </button>
+      </div>
+
+      <form onSubmit={handleSubmit} className="compose-form">
+        {/* Type */}
+        <div className="compose-section">
+          <label className="compose-label">
+            <Icon name="calendar" size={14} color="var(--green)" /> Type
+          </label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {[
+              { id: 'generel', label: '📅 Generel event'     },
+              { id: 'kamp',   label: '⚽ Kamp / udtagelse'  },
+            ].map(t => (
+              <button
+                key={t.id}
+                type="button"
+                className={`compose-hold-chip${type === t.id ? ' compose-hold-chip--active' : ''}`}
+                style={{ flex: 1, justifyContent: 'center' }}
+                onClick={() => { setType(t.id); setUdtagne([]) }}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Hold */}
+        <div className="compose-section">
+          <label className="compose-label">
+            <Icon name="users" size={14} color="var(--green)" /> Hold
+          </label>
+          {!holdsReady ? (
+            <p className="compose-holds-loading">Henter hold…</p>
+          ) : holds.length === 0 ? (
+            <p className="compose-holds-loading">Ingen hold tilknyttet</p>
+          ) : holds.length <= 5 ? (
+            <div className="compose-hold-grid">
+              {holds.map(h => {
+                const active = String(h.conventus_id) === holdId
+                return (
+                  <button
+                    key={h.conventus_id}
+                    type="button"
+                    className={`compose-hold-chip${active ? ' compose-hold-chip--active' : ''}`}
+                    onClick={() => { setHoldId(String(h.conventus_id)); setUdtagne([]) }}
+                  >
+                    <span className="compose-hold-initials">{(h.titel || '?').slice(0, 2).toUpperCase()}</span>
+                    <span className="compose-hold-name">{h.titel}</span>
+                    {active && <Icon name="check-circle" size={16} color="var(--green)" />}
+                  </button>
+                )
+              })}
+            </div>
+          ) : (
+            <select className="compose-select" value={holdId}
+              onChange={e => { setHoldId(e.target.value); setUdtagne([]) }} required>
+              <option value="">Vælg hold…</option>
+              {holds.map(h => <option key={h.conventus_id} value={String(h.conventus_id)}>{h.titel}</option>)}
+            </select>
+          )}
+        </div>
+
+        {/* Titel */}
+        <div className="compose-section">
+          <label className="compose-label">
+            <Icon name="send" size={14} color="var(--green)" /> Titel
+          </label>
+          <input
+            className="compose-select"
+            type="text"
+            value={titel}
+            onChange={e => setTitel(e.target.value)}
+            placeholder={type === 'kamp' ? 'F.eks. Kamp mod Silkeborg IF' : 'F.eks. Stævne i Horsens'}
+            required
+          />
+        </div>
+
+        {/* Dato + tid */}
+        <div className="compose-section">
+          <label className="compose-label">
+            <Icon name="clock" size={14} color="var(--green)" /> Dato og tidspunkt
+          </label>
+          <div className="event-time-row">
+            <input className="compose-select" type="date" value={dato} onChange={e => setDato(e.target.value)} required />
+            <input className="compose-select event-time-input" type="time" value={tidStart} onChange={e => setTidStart(e.target.value)} required title="Start" />
+            <input className="compose-select event-time-input" type="time" value={tidSlut}  onChange={e => setTidSlut(e.target.value)}  title="Slut (valgfrit)" />
+          </div>
+          <p className="event-time-hint">Sluttidspunkt er valgfrit</p>
+        </div>
+
+        {/* Sted */}
+        <div className="compose-section">
+          <label className="compose-label">
+            <Icon name="location" size={14} color="var(--green)" /> Sted (valgfrit)
+          </label>
+          <input className="compose-select" type="text" value={sted} onChange={e => setSted(e.target.value)} placeholder="F.eks. Sejs Idrætsanlæg" />
+        </div>
+
+        {/* Beskrivelse */}
+        <div className="compose-section">
+          <label className="compose-label">
+            <Icon name="message" size={14} color="var(--green)" /> Beskrivelse (valgfrit)
+          </label>
+          <textarea className="compose-textarea" rows={3} value={beskrivelse} onChange={e => setBeskrivelse(e.target.value)} placeholder="Ekstra info om eventen…" />
+        </div>
+
+        {/* Spillervælger — kun ved kamp */}
+        {type === 'kamp' && holdId && (
+          <div className="compose-section">
+            <label className="compose-label">
+              <Icon name="users" size={14} color="var(--green)" />
+              Udtag spillere
+              {udtagne.length > 0 && <span className="player-count-badge">{udtagne.length} valgt</span>}
+            </label>
+            {!membersReady ? (
+              <p className="compose-holds-loading">Henter spillere…</p>
+            ) : members.length === 0 ? (
+              <p className="compose-holds-loading">Ingen spillere fundet — kør sync-members først</p>
+            ) : (
+              <div className="player-grid">
+                {members.map(p => {
+                  const sel = udtagne.some(u => u.conventus_id === p.conventus_id)
+                  return (
+                    <button
+                      key={p.conventus_id}
+                      type="button"
+                      className={`player-chip${sel ? ' player-chip--selected' : ''}`}
+                      onClick={() => togglePlayer(p)}
+                    >
+                      <span className="player-chip-initials">
+                        {(p.name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+                      </span>
+                      <span className="player-chip-name">{(p.name || '').split(' ')[0]}</span>
+                      {sel && <Icon name="check" size={13} color="var(--green)" sw={2.5} />}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        <button
+          className="compose-send-btn"
+          type="submit"
+          disabled={saving || !holdId || !titel.trim() || !dato || !tidStart || (type === 'kamp' && udtagne.length === 0)}
+        >
+          {saving
+            ? <><span className="spinner" /> Opretter…</>
+            : <><Icon name="send" size={18} color="white" /> Opret og notificér</>
+          }
+        </button>
+      </form>
+    </div>
+  )
+}
+
+function EventDetailScreen({ event: ev, user, onEventDeleted }) {
+  const [deleting, setDeleting] = useState(false)
+
+  const isMyEvent = user.role === 'admin' ||
+    (user.role === 'trainer' && (user.lederHoldIds || []).map(String).includes(String(ev.holdId)))
+
+  const timeStr = ev.tidStart
+    ? `${ev.tidStart}${ev.tidSlut ? `–${ev.tidSlut}` : ''}`
+    : null
+
+  async function handleDelete() {
+    if (!window.confirm('Slet dette event? Det kan ikke fortrydes.')) return
+    setDeleting(true)
+    try {
+      await deleteDoc(doc(db, 'events', ev.id))
+      onEventDeleted()
+    } catch (err) {
+      alert('Fejl: ' + err.message)
+      setDeleting(false)
+    }
+  }
+
+  return (
+    <div className="screen">
+      <div className="article">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <EventTypeBadge type={ev.type} />
+          {ev.holdNavn && <span style={{ fontSize: 12, color: 'var(--text3)', fontWeight: 600 }}>{ev.holdNavn}</span>}
+        </div>
+
+        <h1 className="article-title" style={{ marginBottom: 20 }}>{ev.titel}</h1>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 24 }}>
+          {ev.dato && (
+            <EventDetailRow icon="calendar">
+              {fmtEventWeekday(ev.dato)}, {fmtEventDate(ev.dato)}
+            </EventDetailRow>
+          )}
+          {timeStr && <EventDetailRow icon="clock">{timeStr}</EventDetailRow>}
+          {ev.sted && <EventDetailRow icon="location">{ev.sted}</EventDetailRow>}
+        </div>
+
+        {ev.beskrivelse && (
+          <div className="event-description">
+            <p>{ev.beskrivelse}</p>
+          </div>
+        )}
+
+        {ev.icsToken && (
+          <a href={`/api/event-ics.php?token=${ev.icsToken}`} className="event-ics-btn" download>
+            <Icon name="download" size={17} color="var(--green)" />
+            Tilføj til kalender (.ics)
+          </a>
+        )}
+
+        {ev.type === 'kamp' && Array.isArray(ev.udtagneSpillere) && ev.udtagneSpillere.length > 0 && (
+          <div style={{ marginTop: 24 }}>
+            <SectionHeader title={`Udtagne spillere (${ev.udtagneSpillere.length})`} />
+            <div className="player-grid" style={{ padding: '4px 16px 8px' }}>
+              {ev.udtagneSpillere.map(p => (
+                <div key={p.conventus_id} className="player-chip player-chip--selected" style={{ cursor: 'default' }}>
+                  <span className="player-chip-initials">
+                    {(p.name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+                  </span>
+                  <span className="player-chip-name">{(p.name || '').split(' ')[0]}</span>
+                  <Icon name="check" size={13} color="var(--green)" sw={2.5} />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {isMyEvent && (
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            className="event-delete-btn"
+          >
+            <Icon name="trash" size={16} color="#ff3b30" />
+            {deleting ? 'Sletter…' : 'Slet event'}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── Profil ───────────────────────────────────────────────────────────────────
 
 function ProfileScreen({ user, onLogout, onUserUpdate, verifyMsg, onEnableNotifications }) {
@@ -2010,7 +2529,8 @@ export default function App() {
   const [activeTab, setActiveTab]                 = useState('dashboard')
   const [selectedTeam, setSelectedTeam]           = useState(null)
   const [selectedArticle, setSelectedArticle]     = useState(null)
-  const [selectedMsg,  setSelectedMsg]            = useState(null)
+  const [selectedMsg,   setSelectedMsg]           = useState(null)
+  const [selectedEvent, setSelectedEvent]         = useState(null)
   const [msgUnread,    setMsgUnread]              = useState(0)
   const [news, setNews]                           = useState([])
   const [newsLive, setNewsLive]                   = useState(false)
@@ -2043,8 +2563,9 @@ export default function App() {
   // ── Load + merge Firestore profile ───────────────────────────────────────
   async function loadAndSetUser(fbUser) {
     let profile = {}
-    let memberHoldIds = []
-    let lederHoldIds  = []
+    let memberHoldIds     = []
+    let lederHoldIds      = []
+    let memberConventusId = null
     try {
       const ref  = doc(db, 'users', fbUser.uid)
       const snap = await getDoc(ref)
@@ -2076,6 +2597,7 @@ export default function App() {
         ))
         mSnap.docs.forEach(d => {
           const data = d.data()
+          if (!memberConventusId && data.conventus_id) memberConventusId = data.conventus_id
           ;(data.holds || []).forEach(h => {
             if (h.conventus_id) memberHoldIds.push(String(h.conventus_id))
           })
@@ -2129,6 +2651,7 @@ export default function App() {
       familyMembers:  profile.familyMembers  || [],
       primaryEmail:   profile.primaryEmail   || fbUser.email || '',
       extraEmails:    profile.extraEmails    || [],
+      conventus_id:         memberConventusId,
       onboardingDone:       profile.onboardingDone === true,
       emailNotifications:   profile.emailNotifications !== false,
     })
@@ -2257,7 +2780,7 @@ export default function App() {
 
   // ── Navigation ────────────────────────────────────────────────────────────
   function switchTab(tab) {
-    setActiveTab(tab); setSelectedTeam(null); setSelectedArticle(null); setSelectedMsg(null)
+    setActiveTab(tab); setSelectedTeam(null); setSelectedArticle(null); setSelectedMsg(null); setSelectedEvent(null)
   }
 
   function navigateFromDashboard(dest, data) {
@@ -2305,7 +2828,7 @@ export default function App() {
   }
 
   // ── Header state ─────────────────────────────────────────────────────────
-  const TAB_TITLES = { dashboard: 'Hjem', profil: 'Min profil', teams: 'Hold', news: 'Nyheder', messages: 'Beskeder' }
+  const TAB_TITLES = { dashboard: 'Hjem', profil: 'Min profil', teams: 'Hold', news: 'Nyheder', messages: 'Beskeder', kalender: 'Kalender' }
   let headerTitle = TAB_TITLES[activeTab] ?? 'SSIF'
   let onBack = null
   let backLabel = null
@@ -2316,6 +2839,8 @@ export default function App() {
     headerTitle = 'Nyhed'; onBack = () => setSelectedArticle(null); backLabel = 'Nyheder'
   } else if (activeTab === 'messages' && selectedMsg) {
     headerTitle = 'Besked'; onBack = () => setSelectedMsg(null); backLabel = 'Beskeder'
+  } else if (activeTab === 'kalender' && selectedEvent) {
+    headerTitle = selectedEvent.titel || 'Event'; onBack = () => setSelectedEvent(null); backLabel = 'Kalender'
   }
 
   const totalUnread = msgUnread
@@ -2364,6 +2889,13 @@ export default function App() {
           />
         ) : activeTab === 'messages' && selectedMsg ? (
           <MessageDetailScreen msg={selectedMsg} user={user} onBack={() => setSelectedMsg(null)} />
+        ) : null}
+        {activeTab === 'kalender' && !user.emailVerified ? (
+          <UnverifiedScreen user={user} onLogout={handleLogout} />
+        ) : activeTab === 'kalender' && !selectedEvent ? (
+          <KalenderScreen user={user} onSelectEvent={setSelectedEvent} />
+        ) : activeTab === 'kalender' && selectedEvent ? (
+          <EventDetailScreen event={selectedEvent} user={user} onEventDeleted={() => setSelectedEvent(null)} />
         ) : null}
       </main>
 

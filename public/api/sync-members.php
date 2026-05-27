@@ -225,6 +225,7 @@ function extract_member(SimpleXMLElement $k, int $id, array $holdsMap): ?array {
         'name'         => $name,
         'allEmails'    => [$email],
         'holds'        => $holds,
+        'holdIds'      => array_map(fn($h) => (string)$h['conventus_id'], $holds),
         'lederHolds'   => $lederHolds,
         'isLeder'      => !empty($lederHolds),
     ];

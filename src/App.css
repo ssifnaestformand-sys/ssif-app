@@ -1646,3 +1646,256 @@ body {
   margin-top: 2px;
   border: 1.5px solid rgba(26,92,42,.15);
 }
+
+/* ── Kalender / Events ────────────────────────────────────────────────────── */
+
+.kalender-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 16px 96px;
+}
+
+.kalender-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 64px 32px;
+  gap: 12px;
+}
+.kalender-empty-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+}
+.kalender-empty-body {
+  font-size: 14px;
+  color: var(--text3);
+  line-height: 1.6;
+  margin: 0;
+  max-width: 280px;
+}
+
+/* Event card */
+.event-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .12s, box-shadow .12s;
+}
+.event-card:active { transform: scale(.985); box-shadow: none; }
+
+.event-card-date {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 40px;
+  flex-shrink: 0;
+}
+.event-card-day {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--green);
+  line-height: 1;
+}
+.event-card-month {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  color: var(--text3);
+}
+
+.event-card-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.event-card-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.event-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.event-card-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--text3);
+}
+
+/* Event type badge */
+.event-type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.event-type-badge--kamp    { background: #fff3e0; color: #e65c00; }
+.event-type-badge--generel { background: var(--green-soft); color: var(--green); }
+
+/* FAB (floating action button) */
+.kalender-fab {
+  position: fixed;
+  bottom: calc(72px + env(safe-area-inset-bottom));
+  right: 20px;
+  width: 56px;
+  height: 56px;
+  border-radius: 28px;
+  background: var(--green);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 20px rgba(26,92,42,.45);
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .12s;
+  z-index: 100;
+}
+.kalender-fab:active { transform: scale(.92); }
+
+/* Event detail */
+.event-description {
+  background: var(--bg);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 20px;
+}
+.event-description p {
+  margin: 0;
+  font-size: 15px;
+  color: var(--text2);
+  line-height: 1.65;
+}
+
+.event-ics-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 13px 18px;
+  border-radius: 12px;
+  background: var(--green-soft);
+  border: 1.5px solid rgba(26,92,42,.18);
+  color: var(--green);
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+  margin-bottom: 20px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.event-delete-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 24px;
+  width: 100%;
+  padding: 13px;
+  border-radius: 12px;
+  background: transparent;
+  border: 1.5px solid #ff3b30;
+  color: #ff3b30;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Player grid (udtag spillere) */
+.player-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 8px;
+}
+
+.player-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 6px 8px;
+  border-radius: 10px;
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color .15s, background .15s;
+}
+.player-chip--selected {
+  border-color: var(--green);
+  background: var(--green-soft);
+}
+.player-chip-initials {
+  width: 36px;
+  height: 36px;
+  border-radius: 18px;
+  background: var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text2);
+  flex-shrink: 0;
+}
+.player-chip--selected .player-chip-initials {
+  background: rgba(26,92,42,.18);
+  color: var(--green);
+}
+.player-chip-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text2);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 80px;
+}
+.player-chip--selected .player-chip-name { color: var(--green); }
+
+.player-count-badge {
+  margin-left: 6px;
+  color: var(--green);
+  font-weight: 700;
+}
+
+/* Event form helpers */
+.event-time-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+}
+.event-time-input { width: 100px; }
+.event-time-hint {
+  font-size: 11px;
+  color: var(--text3);
+  margin: 4px 0 0;
+}
