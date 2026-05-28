@@ -1107,11 +1107,16 @@ function DashboardScreen({ user, unreadMsgs = 0, news, onNavigate, showPushBanne
       .catch(() => {})
   }, [])
 
-  // Byg person-label map: conventus_id → navn (fra familyMembers)
-  const personLabel = {}
-  ;(user.familyMembers || []).forEach(m => {
-    if (m.holdId) personLabel[String(m.holdId)] = m.name
-  })
+  // holdPersonMap: holdId → fornavn — kun ikke-tomt når der er familiemedlemmer
+  const holdPersonMap = (() => {
+    const fm = user.familyMembers || []
+    if (!fm.length) return {}
+    const fn = n => (n || '').split(' ')[0] || ''
+    const map = {}
+    ;(user.holdIds || []).forEach(id => { map[String(id)] = fn(user.firstName || user.name) })
+    fm.forEach(m => { if (m.holdId) map[String(m.holdId)] = fn(m.name) })
+    return map
+  })()
 
   // Bygger ugeoversigt: sessions per dag
   const today    = new Date()
@@ -1140,12 +1145,14 @@ function DashboardScreen({ user, unreadMsgs = 0, news, onNavigate, showPushBanne
     const trainings = byDay[i].map(s => ({
       _type: 'træning', time: s.time,
       label: s.hold.titel,
-      person: personLabel[String(s.hold.conventus_id)] || null,
+      person: holdPersonMap[String(s.hold.conventus_id)] || null,
       hold: s.hold,
     }))
     const evs = weekEvents.filter(ev => ev.dato === dato).map(ev => ({
       _type: ev.type || 'generel',
-      time: ev.tidStart || '', label: ev.titel, sted: ev.sted || '', ev,
+      time: ev.tidStart || '', label: ev.titel, sted: ev.sted || '',
+      person: holdPersonMap[String(ev.holdId)] || null,
+      ev,
     }))
     const items = [...trainings, ...evs].sort((a, b) => (a.time || '').localeCompare(b.time || ''))
     return { date, i, dato, items }
@@ -1290,7 +1297,7 @@ function DashboardScreen({ user, unreadMsgs = 0, news, onNavigate, showPushBanne
                       {item.time || '——'}
                     </span>
                     <span style={{ flex: 1, fontSize: 14, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {item._type === 'træning' && item.person
+                      {item.person
                         ? <><b style={{ fontWeight: 700 }}>{item.person}</b><span style={{ color: 'var(--text2)', fontWeight: 400 }}> · {item.label}</span></>
                         : <span style={{ fontWeight: 600 }}>{item.label}</span>
                       }
@@ -1347,7 +1354,12 @@ function DashboardScreen({ user, unreadMsgs = 0, news, onNavigate, showPushBanne
                     </span>
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)' }}>{ev.titel}</div>
+                    <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)' }}>
+                      {ev.titel}
+                      {holdPersonMap[String(ev.holdId)] && (
+                        <span style={{ fontWeight: 400, color: 'var(--text3)', fontSize: 13 }}> ({holdPersonMap[String(ev.holdId)]})</span>
+                      )}
+                    </div>
                     <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>
                       {ev.holdNavn}{ev.tidStart ? ` · ${ev.tidStart}` : ''}{ev.sted ? ` · ${ev.sted}` : ''}
                     </div>
@@ -2274,6 +2286,16 @@ function KalenderScreen({ user, onSelectEvent }) {
     ...(user.lederHoldIds || []).map(String),
   ])]
 
+  const holdPersonMap = (() => {
+    const fm = user.familyMembers || []
+    if (!fm.length) return {}
+    const fn = n => (n || '').split(' ')[0] || ''
+    const map = {}
+    ;(user.holdIds || []).forEach(id => { map[String(id)] = fn(user.firstName || user.name) })
+    fm.forEach(m => { if (m.holdId) map[String(m.holdId)] = fn(m.name) })
+    return map
+  })()
+
   useEffect(() => {
     const ids = new Set(myHoldIds)
     if (!ids.size) return
@@ -2432,7 +2454,10 @@ function KalenderScreen({ user, onSelectEvent }) {
                             <div className="kal-item-bar" style={{ background: 'var(--green)' }} />
                             <span className="kal-item-time" style={{ color: 'var(--green)' }}>{item.tidStart || '——'}</span>
                             <div className="kal-item-body">
-                              <div className="kal-item-title">{item.holdNavn}</div>
+                              <div className="kal-item-title">
+                                {item.holdNavn}
+                                {holdPersonMap[item.holdId] && <span className="kal-item-person"> ({holdPersonMap[item.holdId]})</span>}
+                              </div>
                               <EventTypeBadge type="træning" />
                             </div>
                             <button onClick={downloadHoldICS} title="Tilføj til kalender"
@@ -2447,7 +2472,10 @@ function KalenderScreen({ user, onSelectEvent }) {
                           <div className="kal-item-bar" style={{ background: ac }} />
                           <span className="kal-item-time" style={{ color: ac }}>{item.tidStart || '——'}</span>
                           <div className="kal-item-body">
-                            <div className="kal-item-title">{item.titel}</div>
+                            <div className="kal-item-title">
+                              {item.titel}
+                              {holdPersonMap[String(item.holdId)] && <span className="kal-item-person"> ({holdPersonMap[String(item.holdId)]})</span>}
+                            </div>
                             {(item.holdNavn || item.sted) && (
                               <div className="kal-item-sub">{[item.holdNavn, item.sted].filter(Boolean).join(' · ')}</div>
                             )}

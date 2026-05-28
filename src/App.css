@@ -2095,6 +2095,11 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.kal-item-person {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text3);
+}
 
 /* Event detail */
 .event-description {
