@@ -130,7 +130,7 @@ function SplashScreen({ label }) {
   return (
     <div className="splash-screen">
       <div className="splash-logo">
-        <img src="/ssif-logo.png" alt="SSIF" className="splash-logo-img"
+        <img src={`${import.meta.env.BASE_URL}ssif-logo.png`} alt="SSIF" className="splash-logo-img"
              onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block' }} />
         <span style={{ display: 'none' }}>SSIF</span>
       </div>
@@ -173,7 +173,7 @@ function InstallPromptScreen({ onContinue }) {
     }}>
       {/* Logo */}
       <div style={{ width: 120, height: 120, borderRadius: 28, background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12, marginBottom: 28, boxShadow: '0 8px 32px rgba(0,0,0,.2)' }}>
-        <img src="/ssif-logo.png" alt="SSIF" style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+        <img src={`${import.meta.env.BASE_URL}ssif-logo.png`} alt="SSIF" style={{ width: '100%', height: '100%', objectFit: 'contain' }}
              onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='block' }} />
         <span style={{ display:'none', color:'var(--green)', fontSize:32, fontWeight:800 }}>S</span>
       </div>
@@ -365,7 +365,7 @@ function LoginScreen({ initialError }) {
     <div className="login-screen">
       <div className="login-top">
         <div className="login-logo">
-          <img src="/ssif-logo.png" alt="SSIF" className="login-logo-img"
+          <img src={`${import.meta.env.BASE_URL}ssif-logo.png`} alt="SSIF" className="login-logo-img"
                onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block' }} />
           <span style={{ display: 'none' }}>SSIF</span>
         </div>
@@ -495,7 +495,7 @@ function LoginScreen({ initialError }) {
 
           <button className="btn btn-social btn-conventus" onClick={() => reset('conventus')}
                   disabled={!!loading}>
-            <img src="/conventus-logo_inv.svg" alt="Conventus" height="20"
+            <img src={`${import.meta.env.BASE_URL}conventus-logo_inv.svg`} alt="Conventus" height="20"
                  style={{ flexShrink: 0 }}
                  onError={e => { e.target.style.display = 'none' }} />
             Log ind med Conventus
@@ -549,7 +549,7 @@ function AppHeader({ title, onBack, backLabel, right }) {
               <Icon name="back" size={20} color="var(--green)" sw={2.5} />
               {backLabel && <span>{backLabel}</span>}
             </button>
-          : <img src="/ssif-logo.png" alt="SSIF" className="header-logo-img" />
+          : <img src={`${import.meta.env.BASE_URL}ssif-logo.png`} alt="SSIF" className="header-logo-img" />
         }
       </div>
       <span className="header-title">{title}</span>
@@ -654,10 +654,12 @@ function LegalViewer({ url, onClose }) {
 }
 
 function ConsentScreen({ user, onConsent }) {
-  const [termsChecked, setTermsChecked] = useState(false)
-  const [emailChecked, setEmailChecked] = useState(false)
-  const [saving,       setSaving]       = useState(false)
-  const [legalUrl,     setLegalUrl]     = useState(null)
+  const [termsChecked,    setTermsChecked]    = useState(false)
+  const [emailChecked,    setEmailChecked]    = useState(false)
+  const [saving,          setSaving]          = useState(false)
+  const [signingOut,      setSigningOut]      = useState(false)
+  const [confirmDecline,  setConfirmDecline]  = useState(false)
+  const [legalUrl,        setLegalUrl]        = useState(null)
 
   async function handleAccept() {
     if (!termsChecked || saving) return
@@ -677,8 +679,11 @@ function ConsentScreen({ user, onConsent }) {
   }
 
   async function handleDecline() {
-    if (window.confirm('Uden accept af privatlivspolitikken kan du ikke bruge appen.\n\nVil du logge ud?')) {
+    setSigningOut(true)
+    try {
       await signOut(auth)
+    } catch {
+      setSigningOut(false)
     }
   }
 
@@ -787,12 +792,49 @@ function ConsentScreen({ user, onConsent }) {
           {saving ? 'Gemmer…' : 'Acceptér og fortsæt'}
         </button>
         <button
-          onClick={handleDecline}
+          onClick={() => setConfirmDecline(true)}
           style={{ background: 'none', border: 'none', color: 'var(--text3)', fontSize: 13, cursor: 'pointer', padding: '4px 0' }}
         >
           Afvis og log ud
         </button>
       </div>
+
+      {/* In-app afvisningsbekræftelse */}
+      {confirmDecline && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 1002,
+          background: 'rgba(0,0,0,0.45)',
+          display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+        }}>
+          <div style={{
+            width: '100%', maxWidth: 430,
+            background: 'var(--bg)', borderRadius: '20px 20px 0 0',
+            padding: `20px 20px calc(20px + env(safe-area-inset-bottom, 0))`,
+          }}>
+            <p style={{ fontWeight: 700, fontSize: 16, color: 'var(--text)', marginBottom: 6 }}>
+              Log ud uden at acceptere?
+            </p>
+            <p style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.55, marginBottom: 20 }}>
+              Du kan ikke bruge appen uden at acceptere privatlivspolitikken. Du vil blive sendt tilbage til velkomstskærmen.
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => setConfirmDecline(false)}
+                style={{ flex: 1, height: 46, borderRadius: 12, border: '1.5px solid var(--sep)', background: 'var(--surface)', color: 'var(--text)', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}
+              >
+                Fortryd
+              </button>
+              <button
+                onClick={handleDecline}
+                disabled={signingOut}
+                style={{ flex: 1, height: 46, borderRadius: 12, border: 'none', background: '#ff3b30', color: 'white', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}
+              >
+                {signingOut ? 'Logger ud…' : 'Log ud'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
