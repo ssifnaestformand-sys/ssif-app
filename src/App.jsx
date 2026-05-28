@@ -3447,6 +3447,7 @@ function UnverifiedScreen({ user, onLogout }) {
 export default function App() {
   const [user, setUser]                           = useState(null)
   const [authChecked, setAuthChecked]             = useState(false)
+  const authCheckedRef                            = useRef(false)
   const [installDone, setInstallDone]             = useState(() => {
     const standalone = window.matchMedia('(display-mode: standalone)').matches
                     || window.navigator.standalone === true
@@ -3615,9 +3616,12 @@ export default function App() {
       if (fbUser) {
         // Bruger logget ind (uanset om via redirect, kodeord eller eksisterende session)
         await loadAndSetUser(fbUser)
-        if (mounted) setAuthChecked(true)
+        if (mounted) { authCheckedRef.current = true; setAuthChecked(true) }
+      } else if (authCheckedRef.current) {
+        // Bruger logget ud efter initial load (fx signOut) — vis loginskærm
+        setUser(null)
       }
-      // Vis IKKE loginskærm her ved null — det klares af getRedirectResult nedenfor
+      // Ved initial load med null: ventes på getRedirectResult nedenfor
     })
 
     // Behandl redirect-resultat fra Google/Facebook signInWithRedirect.
@@ -3629,7 +3633,7 @@ export default function App() {
         // viser vi loginskærmen nu.
         if (!auth.currentUser) {
           setUser(null)
-          setAuthChecked(true)
+          authCheckedRef.current = true; setAuthChecked(true)
         }
       })
       .catch(err => {
@@ -3639,7 +3643,7 @@ export default function App() {
         else if (err.code && err.code !== 'auth/null-user') setLoginError(err.message)
         if (!auth.currentUser) {
           setUser(null)
-          setAuthChecked(true)
+          authCheckedRef.current = true; setAuthChecked(true)
         }
       })
 
