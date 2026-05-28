@@ -57,6 +57,7 @@ function Icon({ name, size = 24, color = 'currentColor', sw = 1.75 }) {
     plus:     <><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></>,
     download: <><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></>,
     trash:    <><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></>,
+    search:   <><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></>,
   }
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -3130,6 +3131,209 @@ function EventDetailScreen({ event: initialEv, user, onEventDeleted, onEventUpda
   )
 }
 
+// ─── Support & FAQ ───────────────────────────────────────────────────────────
+
+const SUPPORT_CATEGORIES = ['Login', 'Hold', 'Notifikationer', 'Beskeder', 'Andet']
+
+function SupportWidget({ user }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button className="support-fab" onClick={() => setOpen(true)} aria-label="Hjælp og support">
+        ?
+      </button>
+      {open && <SupportModal user={user} onClose={() => setOpen(false)} />}
+    </>
+  )
+}
+
+function SupportModal({ user, onClose }) {
+  const [tab, setTab] = useState('faq')
+  return (
+    <div className="sheet-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="sheet-panel" style={{ maxHeight: '92dvh' }}>
+        <div className="support-header">
+          <div>
+            <h2 className="support-header-title">Hjælp &amp; Support</h2>
+          </div>
+          <button onClick={onClose} className="compose-close" type="button" aria-label="Luk">
+            <Icon name="x" size={20} color="var(--text3)" />
+          </button>
+        </div>
+        <div className="support-tabs">
+          <button className={`support-tab${tab === 'faq' ? ' support-tab--active' : ''}`} onClick={() => setTab('faq')}>
+            FAQ
+          </button>
+          <button className={`support-tab${tab === 'ask' ? ' support-tab--active' : ''}`} onClick={() => setTab('ask')}>
+            Stil et spørgsmål
+          </button>
+        </div>
+        {tab === 'faq'
+          ? <FAQTab />
+          : <AskTab user={user} onDone={() => setTab('faq')} />
+        }
+      </div>
+    </div>
+  )
+}
+
+function FAQTab() {
+  const [items,   setItems]   = useState([])
+  const [loading, setLoading] = useState(true)
+  const [search,  setSearch]  = useState('')
+  const [openId,  setOpenId]  = useState(null)
+
+  useEffect(() => {
+    getDocs(query(collection(db, 'support'), where('status', '==', 'faq')))
+      .then(snap => { setItems(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [])
+
+  const q = search.trim().toLowerCase()
+  const filtered = q
+    ? items.filter(i => i.question?.toLowerCase().includes(q) || i.answer?.toLowerCase().includes(q))
+    : items
+
+  const grouped = {}
+  SUPPORT_CATEGORIES.forEach(cat => {
+    const catItems = filtered.filter(i => i.category === cat)
+    if (catItems.length) grouped[cat] = catItems
+  })
+
+  return (
+    <div className="support-content">
+      <div className="support-search-wrap">
+        <Icon name="search" size={16} color="var(--text3)" />
+        <input
+          className="support-search"
+          type="text"
+          placeholder="Søg i FAQ…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+        {search && (
+          <button type="button" onClick={() => setSearch('')} className="support-search-clear">
+            <Icon name="x" size={14} color="var(--text3)" />
+          </button>
+        )}
+      </div>
+
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: '40px 0' }}>
+          <div className="loading-dots"><span /><span /><span /></div>
+        </div>
+      ) : Object.keys(grouped).length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '48px 16px', color: 'var(--text3)', fontSize: 14 }}>
+          {search ? 'Ingen resultater for din søgning' : 'Ingen FAQ-emner endnu'}
+        </div>
+      ) : Object.entries(grouped).map(([cat, catItems]) => (
+        <div key={cat} className="faq-category">
+          <div className="faq-category-title">{cat}</div>
+          {catItems.map(item => (
+            <div key={item.id} className="faq-item">
+              <button
+                type="button"
+                className="faq-question"
+                onClick={() => setOpenId(openId === item.id ? null : item.id)}
+              >
+                <span>{item.question}</span>
+                <div style={{ transform: openId === item.id ? 'rotate(90deg)' : 'none', transition: 'transform .2s', flexShrink: 0 }}>
+                  <Icon name="chevron" size={16} color="var(--text3)" sw={2.5} />
+                </div>
+              </button>
+              {openId === item.id && (
+                <div className="faq-answer">{item.answer}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function AskTab({ user, onDone }) {
+  const [category, setCategory] = useState('')
+  const [question, setQuestion] = useState('')
+  const [saving,   setSaving]   = useState(false)
+  const [done,     setDone]     = useState(false)
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    if (!category || !question.trim()) return
+    setSaving(true)
+    try {
+      await addDoc(collection(db, 'support'), {
+        uid:       user.uid,
+        name:      user.name  || '',
+        email:     user.email || '',
+        category,
+        question:  question.trim(),
+        status:    'afventer',
+        answer:    null,
+        createdAt: serverTimestamp(),
+        answeredAt: null,
+      })
+      setDone(true)
+    } catch {
+      alert('Der opstod en fejl — prøv igen')
+      setSaving(false)
+    }
+  }
+
+  if (done) return (
+    <div className="support-content" style={{ textAlign: 'center', padding: '48px 24px' }}>
+      <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
+      <h3 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>Spørgsmål modtaget</h3>
+      <p style={{ color: 'var(--text2)', fontSize: 14, lineHeight: 1.65, marginBottom: 24 }}>
+        Vi vender tilbage hurtigst muligt. Svaret sendes til din email.
+      </p>
+      <button type="button" className="compose-send-btn" onClick={onDone}>
+        Tilbage til FAQ
+      </button>
+    </div>
+  )
+
+  return (
+    <div className="support-content">
+      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div className="compose-section" style={{ marginBottom: 0 }}>
+          <label className="compose-label">
+            <Icon name="users" size={14} color="var(--green)" /> Kategori
+          </label>
+          <select className="compose-select" value={category} onChange={e => setCategory(e.target.value)} required>
+            <option value="">Vælg kategori…</option>
+            {SUPPORT_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+        <div className="compose-section" style={{ marginBottom: 0 }}>
+          <label className="compose-label">
+            <Icon name="message" size={14} color="var(--green)" /> Dit spørgsmål
+          </label>
+          <textarea
+            className="compose-textarea"
+            rows={5}
+            value={question}
+            onChange={e => setQuestion(e.target.value)}
+            placeholder="Beskriv dit spørgsmål eller problem…"
+            required
+          />
+        </div>
+        <button
+          className="compose-send-btn"
+          type="submit"
+          disabled={saving || !category || !question.trim()}
+        >
+          {saving
+            ? <><span className="spinner" /> Sender…</>
+            : <><Icon name="send" size={18} color="white" /> Send spørgsmål</>
+          }
+        </button>
+      </form>
+    </div>
+  )
+}
+
 // ─── Profil ───────────────────────────────────────────────────────────────────
 
 function ProfileScreen({ user, onLogout, onUserUpdate, verifyMsg, onEnableNotifications }) {
@@ -3862,6 +4066,7 @@ export default function App() {
         ) : null}
       </main>
 
+      <SupportWidget user={user} />
       <BottomNav activeTab={activeTab} onChange={switchTab} unreadCount={totalUnread} />
     </div>
   )

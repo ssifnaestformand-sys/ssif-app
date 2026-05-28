@@ -304,9 +304,10 @@ function Sidebar({ page, setPage, userDoc, user, onLogout }) {
     { id: 'events',  label: 'Begivenheder', icon: 'calendar' },
     { id: 'banners', label: 'Forsidebanners', icon: 'star'   },
     ...(userDoc?.role === 'admin' ? [
-      { id: 'kommunikation', label: 'Kommunikation', icon: 'sms' },
-      { id: 'appusers', label: 'App-brugere', icon: 'eye'    },
-      { id: 'users',    label: 'Adgang',      icon: 'shield' },
+      { id: 'kommunikation', label: 'Kommunikation', icon: 'sms'     },
+      { id: 'support',      label: 'Support',       icon: 'message' },
+      { id: 'appusers',     label: 'App-brugere',   icon: 'eye'     },
+      { id: 'users',        label: 'Adgang',        icon: 'shield'  },
     ] : []),
   ]
   return (
@@ -3236,6 +3237,211 @@ function KommunikationPage({ authUser, userDoc }) {
 // ─── Root App ─────────────────────────────────────────────────────────────────
 
 
+// ─── Support Page ─────────────────────────────────────────────────────────────
+
+const SUPPORT_CATEGORIES = ['Login', 'Hold', 'Notifikationer', 'Beskeder', 'Andet']
+const SUPPORT_FILTERS    = [
+  { id: 'afventer', label: 'Afventer' },
+  { id: 'besvaret', label: 'Besvaret' },
+  { id: 'faq',      label: 'FAQ'      },
+  { id: 'alle',     label: 'Alle'     },
+]
+
+function SupportPage({ authUser }) {
+  const [items,      setItems]      = useState([])
+  const [loading,    setLoading]    = useState(true)
+  const [filter,     setFilter]     = useState('afventer')
+  const [expandedId, setExpandedId] = useState(null)
+  const [answerDraft, setAnswerDraft] = useState({})
+  const [saving,     setSaving]     = useState(null)
+
+  function load() {
+    setLoading(true)
+    getDocs(query(collection(db, 'support'), orderBy('createdAt', 'desc')))
+      .then(snap => {
+        setItems(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }
+  useEffect(() => { load() }, [])
+
+  const counts = {
+    afventer: items.filter(i => i.status === 'afventer').length,
+    besvaret: items.filter(i => i.status === 'besvaret').length,
+    faq:      items.filter(i => i.status === 'faq').length,
+    alle:     items.length,
+  }
+  const filtered = filter === 'alle' ? items : items.filter(i => i.status === filter)
+
+  async function handleAnswer(item) {
+    const answer = (answerDraft[item.id] || '').trim()
+    if (!answer) return
+    setSaving(item.id)
+    try {
+      await updateDoc(doc(db, 'support', item.id), {
+        answer,
+        status:     'besvaret',
+        answeredAt: serverTimestamp(),
+        answeredBy: authUser.email,
+      })
+      load()
+      setExpandedId(null)
+    } catch { alert('Fejl ved lagring') }
+    setSaving(null)
+  }
+
+  async function setStatus(item, status) {
+    try {
+      await updateDoc(doc(db, 'support', item.id), { status })
+      load()
+    } catch { alert('Fejl') }
+  }
+
+  async function handleDelete(item) {
+    if (!window.confirm('Slet dette spørgsmål? Det kan ikke fortrydes.')) return
+    try {
+      await deleteDoc(doc(db, 'support', item.id))
+      load()
+    } catch { alert('Fejl') }
+  }
+
+  const statusColor = { afventer: '#b45309', besvaret: '#15803d', faq: '#1d4ed8' }
+  const statusBg    = { afventer: '#fef3c7', besvaret: '#dcfce7', faq: '#dbeafe' }
+
+  return (
+    <>
+      <div className="page-header">
+        <h1 className="page-title">Support</h1>
+        <button onClick={load} className="btn btn-ghost btn-sm">↻ Opdater</button>
+      </div>
+
+      {/* Filter chips */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+        {SUPPORT_FILTERS.map(f => (
+          <button
+            key={f.id}
+            onClick={() => setFilter(f.id)}
+            style={{
+              padding: '6px 14px', borderRadius: 20, border: 'none', cursor: 'pointer',
+              fontWeight: 600, fontSize: 13,
+              background: filter === f.id ? '#1a5c2a' : '#f3f4f6',
+              color:      filter === f.id ? 'white'    : '#374151',
+              display: 'flex', alignItems: 'center', gap: 6,
+            }}
+          >
+            {f.label}
+            {counts[f.id] > 0 && (
+              <span style={{
+                background: filter === f.id ? 'rgba(255,255,255,.25)' : '#d1d5db',
+                color:      filter === f.id ? 'white' : '#6b7280',
+                borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700,
+              }}>
+                {counts[f.id]}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {loading ? <LoadingScreen /> : filtered.length === 0 ? (
+        <EmptyState icon="message" text="Ingen spørgsmål i denne kategori" />
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {filtered.map(item => (
+            <div key={item.id} className="card" style={{ padding: 0, overflow: 'hidden' }}>
+              {/* Header */}
+              <div style={{ padding: '14px 16px 10px', borderBottom: '1px solid #f3f4f6' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
+                  <span style={{
+                    fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 20,
+                    background: statusBg[item.status] || '#f3f4f6',
+                    color:      statusColor[item.status] || '#6b7280',
+                    textTransform: 'uppercase', letterSpacing: '.3px',
+                  }}>
+                    {item.status}
+                  </span>
+                  <span style={{ fontSize: 12, color: '#9ca3af', flexShrink: 0 }}>{formatDate(item.createdAt)}</span>
+                </div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: '#111827', marginBottom: 4, lineHeight: 1.4 }}>
+                  {item.question}
+                </div>
+                <div style={{ fontSize: 12, color: '#9ca3af' }}>
+                  {item.name} · {item.email} · <span style={{ fontWeight: 600, color: '#6b7280' }}>{item.category}</span>
+                </div>
+              </div>
+
+              {/* Existing answer */}
+              {item.answer && (
+                <div style={{ padding: '10px 16px', background: '#f0fdf4', borderBottom: '1px solid #bbf7d0' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#15803d', marginBottom: 4 }}>SVAR</div>
+                  <div style={{ fontSize: 14, color: '#166534', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{item.answer}</div>
+                </div>
+              )}
+
+              {/* Answer form (expanded) */}
+              {expandedId === item.id && (
+                <div style={{ padding: '12px 16px', borderBottom: '1px solid #f3f4f6' }}>
+                  <textarea
+                    className="form-control"
+                    rows={4}
+                    placeholder={item.answer ? 'Rediger svar…' : 'Skriv svar til brugeren…'}
+                    value={answerDraft[item.id] ?? (item.answer || '')}
+                    onChange={e => setAnswerDraft(prev => ({ ...prev, [item.id]: e.target.value }))}
+                    style={{ marginBottom: 8 }}
+                  />
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      disabled={saving === item.id || !(answerDraft[item.id] || '').trim()}
+                      onClick={() => handleAnswer(item)}
+                    >
+                      {saving === item.id ? 'Gemmer…' : '✓ Gem svar'}
+                    </button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setExpandedId(null)}>Annuller</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div style={{ padding: '10px 16px', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
+                >
+                  {item.answer ? 'Rediger svar' : 'Besvar'}
+                </button>
+                {item.status !== 'faq' && item.answer && (
+                  <button className="btn btn-ghost btn-sm" onClick={() => setStatus(item, 'faq')}>
+                    ★ Marker som FAQ
+                  </button>
+                )}
+                {item.status === 'faq' && (
+                  <button className="btn btn-ghost btn-sm" onClick={() => setStatus(item, 'besvaret')}>
+                    Fjern fra FAQ
+                  </button>
+                )}
+                {item.status === 'afventer' && item.answer && (
+                  <button className="btn btn-ghost btn-sm" onClick={() => setStatus(item, 'besvaret')}>
+                    Marker besvaret
+                  </button>
+                )}
+                <button
+                  className="btn btn-ghost btn-sm"
+                  style={{ marginLeft: 'auto', color: '#dc3545' }}
+                  onClick={() => handleDelete(item)}
+                >
+                  Slet
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  )
+}
+
 const PAGE_TITLES = {
   dashboard: 'Dashboard',
   messages:  'Beskeder',
@@ -3246,6 +3452,7 @@ const PAGE_TITLES = {
   kommunikation: 'Kommunikation',
   appusers:  'App-brugere',
   users:     'Adgang',
+  support:   'Support',
 }
 
 export default function AdminApp() {
@@ -3303,6 +3510,10 @@ export default function AdminApp() {
       case 'kommunikation':
         return userDoc.role === 'admin'
           ? <KommunikationPage authUser={authUser} userDoc={userDoc} />
+          : <EmptyState icon="shield" text="Kun administratorer har adgang" />
+      case 'support':
+        return userDoc.role === 'admin'
+          ? <SupportPage authUser={authUser} />
           : <EmptyState icon="shield" text="Kun administratorer har adgang" />
       case 'appusers':
         return userDoc.role === 'admin'
