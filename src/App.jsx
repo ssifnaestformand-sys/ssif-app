@@ -622,10 +622,42 @@ const WELCOME_FEATURES = [
 
 // ─── Consent screen ───────────────────────────────────────────────────────────
 
+function LegalViewer({ url, onClose }) {
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 1001,
+      background: 'var(--bg)', display: 'flex', flexDirection: 'column',
+      paddingTop: 'env(safe-area-inset-top, 0)',
+    }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '10px 12px', borderBottom: '1px solid var(--sep)', flexShrink: 0,
+      }}>
+        <button onClick={onClose} style={{
+          display: 'flex', alignItems: 'center', gap: 4,
+          background: 'none', border: 'none', color: 'var(--green)',
+          fontSize: 15, fontWeight: 600, cursor: 'pointer', padding: '4px 6px',
+        }}>
+          <div style={{ transform: 'rotate(180deg)', display: 'flex' }}>
+            <Icon name="chevron" size={18} color="var(--green)" sw={2.5} />
+          </div>
+          Tilbage
+        </button>
+      </div>
+      <iframe
+        src={url}
+        title="Juridisk dokument"
+        style={{ flex: 1, border: 'none', width: '100%' }}
+      />
+    </div>
+  )
+}
+
 function ConsentScreen({ user, onConsent }) {
   const [termsChecked, setTermsChecked] = useState(false)
   const [emailChecked, setEmailChecked] = useState(false)
   const [saving,       setSaving]       = useState(false)
+  const [legalUrl,     setLegalUrl]     = useState(null)
 
   async function handleAccept() {
     if (!termsChecked || saving) return
@@ -650,8 +682,6 @@ function ConsentScreen({ user, onConsent }) {
     }
   }
 
-  const LEGAL_BASE = '/legal'
-
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 999,
@@ -659,6 +689,8 @@ function ConsentScreen({ user, onConsent }) {
       paddingTop: 'env(safe-area-inset-top, 0)',
       maxWidth: 430, margin: '0 auto',
     }}>
+      {legalUrl && <LegalViewer url={legalUrl} onClose={() => setLegalUrl(null)} />}
+
       {/* Header */}
       <div style={{ background: 'var(--green)', padding: '36px 28px 32px', textAlign: 'center' }}>
         <div style={{
@@ -673,37 +705,12 @@ function ConsentScreen({ user, onConsent }) {
           Dine oplysninger
         </h1>
         <p style={{ color: 'rgba(255,255,255,.82)', fontSize: 14, lineHeight: 1.55, margin: 0, maxWidth: 280, marginInline: 'auto' }}>
-          Inden du fortsætter, beder vi dig om at læse og acceptere, hvordan vi håndterer dine data.
+          Inden du fortsætter, beder vi dig om at acceptere, hvordan vi håndterer dine data.
         </p>
       </div>
 
       {/* Content */}
       <div style={{ padding: '20px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-
-        {/* Info card */}
-        <div style={{ background: 'var(--surface)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', padding: '16px' }}>
-          <p style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.65, margin: '0 0 14px' }}>
-            SSIF-appen bruger din email, dit navn og din holdtilknytning for at vise dig de rigtige
-            beskeder og events. Dine oplysninger behandles i overensstemmelse med GDPR og opbevares
-            sikkert i Firebase (Google).
-          </p>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <a
-              href={`${LEGAL_BASE}/privatlivspolitik.html`}
-              target="_blank" rel="noreferrer"
-              style={{ flex: 1, textAlign: 'center', padding: '9px 6px', borderRadius: 10, background: 'var(--green-soft)', color: 'var(--green)', fontSize: 13, fontWeight: 700, textDecoration: 'none', border: '1.5px solid rgba(26,92,42,.15)' }}
-            >
-              Privatlivs­politik
-            </a>
-            <a
-              href={`${LEGAL_BASE}/vilkaar-for-brug.html`}
-              target="_blank" rel="noreferrer"
-              style={{ flex: 1, textAlign: 'center', padding: '9px 6px', borderRadius: 10, background: 'var(--green-soft)', color: 'var(--green)', fontSize: 13, fontWeight: 700, textDecoration: 'none', border: '1.5px solid rgba(26,92,42,.15)' }}
-            >
-              Vilkår for brug
-            </a>
-          </div>
-        </div>
 
         {/* Required consent */}
         <label className="consent-row consent-row--required">
@@ -719,7 +726,18 @@ function ConsentScreen({ user, onConsent }) {
             </div>
           </div>
           <div>
-            <span className="consent-row-title">Jeg accepterer privatlivspolitikken og vilkårene for brug</span>
+            <span className="consent-row-title">
+              Jeg accepterer{' '}
+              <button type="button" className="consent-link"
+                onClick={e => { e.stopPropagation(); e.preventDefault(); setLegalUrl('/legal/privatlivspolitik.html') }}>
+                privatlivspolitikken
+              </button>
+              {' '}og{' '}
+              <button type="button" className="consent-link"
+                onClick={e => { e.stopPropagation(); e.preventDefault(); setLegalUrl('/legal/vilkaar-for-brug.html') }}>
+                vilkårene for brug
+              </button>
+            </span>
             <span className="consent-row-sub">Krævet for at bruge appen</span>
           </div>
         </label>
