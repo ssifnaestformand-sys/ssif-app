@@ -3139,9 +3139,11 @@ function SupportWidget({ user }) {
   const [open, setOpen] = useState(false)
   return (
     <>
-      <button className="support-fab" onClick={() => setOpen(true)} aria-label="Hjælp og support">
-        ?
-      </button>
+      <div className="support-fab-wrap">
+        <button className="support-fab" onClick={() => setOpen(true)} aria-label="Hjælp og support">
+          ?
+        </button>
+      </div>
       {open && <SupportModal user={user} onClose={() => setOpen(false)} />}
     </>
   )
