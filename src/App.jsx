@@ -963,6 +963,144 @@ function WelcomeScreen({ user, onDone }) {
   )
 }
 
+// ─── Træner-introduktion ──────────────────────────────────────────────────────
+
+const TRAINER_FEATURES = [
+  {
+    icon: 'send',
+    color: '#1a5c2a',
+    bg:   '#e8f5ec',
+    title: 'Send beskeder til holdet',
+    desc:  'Skriv direkte til alle spillere og forældre på dit hold. De får besked med det samme.',
+  },
+  {
+    icon: 'calendar',
+    color: '#e65c00',
+    bg:   '#fff0e6',
+    title: 'Opret kampe og events',
+    desc:  'Planlæg kampe, stævner og andre events. Vælg dato, tid og sted — holdet notificeres automatisk.',
+  },
+  {
+    icon: 'users',
+    color: '#2563eb',
+    bg:   '#eff6ff',
+    title: 'Udtag spillere til kampe',
+    desc:  'Vælg hvilke spillere der er udtaget til en kamp. Alle på holdet kan se udtagelsen i kalenderen.',
+  },
+  {
+    icon: 'eye',
+    color: '#7c3aed',
+    bg:   '#f5f3ff',
+    title: 'Se din holdliste',
+    desc:  'Få et fuldt overblik over alle tilmeldte på dit hold under Hold-fanen.',
+  },
+  {
+    icon: 'bell',
+    color: '#b45309',
+    bg:   '#fef3c7',
+    title: 'Push- og email-notifikationer',
+    desc:  'Spillere og forældre modtager automatisk besked om dine events og beskeder — du behøver ikke gøre noget ekstra.',
+  },
+]
+
+function TrainerWelcomeScreen({ user, onDone }) {
+  const [saving, setSaving] = useState(false)
+
+  async function done() {
+    setSaving(true)
+    updateDoc(doc(db, 'users', user.uid), { trainerOnboardingDone: true }).catch(() => {})
+    onDone()
+  }
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 999,
+      background: 'var(--bg)', overflowY: 'auto',
+      paddingTop: 'env(safe-area-inset-top, 0)',
+      paddingBottom: 'calc(env(safe-area-inset-bottom, 0) + 100px)',
+      maxWidth: 430, margin: '0 auto',
+    }}>
+      {/* Header */}
+      <div style={{ background: 'var(--green)', padding: '36px 24px 28px', textAlign: 'center' }}>
+        <div style={{
+          width: 64, height: 64, borderRadius: 18,
+          background: 'rgba(255,255,255,.18)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          margin: '0 auto 16px',
+        }}>
+          <Icon name="shirt" size={28} color="white" sw={1.75} />
+        </div>
+        <h1 style={{ color: 'white', fontSize: 22, fontWeight: 800, margin: '0 0 8px' }}>
+          Du er registreret som træner
+        </h1>
+        <p style={{ color: 'rgba(255,255,255,.85)', fontSize: 14, lineHeight: 1.55, margin: 0 }}>
+          Her er et hurtigt overblik over hvad du kan gøre i SSIF-appen som træner.
+        </p>
+      </div>
+
+      {/* Feature cards */}
+      <div style={{ padding: '20px 16px 0' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {TRAINER_FEATURES.map((f, i) => (
+            <div key={i} style={{
+              background: 'var(--surface)',
+              borderRadius: 'var(--radius)',
+              padding: '14px 16px',
+              display: 'flex',
+              gap: 14,
+              alignItems: 'flex-start',
+              boxShadow: 'var(--shadow)',
+            }}>
+              <div style={{
+                width: 42, height: 42, borderRadius: 12,
+                background: f.bg,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0,
+              }}>
+                <Icon name={f.icon} size={20} color={f.color} />
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)', marginBottom: 3 }}>{f.title}</div>
+                <div style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.5 }}>{f.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Tip */}
+        <div style={{
+          marginTop: 14, padding: '14px 16px',
+          background: 'var(--green-soft)', borderRadius: 'var(--radius)',
+          display: 'flex', gap: 12, alignItems: 'flex-start',
+          border: '1px solid rgba(26,92,42,.15)',
+        }}>
+          <Icon name="alert-circle" size={20} color="var(--green)" style={{ flexShrink: 0, marginTop: 1 }} />
+          <p style={{ margin: 0, fontSize: 13, color: 'var(--green)', lineHeight: 1.5 }}>
+            <strong>Trænertilladelse styres via Conventus.</strong> Har du spørgsmål til dine rettigheder i appen, kontakt foreningens administrator.
+          </p>
+        </div>
+      </div>
+
+      {/* Sticky button */}
+      <div style={{
+        position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
+        width: '100%', maxWidth: 430,
+        padding: `16px 16px calc(16px + env(safe-area-inset-bottom, 0))`,
+        background: 'linear-gradient(to top, var(--bg) 70%, transparent)',
+      }}>
+        <button
+          className="btn btn-primary"
+          style={{ width: '100%', height: 52, fontSize: 17, fontWeight: 700, borderRadius: 14 }}
+          onClick={done}
+          disabled={saving}
+        >
+          Forstået — kom i gang
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Banner-karrusel ─────────────────────────────────────────────────────────
 
 function BannerCarousel({ banners }) {
@@ -3339,10 +3477,26 @@ function AskTab({ user, onDone }) {
 // ─── Profil ───────────────────────────────────────────────────────────────────
 
 function ProfileScreen({ user, onLogout, onUserUpdate, verifyMsg, onEnableNotifications }) {
-  const [newEmail, setNewEmail] = useState('')
-  const [saving, setSaving]     = useState(false)
-  const [info, setInfo]         = useState('')
-  const [resent, setResent]     = useState(false)
+  const [newEmail,     setNewEmail]     = useState('')
+  const [saving,       setSaving]       = useState(false)
+  const [info,         setInfo]         = useState('')
+  const [resent,       setResent]       = useState(false)
+  const [lederHolds,   setLederHolds]   = useState([])
+  const [supportOpen,  setSupportOpen]  = useState(false)
+
+  const isTrainer = user.role === 'trainer' || user.role === 'admin'
+
+  useEffect(() => {
+    const ids = (user.lederHoldIds || []).map(String)
+    if (!ids.length) return
+    getDocs(collection(db, 'holds'))
+      .then(snap => {
+        const matched = snap.docs.map(d => d.data()).filter(h => ids.includes(String(h.conventus_id)))
+        matched.sort((a, b) => (a.titel || '').localeCompare(b.titel || '', 'da'))
+        setLederHolds(matched)
+      })
+      .catch(() => {})
+  }, [JSON.stringify(user.lederHoldIds)])
 
   // Vis bekræftelsesbesked når en email er verificeret via link
   useEffect(() => {
@@ -3609,6 +3763,47 @@ function ProfileScreen({ user, onLogout, onUserUpdate, verifyMsg, onEnableNotifi
         )
       })()}
 
+      {/* ── Rolle (kun trænere/admin) ─────────────── */}
+      {isTrainer && (
+        <>
+          <SectionHeader title="Min rolle" />
+          <div className="list-group">
+            <div className="list-item" style={{ cursor: 'default' }}>
+              <div className="list-item-icon" style={{ background: 'var(--green-soft)' }}>
+                <Icon name="users" size={17} color="var(--green)" />
+              </div>
+              <div className="list-item-body">
+                <span className="list-item-title">
+                  {user.role === 'admin' ? 'Administrator' : 'Træner'}
+                </span>
+                <span className="list-item-detail">
+                  {lederHolds.length > 0
+                    ? lederHolds.map(h => h.titel).join(', ')
+                    : user.role === 'admin' ? 'Alle hold' : 'Ingen hold tilknyttet endnu'}
+                </span>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── Support ──────────────────────────────── */}
+      <SectionHeader title="Support" />
+      <div className="list-group">
+        <button className="list-item" onClick={() => setSupportOpen(true)}>
+          <div className="list-item-icon" style={{ background: '#eff6ff' }}>
+            <Icon name="message" size={17} color="#2563eb" />
+          </div>
+          <div className="list-item-body">
+            <span className="list-item-title">Hjælp &amp; FAQ</span>
+            <span className="list-item-detail">Stil et spørgsmål eller søg i FAQ</span>
+          </div>
+          <Icon name="chevron" size={16} color="var(--text3)" />
+        </button>
+      </div>
+
+      {supportOpen && <SupportModal user={user} onClose={() => setSupportOpen(false)} />}
+
       <div style={{ height: 16 }} />
       <div style={{ padding: '0 16px' }}>
         <button type="button" className="btn btn-secondary btn-full" onClick={onLogout}>
@@ -3804,9 +3999,10 @@ export default function App() {
       primaryEmail:   profile.primaryEmail   || fbUser.email || '',
       extraEmails:    profile.extraEmails    || [],
       conventus_id:         memberConventusId || _cvInit?.conventusId || null,
-      onboardingDone:       profile.onboardingDone === true,
-      emailNotifications:   profile.emailNotifications !== false,
-      consentGiven:         profile.consentGiven === true && profile.consentVersion === CONSENT_VERSION,
+      onboardingDone:         profile.onboardingDone === true,
+      trainerOnboardingDone:  profile.trainerOnboardingDone === true,
+      emailNotifications:     profile.emailNotifications !== false,
+      consentGiven:           profile.consentGiven === true && profile.consentVersion === CONSENT_VERSION,
     })
   }
 
@@ -3996,6 +4192,17 @@ export default function App() {
     )
   }
 
+  // Træner-introduktion — vises første gang en træner/admin logger ind
+  const isTrainerRole = user.role === 'trainer' || user.role === 'admin'
+  if (isTrainerRole && !user.trainerOnboardingDone) {
+    return (
+      <TrainerWelcomeScreen
+        user={user}
+        onDone={() => setUser(u => ({ ...u, trainerOnboardingDone: true }))}
+      />
+    )
+  }
+
   // ── Header state ─────────────────────────────────────────────────────────
   const TAB_TITLES = { dashboard: 'Hjem', profil: 'Min profil', teams: 'Hold', news: 'Nyheder', messages: 'Beskeder', kalender: 'Kalender' }
   let headerTitle = TAB_TITLES[activeTab] ?? 'SSIF'
@@ -4068,7 +4275,6 @@ export default function App() {
         ) : null}
       </main>
 
-      <SupportWidget user={user} />
       <BottomNav activeTab={activeTab} onChange={switchTab} unreadCount={totalUnread} />
     </div>
   )

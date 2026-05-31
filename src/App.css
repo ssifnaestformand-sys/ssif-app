@@ -2237,42 +2237,6 @@ body {
 
 /* ─── Support Widget ─────────────────────────────────────────────────────────── */
 
-.support-fab-wrap {
-  position: fixed;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 100%;
-  max-width: 430px;
-  height: calc(var(--tab-h) + 72px);
-  pointer-events: none;
-  z-index: 300;
-}
-.support-fab {
-  position: absolute;
-  left: 16px;
-  bottom: calc(var(--tab-h) + 16px);
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: var(--green);
-  color: white;
-  border: none;
-  font-size: 18px;
-  font-weight: 700;
-  line-height: 1;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 2px 10px rgba(26,92,42,.35);
-  opacity: 0.75;
-  transition: opacity .15s, transform .15s;
-  -webkit-tap-highlight-color: transparent;
-  pointer-events: all;
-}
-.support-fab:hover,
-.support-fab:active { opacity: 1; transform: scale(1.08); }
 
 .support-header {
   display: flex;
