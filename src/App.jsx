@@ -1619,7 +1619,24 @@ function TeamsScreen({ onSelectTeam, user, onGoToProfile }) {
   const [holds,         setHolds]         = useState([])
   const [afdelinger,    setAfdelinger]    = useState([])
   const [loading,       setLoading]       = useState(true)
-  const [linkedMembers, setLinkedMembers] = useState(null) // null=loading, []=ingen
+  const [linkedMembers, setLinkedMembers] = useState(null)
+  const [activating,    setActivating]    = useState(null) // conventus_id under aktivering
+
+  const isTrainer   = user.role === 'trainer' || user.role === 'admin'
+  const lederIds    = new Set((user.lederHoldIds || []).map(String))
+
+  async function activateHold(conventusId) {
+    setActivating(String(conventusId))
+    try {
+      await updateDoc(doc(db, 'holds', String(conventusId)), { aktiv: true })
+      setHolds(prev => prev.map(h =>
+        String(h.conventus_id) === String(conventusId) ? { ...h, aktiv: true } : h
+      ))
+    } catch (err) {
+      alert('Fejl: ' + err.message)
+    }
+    setActivating(null)
+  }
 
   useEffect(() => {
     getDocs(collection(db, 'holds'))
@@ -1697,8 +1714,10 @@ function TeamsScreen({ onSelectTeam, user, onGoToProfile }) {
                 const afdNavn  = afdById[String(fsHold?.afdeling_id)]?.navn
                                ?? fsHold?.aktivitet_titel
                                ?? null
-                const brugerApp = fsHold?.aktiv === true
-                const tappable  = !!fsHold
+                const brugerApp    = fsHold?.aktiv === true
+                const tappable     = !!fsHold && brugerApp
+                const canActivate  = isTrainer && !!fsHold && !brugerApp && lederIds.has(String(h.conventus_id))
+                const isActivating = activating === String(h.conventus_id)
                 const detalje  = [
                   afdNavn,
                   fsHold?.traeningstider
@@ -1708,17 +1727,34 @@ function TeamsScreen({ onSelectTeam, user, onGoToProfile }) {
                 const inner = (
                   <>
                     <div className="list-item-icon" style={{
-                      background: brugerApp ? 'var(--green-soft)' : 'var(--bg)',
+                      background: brugerApp ? 'var(--green-soft)' : canActivate ? '#fff3e0' : 'var(--bg)',
                     }}>
-                      <Icon name="users" size={17} color={brugerApp ? 'var(--green)' : 'var(--text3)'} />
+                      <Icon name="users" size={17} color={brugerApp ? 'var(--green)' : canActivate ? '#e65c00' : 'var(--text3)'} />
                     </div>
                     <div className="list-item-body">
                       <span className="list-item-title">{titel}</span>
-                      {detalje
-                        ? <span className="list-item-detail">{detalje}</span>
-                        : null}
+                      <span className="list-item-detail" style={{ color: canActivate ? '#e65c00' : undefined }}>
+                        {canActivate ? 'Holdet er ikke aktivt i appen endnu' : detalje || null}
+                      </span>
                     </div>
-                    {tappable && <Chevron />}
+                    {canActivate ? (
+                      <button
+                        type="button"
+                        onClick={e => { e.stopPropagation(); activateHold(h.conventus_id) }}
+                        disabled={isActivating}
+                        style={{
+                          flexShrink: 0, height: 32, padding: '0 12px',
+                          background: 'var(--green)', color: 'white',
+                          border: 'none', borderRadius: 8, fontSize: 12,
+                          fontWeight: 700, cursor: 'pointer',
+                          opacity: isActivating ? 0.6 : 1,
+                        }}
+                      >
+                        {isActivating ? 'Aktiverer…' : 'Aktivér'}
+                      </button>
+                    ) : tappable ? (
+                      <Chevron />
+                    ) : null}
                   </>
                 )
 
