@@ -673,8 +673,8 @@ function ConsentScreen({ user, onConsent }) {
         emailNotifications: emailChecked,
       }, { merge: true })
       onConsent({ emailNotifications: emailChecked })
-    } catch {
-      alert('Der opstod en fejl. Prøv igen.')
+    } catch (err) {
+      alert('Fejl: ' + (err?.message || err))
       setSaving(false)
     }
   }
