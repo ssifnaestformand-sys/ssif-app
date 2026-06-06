@@ -666,12 +666,12 @@ function ConsentScreen({ user, onConsent }) {
     if (!termsChecked || saving) return
     setSaving(true)
     try {
-      await updateDoc(doc(db, 'users', user.uid), {
+      await setDoc(doc(db, 'users', user.uid), {
         consentGiven:       true,
         consentVersion:     CONSENT_VERSION,
         consentTimestamp:   serverTimestamp(),
         emailNotifications: emailChecked,
-      })
+      }, { merge: true })
       onConsent({ emailNotifications: emailChecked })
     } catch {
       alert('Der opstod en fejl. Prøv igen.')
@@ -3922,7 +3922,7 @@ export default function App() {
           role:          'Medlem',
           createdAt:     serverTimestamp(),
         }
-        setDoc(ref, profile).catch(() => {})
+        setDoc(ref, profile, { merge: true }).catch(() => {})
       }
 
       // Hent hold-IDs + leder-relationer fra members-samlingen (synkroniseret fra Conventus).
