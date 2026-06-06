@@ -666,14 +666,12 @@ function ConsentScreen({ user, onConsent }) {
     if (!termsChecked || saving) return
     setSaving(true)
     try {
-      const idToken = await auth.currentUser?.getIdToken()
-      const res = await fetch('/api/save-consent.php', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-        body:    JSON.stringify({ emailNotifications: emailChecked }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Ukendt fejl')
+      await setDoc(doc(db, 'users', user.uid), {
+        consentGiven:       true,
+        consentVersion:     CONSENT_VERSION,
+        consentTimestamp:   serverTimestamp(),
+        emailNotifications: emailChecked,
+      }, { merge: true })
       onConsent({ emailNotifications: emailChecked })
     } catch (err) {
       alert('Fejl: ' + (err?.message || err))

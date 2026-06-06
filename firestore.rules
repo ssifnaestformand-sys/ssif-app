@@ -1,0 +1,95 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Hjælpefunktioner ────────────────────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+    function isAdmin() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    function isTrainerOrAdmin() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'trainer'];
+    }
+
+    // ── Brugerprofiler ───────────────────────────────────────────────────────
+    // Brugere kan læse og opdatere deres egen profil.
+    // Admin kan læse alle profiler.
+    match /users/{uid} {
+      allow read:  if isOwner(uid) || isAdmin();
+      allow write: if isOwner(uid) || isAdmin();
+    }
+
+    // ── Hold ─────────────────────────────────────────────────────────────────
+    // Alle indloggede kan læse hold. Kun admin/træner kan skrive.
+    match /holds/{holdId} {
+      allow read:  if isSignedIn();
+      allow write: if isTrainerOrAdmin();
+    }
+
+    // ── Medlemmer (synkroniseret fra Conventus) ───────────────────────────────
+    // Alle indloggede kan læse. Kun admin kan skrive (via sync).
+    match /members/{memberId} {
+      allow read:  if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ── Beskeder ─────────────────────────────────────────────────────────────
+    // Alle indloggede kan læse beskeder til deres hold.
+    // Trænere og admin kan oprette og slette.
+    match /messages/{msgId} {
+      allow read:   if isSignedIn();
+      allow create: if isTrainerOrAdmin();
+      allow update: if isSignedIn(); // reaktioner
+      allow delete: if isTrainerOrAdmin();
+    }
+
+    // ── Nyheder ──────────────────────────────────────────────────────────────
+    match /news/{newsId} {
+      allow read:  if isSignedIn();
+      allow write: if isTrainerOrAdmin();
+    }
+
+    // ── Events / kalender ────────────────────────────────────────────────────
+    match /events/{eventId} {
+      allow read:   if isSignedIn();
+      allow create: if isTrainerOrAdmin();
+      allow update: if isTrainerOrAdmin();
+      allow delete: if isTrainerOrAdmin();
+    }
+
+    // ── Banners ──────────────────────────────────────────────────────────────
+    match /banners/{bannerId} {
+      allow read:  if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ── App-indstillinger ────────────────────────────────────────────────────
+    match /settings/{settingId} {
+      allow read:  if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ── Support / FAQ ────────────────────────────────────────────────────────
+    // Alle indloggede kan oprette spørgsmål. Kun admin kan besvare/slette.
+    match /support/{supportId} {
+      allow read:   if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ── Pending Conventus-sessions ───────────────────────────────────────────
+    // Skrives af server (PHP/service account). Læses af alle — tokenet er hemmeligt nok.
+    match /conventus_pending/{token} {
+      allow read:  if true;
+      allow write: if false; // kun via service account (PHP)
+    }
+  }
+}
