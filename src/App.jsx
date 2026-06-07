@@ -1776,6 +1776,74 @@ function TeamsScreen({ onSelectTeam, user, onGoToProfile }) {
           )}
         </div>
       ))}
+
+      {/* ── Trænerholds der ikke er i member-listen ──────────────────────────── */}
+      {isTrainer && (() => {
+        // Find hvilke holds allerede er vist via linkedMembers
+        const shownIds = new Set(
+          linkedMembers.flatMap(m => (m.holds || []).map(h => String(h.conventus_id)))
+        )
+        // Leder-holds der IKKE allerede er vist
+        const lederOnly = [...lederIds].filter(id => !shownIds.has(id))
+        if (!lederOnly.length) return null
+
+        return (
+          <div style={{ marginBottom: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px 6px' }}>
+              <div style={{
+                width: 32, height: 32, borderRadius: '50%', background: '#fff3e0',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+              }}>
+                <Icon name="shirt" size={16} color="#e65c00" />
+              </div>
+              <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)' }}>Mine trænerholds</span>
+            </div>
+            <div className="list-group" style={{ marginTop: 0 }}>
+              {lederOnly.map((id, idx) => {
+                const fsHold     = holdById[id]
+                const titel      = fsHold?.titel ?? `Hold #${id}`
+                const brugerApp  = fsHold?.aktiv === true
+                const isActiv    = activating === id
+                return (
+                  <div key={id}>
+                    {idx > 0 && <div className="list-separator" />}
+                    <div className="list-item" style={{ cursor: 'default' }}>
+                      <div className="list-item-icon" style={{
+                        background: brugerApp ? 'var(--green-soft)' : '#fff3e0',
+                      }}>
+                        <Icon name="users" size={17} color={brugerApp ? 'var(--green)' : '#e65c00'} />
+                      </div>
+                      <div className="list-item-body">
+                        <span className="list-item-title">{titel}</span>
+                        <span className="list-item-detail" style={{ color: brugerApp ? undefined : '#e65c00' }}>
+                          {brugerApp ? 'Aktivt i appen' : 'Ikke aktivt i appen endnu'}
+                        </span>
+                      </div>
+                      {!brugerApp && (
+                        <button
+                          type="button"
+                          onClick={() => activateHold(id)}
+                          disabled={isActiv}
+                          style={{
+                            flexShrink: 0, height: 32, padding: '0 12px',
+                            background: 'var(--green)', color: 'white',
+                            border: 'none', borderRadius: 8, fontSize: 12,
+                            fontWeight: 700, cursor: 'pointer',
+                            opacity: isActiv ? 0.6 : 1,
+                          }}
+                        >
+                          {isActiv ? 'Aktiverer…' : 'Aktivér'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })()}
+
       {/* Hint: tilføj email */}
       {onGoToProfile && (
         <div style={{ margin: '16px 16px 0', padding: '12px 14px', background: 'var(--surface)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', display: 'flex', alignItems: 'center', gap: 12 }}>
