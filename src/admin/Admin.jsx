@@ -1383,12 +1383,16 @@ function TeamsPage({ userDoc, authUser }) {
       .finally(() => setLoading(false))
   }
 
+  const [leaders, setLeaders] = useState([]) // members med isLeder===true
+
   useEffect(() => {
     loadHolds()
     getDocs(collection(db, 'users')).then(snap =>
       setUsers(snap.docs.map(d => ({ id: d.id, ...d.data() })))
     )
-    // Afdelinger hentes fra Firestore — populeres af sync-holds.php (daglig cron)
+    getDocs(query(collection(db, 'members'), where('isLeder', '==', true)))
+      .then(snap => setLeaders(snap.docs.map(d => d.data())))
+      .catch(() => {})
     getDocs(collection(db, 'afdelinger'))
       .then(snap => setAfdelinger(
         snap.docs.map(d => ({ id: d.id, ...d.data() }))
@@ -1517,6 +1521,76 @@ function TeamsPage({ userDoc, authUser }) {
           </button>
         )}
       </div>
+
+      {/* ── Trænere & aktivering ──────────────────────────────────────────── */}
+      {!loading && leaders.length > 0 && (() => {
+        // Byg map: holdId → [{ name, email }]
+        const byHold = {}
+        leaders.forEach(m => {
+          ;(m.lederHolds || []).forEach(hId => {
+            const key = String(hId)
+            if (!byHold[key]) byHold[key] = []
+            const email = (m.allEmails || [])[0] || ''
+            byHold[key].push({ name: m.name || 'Ukendt', email })
+          })
+        })
+
+        // Holds med trænere — sorter: inaktive først
+        const holdsMedLedere = holds
+          .filter(h => byHold[String(h.conventus_id)])
+          .sort((a, b) => (a.aktiv === b.aktiv ? 0 : a.aktiv ? 1 : -1))
+
+        if (!holdsMedLedere.length) return null
+
+        return (
+          <div className="card" style={{ marginBottom: 20, padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '12px 16px 10px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontWeight: 700, fontSize: 14, color: '#111827' }}>Trænere &amp; aktivering i appen</span>
+              <span style={{ fontSize: 12, color: '#9ca3af' }}>{holdsMedLedere.length} hold</span>
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: '#f9fafb' }}>
+                  <th style={{ padding: '8px 16px', textAlign: 'left', fontWeight: 600, color: '#6b7280', borderBottom: '1px solid #f3f4f6' }}>Hold</th>
+                  <th style={{ padding: '8px 16px', textAlign: 'left', fontWeight: 600, color: '#6b7280', borderBottom: '1px solid #f3f4f6' }}>Træner(e)</th>
+                  <th style={{ padding: '8px 16px', textAlign: 'left', fontWeight: 600, color: '#6b7280', borderBottom: '1px solid #f3f4f6' }}>Email</th>
+                  <th style={{ padding: '8px 16px', textAlign: 'left', fontWeight: 600, color: '#6b7280', borderBottom: '1px solid #f3f4f6' }}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {holdsMedLedere.map(h => {
+                  const leds   = byHold[String(h.conventus_id)] || []
+                  const aktiv  = h.aktiv === true
+                  return leds.map((l, li) => (
+                    <tr key={`${h.conventus_id}-${li}`} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                      {li === 0 && (
+                        <td rowSpan={leds.length} style={{ padding: '10px 16px', fontWeight: 600, color: '#111827', verticalAlign: 'top' }}>
+                          {h.titel || `Hold #${h.conventus_id}`}
+                        </td>
+                      )}
+                      <td style={{ padding: '10px 16px', color: '#374151' }}>{l.name}</td>
+                      <td style={{ padding: '10px 16px', color: '#6b7280' }}>
+                        <a href={`mailto:${l.email}`} style={{ color: '#1a5c2a', textDecoration: 'none' }}>{l.email}</a>
+                      </td>
+                      {li === 0 && (
+                        <td rowSpan={leds.length} style={{ padding: '10px 16px', verticalAlign: 'top' }}>
+                          <span style={{
+                            fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 20,
+                            background: aktiv ? '#dcfce7' : '#fef3c7',
+                            color:      aktiv ? '#15803d' : '#b45309',
+                          }}>
+                            {aktiv ? 'Aktiv' : 'Kan aktiveres af træner'}
+                          </span>
+                        </td>
+                      )}
+                    </tr>
+                  ))
+                })}
+              </tbody>
+            </table>
+          </div>
+        )
+      })()}
 
       {!isReady ? (
         <div className="card"><div className="loading-dots"><span/><span/><span/></div></div>

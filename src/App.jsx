@@ -1675,7 +1675,7 @@ function TeamsScreen({ onSelectTeam, user, onGoToProfile }) {
     </div>
   )
 
-  if (!linkedMembers.length) return (
+  if (!linkedMembers.length && !lederIds.size) return (
     <div className="screen" style={{ padding: '48px 24px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
       <Icon name="users" size={44} color="var(--text3)" />
       <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', margin: 0 }}>Ingen holdtilmeldinger fundet</p>
