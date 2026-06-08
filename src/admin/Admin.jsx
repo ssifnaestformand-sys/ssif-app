@@ -1383,7 +1383,8 @@ function TeamsPage({ userDoc, authUser }) {
       .finally(() => setLoading(false))
   }
 
-  const [leaders, setLeaders] = useState([]) // members med isLeder===true
+  const [leaders,         setLeaders]         = useState([])
+  const [openTrainerAfd,  setOpenTrainerAfd]  = useState(new Set())
 
   useEffect(() => {
     loadHolds()
@@ -1535,59 +1536,115 @@ function TeamsPage({ userDoc, authUser }) {
           })
         })
 
-        // Holds med trænere — sorter: inaktive først
-        const holdsMedLedere = holds
-          .filter(h => byHold[String(h.conventus_id)])
-          .sort((a, b) => (a.aktiv === b.aktiv ? 0 : a.aktiv ? 1 : -1))
-
+        const holdsMedLedere = holds.filter(h => byHold[String(h.conventus_id)])
         if (!holdsMedLedere.length) return null
 
+        // Gruppér pr. afdeling (samme logik som hold-listen)
+        const afdMap = {}
+        holdsMedLedere.forEach(h => {
+          const afdId  = String(h.afdeling_id ?? '__ingen__')
+          const afd    = afdelinger?.find(a => String(a.id) === afdId)
+          const label  = afd?.navn || h.aktivitet_titel || 'Øvrige'
+          if (!afdMap[afdId]) afdMap[afdId] = { label, holds: [] }
+          afdMap[afdId].holds.push(h)
+        })
+
+        // Sorter afdelinger alfabetisk, inaktive hold øverst inden for hver
+        Object.values(afdMap).forEach(g => {
+          g.holds.sort((a, b) => (a.aktiv === b.aktiv ? 0 : a.aktiv ? 1 : -1))
+        })
+        const sortedAfds = Object.entries(afdMap)
+          .sort((a, b) => a[1].label.localeCompare(b[1].label, 'da'))
+
+        const toggleTrainer = id => setOpenTrainerAfd(prev => {
+          const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n
+        })
+
+        const totalInaktive = holdsMedLedere.filter(h => !h.aktiv).length
+
         return (
-          <div className="card" style={{ marginBottom: 20, padding: 0, overflow: 'hidden' }}>
-            <div style={{ padding: '12px 16px 10px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontWeight: 700, fontSize: 14, color: '#111827' }}>Trænere &amp; aktivering i appen</span>
-              <span style={{ fontSize: 12, color: '#9ca3af' }}>{holdsMedLedere.length} hold</span>
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: '#374151', margin: 0 }}>
+                Trænere &amp; aktivering i appen
+              </h3>
+              {totalInaktive > 0 && (
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#b45309', background: '#fef3c7', padding: '2px 10px', borderRadius: 20 }}>
+                  {totalInaktive} afventer aktivering
+                </span>
+              )}
             </div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr style={{ background: '#f9fafb' }}>
-                  <th style={{ padding: '8px 16px', textAlign: 'left', fontWeight: 600, color: '#6b7280', borderBottom: '1px solid #f3f4f6' }}>Hold</th>
-                  <th style={{ padding: '8px 16px', textAlign: 'left', fontWeight: 600, color: '#6b7280', borderBottom: '1px solid #f3f4f6' }}>Træner(e)</th>
-                  <th style={{ padding: '8px 16px', textAlign: 'left', fontWeight: 600, color: '#6b7280', borderBottom: '1px solid #f3f4f6' }}>Email</th>
-                  <th style={{ padding: '8px 16px', textAlign: 'left', fontWeight: 600, color: '#6b7280', borderBottom: '1px solid #f3f4f6' }}>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {holdsMedLedere.map(h => {
-                  const leds   = byHold[String(h.conventus_id)] || []
-                  const aktiv  = h.aktiv === true
-                  return leds.map((l, li) => (
-                    <tr key={`${h.conventus_id}-${li}`} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                      {li === 0 && (
-                        <td rowSpan={leds.length} style={{ padding: '10px 16px', fontWeight: 600, color: '#111827', verticalAlign: 'top' }}>
-                          {h.titel || `Hold #${h.conventus_id}`}
-                        </td>
-                      )}
-                      <td style={{ padding: '10px 16px', color: '#374151' }}>{l.name}</td>
-                      <td style={{ padding: '10px 16px', color: '#6b7280' }}>
-                        <a href={`mailto:${l.email}`} style={{ color: '#1a5c2a', textDecoration: 'none' }}>{l.email}</a>
-                      </td>
-                      {li === 0 && (
-                        <td rowSpan={leds.length} style={{ padding: '10px 16px', verticalAlign: 'top' }}>
-                          <span style={{
-                            fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 20,
-                            background: aktiv ? '#dcfce7' : '#fef3c7',
-                            color:      aktiv ? '#15803d' : '#b45309',
-                          }}>
-                            {aktiv ? 'Aktiv' : 'Kan aktiveres af træner'}
-                          </span>
-                        </td>
-                      )}
-                    </tr>
-                  ))
-                })}
-              </tbody>
-            </table>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {sortedAfds.map(([afdId, group]) => {
+                const isOpen    = openTrainerAfd.has(afdId)
+                const inaktive  = group.holds.filter(h => !h.aktiv).length
+                return (
+                  <div key={afdId} className="card">
+                    <button
+                      onClick={() => toggleTrainer(afdId)}
+                      style={{ width: '100%', display: 'flex', alignItems: 'center',
+                               justifyContent: 'space-between', padding: '12px 16px',
+                               background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                    >
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span style={{ fontWeight: 600, fontSize: 14 }}>{group.label}</span>
+                        <span style={{ fontSize: 12, color: 'var(--text3)' }}>
+                          {group.holds.length} hold
+                          {inaktive > 0 && <span style={{ color: '#b45309', marginLeft: 6 }}>· {inaktive} inaktive</span>}
+                        </span>
+                      </span>
+                      <span style={{ fontSize: 12, color: 'var(--text2)', flexShrink: 0 }}>
+                        {isOpen ? '▲' : '▼'}
+                      </span>
+                    </button>
+                    {isOpen && (
+                      <div style={{ borderTop: '1px solid var(--border)' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                          <thead>
+                            <tr style={{ background: '#f9fafb' }}>
+                              <th style={{ padding: '8px 16px', textAlign: 'left', fontWeight: 600, color: '#6b7280' }}>Hold</th>
+                              <th style={{ padding: '8px 16px', textAlign: 'left', fontWeight: 600, color: '#6b7280' }}>Træner</th>
+                              <th style={{ padding: '8px 16px', textAlign: 'left', fontWeight: 600, color: '#6b7280' }}>Email</th>
+                              <th style={{ padding: '8px 16px', textAlign: 'left', fontWeight: 600, color: '#6b7280' }}>App-status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {group.holds.map(h => {
+                              const leds  = byHold[String(h.conventus_id)] || []
+                              const aktiv = h.aktiv === true
+                              return leds.map((l, li) => (
+                                <tr key={`${h.conventus_id}-${li}`} style={{ borderTop: '1px solid #f3f4f6' }}>
+                                  {li === 0 && (
+                                    <td rowSpan={leds.length} style={{ padding: '10px 16px', fontWeight: 600, color: '#111827', verticalAlign: 'middle' }}>
+                                      {h.titel || `Hold #${h.conventus_id}`}
+                                    </td>
+                                  )}
+                                  <td style={{ padding: '10px 16px', color: '#374151' }}>{l.name}</td>
+                                  <td style={{ padding: '10px 16px' }}>
+                                    <a href={`mailto:${l.email}`} style={{ color: '#1a5c2a', textDecoration: 'none' }}>{l.email}</a>
+                                  </td>
+                                  {li === 0 && (
+                                    <td rowSpan={leds.length} style={{ padding: '10px 16px', verticalAlign: 'middle' }}>
+                                      <span style={{
+                                        fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 20,
+                                        background: aktiv ? '#dcfce7' : '#fef3c7',
+                                        color:      aktiv ? '#15803d' : '#b45309',
+                                      }}>
+                                        {aktiv ? 'Aktiv' : 'Afventer aktivering'}
+                                      </span>
+                                    </td>
+                                  )}
+                                </tr>
+                              ))
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
           </div>
         )
       })()}

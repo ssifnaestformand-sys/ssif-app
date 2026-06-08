@@ -1727,14 +1727,14 @@ function TeamsScreen({ onSelectTeam, user, onGoToProfile }) {
                 const inner = (
                   <>
                     <div className="list-item-icon" style={{
-                      background: brugerApp ? 'var(--green-soft)' : canActivate ? '#fff3e0' : 'var(--bg)',
+                      background: brugerApp ? 'var(--green-soft)' : canActivate ? 'var(--green-soft)' : 'var(--bg)',
                     }}>
-                      <Icon name="users" size={17} color={brugerApp ? 'var(--green)' : canActivate ? '#e65c00' : 'var(--text3)'} />
+                      <Icon name="users" size={17} color={brugerApp ? 'var(--green)' : canActivate ? 'var(--green)' : 'var(--text3)'} />
                     </div>
                     <div className="list-item-body">
                       <span className="list-item-title">{titel}</span>
-                      <span className="list-item-detail" style={{ color: canActivate ? '#e65c00' : undefined }}>
-                        {canActivate ? 'Holdet er ikke aktivt i appen endnu' : detalje || null}
+                      <span className="list-item-detail" style={{ color: canActivate ? 'var(--green)' : undefined }}>
+                        {canActivate ? 'Som træner kan du aktivere dette hold' : detalje || null}
                       </span>
                     </div>
                     {canActivate ? (
@@ -1750,7 +1750,7 @@ function TeamsScreen({ onSelectTeam, user, onGoToProfile }) {
                           opacity: isActivating ? 0.6 : 1,
                         }}
                       >
-                        {isActivating ? 'Aktiverer…' : 'Aktivér'}
+                        {isActivating ? 'Aktiverer…' : 'Aktivér hold'}
                       </button>
                     ) : tappable ? (
                       <Chevron />
@@ -1789,14 +1789,24 @@ function TeamsScreen({ onSelectTeam, user, onGoToProfile }) {
 
         return (
           <div style={{ marginBottom: 4 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px 6px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px 4px' }}>
               <div style={{
-                width: 32, height: 32, borderRadius: '50%', background: '#fff3e0',
+                width: 32, height: 32, borderRadius: '50%', background: 'var(--green-soft)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
               }}>
-                <Icon name="shirt" size={16} color="#e65c00" />
+                <Icon name="shirt" size={16} color="var(--green)" />
               </div>
-              <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)' }}>Mine trænerholds</span>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)' }}>Mine trænerholds</span>
+                  <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '.3px', textTransform: 'uppercase', color: 'var(--green)', background: 'var(--green-soft)', padding: '2px 7px', borderRadius: 20 }}>
+                    Kun for trænere
+                  </span>
+                </div>
+                <span style={{ fontSize: 12, color: 'var(--text3)', marginTop: 1, display: 'block' }}>
+                  Du ser dette fordi du er registreret som træner
+                </span>
+              </div>
             </div>
             <div className="list-group" style={{ marginTop: 0 }}>
               {lederOnly.map((id, idx) => {
