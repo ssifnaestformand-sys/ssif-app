@@ -3568,11 +3568,13 @@ const INFOSCREEN_BASE_URL = 'https://sejssvejbaek-if.dk/app/infoscreen/?s='
 const TEMPLATE_OPTIONS = [
   { id: 'events', label: 'Kommende begivenheder', icon: '📅', desc: 'Viser træninger og kampe de næste 21 dage' },
   { id: 'news',   label: 'Nyheder fra SSIF',       icon: '📰', desc: 'Viser de seneste 4 nyheder fra klubben' },
+  { id: 'custom', label: 'Fri indhold',             icon: '✏️', desc: 'Byg frit med tekst og billeder' },
 ]
 
 const BLANK_SCREEN = {
   name: '', mode: 'templates', templates: ['events'], imageUrls: [], holdIds: [], duration: 15,
-  headerText: '', headerLogoUrl: '',
+  headerText: '', headerLogoUrl: '', headerBgColor: '#1a5c2a',
+  customBlocks: [],
 }
 
 function InfoScreensPage({ authUser }) {
@@ -3625,9 +3627,11 @@ function InfoScreensPage({ authUser }) {
       name:      sc.name || '',
       mode:      sc.mode || 'templates',
       templates: sc.templates || ['events'],
-      imageUrls:     sc.imageUrls || (sc.imageUrl ? [sc.imageUrl] : []),
+      imageUrls:     sc.imageUrls    || (sc.imageUrl ? [sc.imageUrl] : []),
       headerText:    sc.headerText    || '',
       headerLogoUrl: sc.headerLogoUrl || '',
+      headerBgColor: sc.headerBgColor || '#1a5c2a',
+      customBlocks:  sc.customBlocks  || [],
       holdIds:   sc.holdIds || [],
       duration:  sc.duration ?? 15,
     })
@@ -3649,6 +3653,8 @@ function InfoScreensPage({ authUser }) {
       imageUrls:     form.mode === 'image' ? (form.imageUrls || []).filter(u => u.trim()) : [],
       headerText:    form.headerText?.trim()    || '',
       headerLogoUrl: form.headerLogoUrl?.trim() || '',
+      headerBgColor: form.headerBgColor         || '#1a5c2a',
+      customBlocks:  form.customBlocks          || [],
       templates: form.mode === 'templates' ? (form.templates || []) : [],
       holdIds:   form.holdIds || [],
       duration:  Math.max(5, Math.min(120, parseInt(form.duration) || 15)),
@@ -3686,6 +3692,30 @@ function InfoScreensPage({ authUser }) {
     })
     setCopied(id)
     setTimeout(() => setCopied(c => c === id ? null : c), 2000)
+  }
+
+  function newBlockId() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2)
+  }
+  function addBlock(type) {
+    const block = type === 'text'
+      ? { id: newBlockId(), type: 'text',  text: '', fontSize: 48, color: '#ffffff', bold: false, italic: false, align: 'left' }
+      : { id: newBlockId(), type: 'image', url: '',  height: 300, fit: 'contain' }
+    setF('customBlocks', [...(form.customBlocks || []), block])
+  }
+  function updateBlock(id, patch) {
+    setF('customBlocks', (form.customBlocks || []).map(b => b.id === id ? { ...b, ...patch } : b))
+  }
+  function removeBlock(id) {
+    setF('customBlocks', (form.customBlocks || []).filter(b => b.id !== id))
+  }
+  function moveBlock(id, dir) {
+    const blocks = [...(form.customBlocks || [])]
+    const i = blocks.findIndex(b => b.id === id)
+    if (i + dir < 0 || i + dir >= blocks.length) return
+    const [block] = blocks.splice(i, 1)
+    blocks.splice(i + dir, 0, block)
+    setF('customBlocks', blocks)
   }
 
   async function pushContent(id) {
@@ -3782,6 +3812,110 @@ function InfoScreensPage({ authUser }) {
                       <p className="form-hint">5–120 sekunder · standard: 15</p>
                     </div>
                   )}
+
+                  {/* Block editor — vises når "Fri indhold" er valgt */}
+                  {(form.templates || []).includes('custom') && (
+                    <div style={{ marginTop: 20, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+                      <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 12 }}>Blokke til "Fri indhold"</p>
+                      {(form.customBlocks || []).length === 0 && (
+                        <p style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 12 }}>Tilføj tekst og billeder herunder.</p>
+                      )}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {(form.customBlocks || []).map((block, i) => (
+                          <div key={block.id} style={{ border: '1.5px solid var(--border)', borderRadius: 10, padding: 14, background: 'var(--bg)' }}>
+                            {/* Block-header */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', flex: 1 }}>
+                                {block.type === 'text' ? '✏️ Tekst' : '🖼 Billede'}
+                              </span>
+                              <button type="button" className="btn btn-ghost btn-sm" disabled={i === 0} onClick={() => moveBlock(block.id, -1)}>↑</button>
+                              <button type="button" className="btn btn-ghost btn-sm" disabled={i === (form.customBlocks.length - 1)} onClick={() => moveBlock(block.id, 1)}>↓</button>
+                              <button type="button" className="btn btn-ghost btn-sm" style={{ color: '#dc2626' }} onClick={() => removeBlock(block.id)}>
+                                <Icon name="trash" size={13} />
+                              </button>
+                            </div>
+
+                            {block.type === 'text' && (
+                              <>
+                                <textarea className="form-control" rows={3}
+                                  value={block.text}
+                                  onChange={e => updateBlock(block.id, { text: e.target.value })}
+                                  placeholder="Skriv din tekst her…"
+                                  style={{ marginBottom: 10, resize: 'vertical' }} />
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                  <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
+                                    Størrelse:
+                                    <input type="number" min={12} max={200} value={block.fontSize || 48}
+                                      onChange={e => updateBlock(block.id, { fontSize: parseInt(e.target.value) || 48 })}
+                                      className="form-control" style={{ width: 68, marginLeft: 4 }} />
+                                  </label>
+                                  <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                                    Farve:
+                                    <input type="color" value={block.color || '#ffffff'}
+                                      onChange={e => updateBlock(block.id, { color: e.target.value })}
+                                      style={{ width: 36, height: 28, padding: 2, border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer' }} />
+                                  </label>
+                                  <div style={{ display: 'flex', gap: 4 }}>
+                                    {[['bold','B','bold'],['italic','I','italic']].map(([key, label, style]) => (
+                                      <button key={key} type="button"
+                                        onClick={() => updateBlock(block.id, { [key]: !block[key] })}
+                                        style={{ padding: '3px 9px', borderRadius: 6, border: '1.5px solid', fontSize: 13,
+                                          fontWeight: key === 'bold' ? 800 : 400, fontStyle: key === 'italic' ? 'italic' : 'normal',
+                                          borderColor: block[key] ? 'var(--green)' : 'var(--border)',
+                                          background: block[key] ? 'var(--green-soft,#f0fdf4)' : 'var(--bg)',
+                                          color: block[key] ? 'var(--green)' : 'var(--text2)', cursor: 'pointer' }}>{label}</button>
+                                    ))}
+                                  </div>
+                                  <div style={{ display: 'flex', gap: 4 }}>
+                                    {[['left','←'],['center','↔'],['right','→']].map(([a, icon]) => (
+                                      <button key={a} type="button"
+                                        onClick={() => updateBlock(block.id, { align: a })}
+                                        style={{ padding: '3px 8px', borderRadius: 6, border: '1.5px solid', fontSize: 12,
+                                          borderColor: (block.align||'left') === a ? 'var(--green)' : 'var(--border)',
+                                          background: (block.align||'left') === a ? 'var(--green-soft,#f0fdf4)' : 'var(--bg)',
+                                          color: (block.align||'left') === a ? 'var(--green)' : 'var(--text2)', cursor: 'pointer' }}>{icon}</button>
+                                    ))}
+                                  </div>
+                                </div>
+                              </>
+                            )}
+
+                            {block.type === 'image' && (
+                              <>
+                                <ImageUploader value={block.url} onChange={url => updateBlock(block.id, { url })}
+                                  hint="Anbefalet: 16:9 · maks 10 MB" />
+                                <p style={{ fontSize: 11, color: 'var(--text3)', margin: '8px 0 4px' }}>Eller URL:</p>
+                                <input className="form-control" type="url" value={block.url}
+                                  onChange={e => updateBlock(block.id, { url: e.target.value })}
+                                  placeholder="https://…" style={{ marginBottom: 10 }} />
+                                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                                  <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
+                                    Højde (px):
+                                    <input type="number" min={50} max={900} value={block.height || 300}
+                                      onChange={e => updateBlock(block.id, { height: parseInt(e.target.value) || 300 })}
+                                      className="form-control" style={{ width: 80, marginLeft: 4 }} />
+                                  </label>
+                                  <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                                    Tilpasning:
+                                    <select className="form-control" value={block.fit || 'contain'}
+                                      onChange={e => updateBlock(block.id, { fit: e.target.value })}
+                                      style={{ width: 130, marginLeft: 4 }}>
+                                      <option value="contain">Tilpas (contain)</option>
+                                      <option value="cover">Udfyld (cover)</option>
+                                    </select>
+                                  </label>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => addBlock('text')}>✏️ Tilføj tekst</button>
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => addBlock('image')}>🖼 Tilføj billede</button>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
 
@@ -3831,6 +3965,39 @@ function InfoScreensPage({ authUser }) {
             {/* Topbjælke */}
             <div className="card card-pad">
               <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 14 }}>Topbjælke</p>
+
+              {/* Live preview */}
+              <div style={{ borderRadius: 8, overflow: 'hidden', marginBottom: 18, boxShadow: '0 1px 4px rgba(0,0,0,.12)' }}>
+                <div style={{ background: form.headerBgColor || '#1a5c2a', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {form.headerLogoUrl
+                      ? <img src={form.headerLogoUrl} style={{ height: 28, objectFit: 'contain' }} onError={e => { e.target.style.display = 'none' }} />
+                      : <div style={{ width: 28, height: 28, borderRadius: 4, background: 'rgba(255,255,255,.15)' }} />
+                    }
+                    <span style={{ color: '#fff', fontWeight: 800, fontSize: 14, lineHeight: 1 }}>
+                      {form.headerText || 'Sejs-Svejbæk IF'}
+                    </span>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ color: '#fff', fontWeight: 800, fontSize: 20, fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>12:34</div>
+                    <div style={{ color: 'rgba(255,255,255,.65)', fontSize: 10, marginTop: 2 }}>Mandag 16. juni 2026</div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+                <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  Baggrundsfarve
+                  <input type="color" value={form.headerBgColor || '#1a5c2a'}
+                    onChange={e => setF('headerBgColor', e.target.value)}
+                    style={{ width: 40, height: 30, padding: 2, border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer' }} />
+                </label>
+                <button type="button" className="btn btn-ghost btn-sm"
+                  onClick={() => setF('headerBgColor', '#1a5c2a')}>
+                  Nulstil til SSIF-grøn
+                </button>
+              </div>
+
               <div className="form-group">
                 <label className="form-label">Tekst / klubnavn</label>
                 <input className="form-control"

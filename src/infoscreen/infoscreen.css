@@ -318,6 +318,29 @@ html, body {
   overflow: hidden;
 }
 
+/* ── Custom slide (fri indhold) ──────────────────────────────────────────── */
+.is-custom-slide {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  padding: 2rem 2.5rem;
+  gap: 1.25rem;
+}
+
+.is-custom-text-block {
+  line-height: 1.3;
+  white-space: pre-wrap;
+  word-break: break-word;
+  flex-shrink: 0;
+}
+
+.is-custom-image-wrap {
+  flex-shrink: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
 /* ── Image mode ──────────────────────────────────────────────────────────── */
 .is-image-mode {
   width: 100%; height: 100%;

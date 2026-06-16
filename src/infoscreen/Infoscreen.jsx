@@ -168,6 +168,45 @@ function NewsSlide({ news }) {
   )
 }
 
+// ── Fri indhold: tekst- og billedblokke ──────────────────────────────────────
+
+function CustomSlide({ blocks }) {
+  if (!blocks?.length) {
+    return (
+      <div className="is-empty-slide">
+        <div className="is-empty-icon">✏️</div>
+        <p>Ingen blokke tilføjet endnu</p>
+      </div>
+    )
+  }
+  return (
+    <div className="is-custom-slide">
+      {blocks.map((block, i) => {
+        if (block.type === 'image') {
+          return (
+            <div key={i} className="is-custom-image-wrap" style={{ height: block.height || 300 }}>
+              <img src={block.url} alt=""
+                style={{ width: '100%', height: '100%', objectFit: block.fit || 'contain', display: 'block' }}
+                onError={e => { e.target.style.display = 'none' }} />
+            </div>
+          )
+        }
+        return (
+          <div key={i} className="is-custom-text-block" style={{
+            fontSize:   (block.fontSize || 48) + 'px',
+            color:      block.color     || '#ffffff',
+            fontWeight: block.bold      ? 800 : 400,
+            fontStyle:  block.italic    ? 'italic' : 'normal',
+            textAlign:  block.align     || 'left',
+          }}>
+            {block.text}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // ── Billede-mode ──────────────────────────────────────────────────────────────
 
 function ImageSlide({ url, screenName }) {
@@ -188,13 +227,13 @@ function ImageSlide({ url, screenName }) {
 
 // ── Header med ur ────────────────────────────────────────────────────────────
 
-function InfoHeader({ time, screenName, logoUrl, clubName }) {
+function InfoHeader({ time, screenName, logoUrl, clubName, bgColor }) {
   const pad = n => String(n).padStart(2, '0')
   const timeStr = `${pad(time.getHours())}:${pad(time.getMinutes())}`
   const dateStr = `${DAYS_DA[time.getDay()]} ${time.getDate()}. ${MONTHS_DA[time.getMonth()]} ${time.getFullYear()}`
 
   return (
-    <header className="is-header">
+    <header className="is-header" style={bgColor ? { background: bgColor } : undefined}>
       <div className="is-header-logo">
         <img src={logoUrl || '../ssif-logo.png'} alt="" className="is-logo"
              onError={e => {
@@ -390,6 +429,7 @@ export default function Infoscreen() {
     const activeTemplate = templates[slide] || templates[0]
     if (activeTemplate === 'events') return <EventsSlide events={events} />
     if (activeTemplate === 'news')   return <NewsSlide   news={news} />
+    if (activeTemplate === 'custom') return <CustomSlide blocks={config.customBlocks} />
     return (
       <div className="is-empty-slide">
         <p>Ingen skabelon valgt</p>
@@ -399,7 +439,7 @@ export default function Infoscreen() {
 
   return (
     <div className="is-root">
-      <InfoHeader time={time} screenName={config.name} logoUrl={config.headerLogoUrl} clubName={config.headerText} />
+      <InfoHeader time={time} screenName={config.name} logoUrl={config.headerLogoUrl} clubName={config.headerText} bgColor={config.headerBgColor} />
       <main className="is-main">
         {renderContent()}
       </main>
