@@ -188,7 +188,7 @@ function ImageSlide({ url, screenName }) {
 
 // ── Header med ur ────────────────────────────────────────────────────────────
 
-function InfoHeader({ time, screenName }) {
+function InfoHeader({ time, screenName, logoUrl, clubName }) {
   const pad = n => String(n).padStart(2, '0')
   const timeStr = `${pad(time.getHours())}:${pad(time.getMinutes())}`
   const dateStr = `${DAYS_DA[time.getDay()]} ${time.getDate()}. ${MONTHS_DA[time.getMonth()]} ${time.getFullYear()}`
@@ -196,10 +196,16 @@ function InfoHeader({ time, screenName }) {
   return (
     <header className="is-header">
       <div className="is-header-logo">
-        <img src="../ssif-logo.png" alt="SSIF" className="is-logo"
-             onError={e => { e.target.style.display = 'none' }} />
+        <img src={logoUrl || '../ssif-logo.png'} alt="" className="is-logo"
+             onError={e => {
+               if (e.target.src !== window.location.origin + '/../ssif-logo.png') {
+                 e.target.src = '../ssif-logo.png'
+               } else {
+                 e.target.style.display = 'none'
+               }
+             }} />
         <div className="is-header-name">
-          <span className="is-club-name">Sejs-Svejbæk IF</span>
+          <span className="is-club-name">{clubName || 'Sejs-Svejbæk IF'}</span>
           {screenName && <span className="is-screen-name">{screenName}</span>}
         </div>
       </div>
@@ -331,15 +337,19 @@ export default function Infoscreen() {
     return () => clearInterval(refreshTimer.current)
   }, [ready])
 
-  // ── Slide-timer ───────────────────────────────────────────────────────────────
+  // ── Slide-timer — virker for både skabeloner og billeder ─────────────────────
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current)
-    const templates = config?.templates || []
-    if (templates.length <= 1) return
+    const slideCount = config?.mode === 'image'
+      ? (config?.imageUrls?.length || (config?.imageUrl ? 1 : 0))
+      : (config?.templates || []).length
+    if (slideCount <= 1) return
 
     const duration = (config?.duration ?? 15) * 1000
     elapsedRef.current = 0
     setElapsed(0)
+    slideRef.current = 0
+    setSlide(0)
 
     intervalRef.current = setInterval(() => {
       elapsedRef.current += 100
@@ -347,13 +357,13 @@ export default function Infoscreen() {
       if (elapsedRef.current >= duration) {
         elapsedRef.current = 0
         setElapsed(0)
-        slideRef.current = (slideRef.current + 1) % templates.length
+        slideRef.current = (slideRef.current + 1) % slideCount
         setSlide(slideRef.current)
       }
     }, 100)
 
     return () => clearInterval(intervalRef.current)
-  }, [config?.templates?.join(','), config?.duration])
+  }, [config?.mode, config?.templates?.join(','), (config?.imageUrls || []).join(','), config?.duration])
 
   // ── Rendering ─────────────────────────────────────────────────────────────────
 
@@ -367,12 +377,15 @@ export default function Infoscreen() {
     return <SplashScreen message="Skærm ikke fundet. Kontakt administrator." />
   }
 
-  const templates = config.templates || []
-  const duration  = config.duration ?? 15
+  const templates  = config.templates || []
+  const imageUrls  = config.imageUrls?.length ? config.imageUrls : (config.imageUrl ? [config.imageUrl] : [])
+  const slideCount = config.mode === 'image' ? imageUrls.length : templates.length
+  const duration   = config.duration ?? 15
 
   function renderContent() {
     if (config.mode === 'image') {
-      return <ImageSlide url={config.imageUrl} screenName={config.name} />
+      const url = imageUrls[slide % Math.max(1, imageUrls.length)] || ''
+      return <ImageSlide url={url} screenName={config.name} />
     }
     const activeTemplate = templates[slide] || templates[0]
     if (activeTemplate === 'events') return <EventsSlide events={events} />
@@ -386,13 +399,13 @@ export default function Infoscreen() {
 
   return (
     <div className="is-root">
-      <InfoHeader time={time} screenName={config.name} />
+      <InfoHeader time={time} screenName={config.name} logoUrl={config.headerLogoUrl} clubName={config.headerText} />
       <main className="is-main">
         {renderContent()}
       </main>
-      {config.mode === 'templates' && templates.length > 1 && (
+      {slideCount > 1 && (
         <SlideProgress
-          total={templates.length}
+          total={slideCount}
           current={slide}
           duration={duration * 1000}
           elapsed={elapsed}

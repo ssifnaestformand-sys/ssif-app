@@ -3571,7 +3571,8 @@ const TEMPLATE_OPTIONS = [
 ]
 
 const BLANK_SCREEN = {
-  name: '', mode: 'templates', templates: ['events'], imageUrl: '', holdIds: [], duration: 15,
+  name: '', mode: 'templates', templates: ['events'], imageUrls: [], holdIds: [], duration: 15,
+  headerText: '', headerLogoUrl: '',
 }
 
 function InfoScreensPage({ authUser }) {
@@ -3624,7 +3625,9 @@ function InfoScreensPage({ authUser }) {
       name:      sc.name || '',
       mode:      sc.mode || 'templates',
       templates: sc.templates || ['events'],
-      imageUrl:  sc.imageUrl || '',
+      imageUrls:     sc.imageUrls || (sc.imageUrl ? [sc.imageUrl] : []),
+      headerText:    sc.headerText    || '',
+      headerLogoUrl: sc.headerLogoUrl || '',
       holdIds:   sc.holdIds || [],
       duration:  sc.duration ?? 15,
     })
@@ -3637,13 +3640,15 @@ function InfoScreensPage({ authUser }) {
     e.preventDefault()
     if (!form.name.trim())                                      { setError('Skriv et navn til skærmen'); return }
     if (form.mode === 'templates' && !form.templates?.length)   { setError('Vælg mindst én skabelon'); return }
-    if (form.mode === 'image' && !form.imageUrl?.trim())        { setError('Upload et billede eller indsæt en URL'); return }
+    if (form.mode === 'image' && !form.imageUrls?.length)        { setError('Tilføj mindst ét billede'); return }
 
     setSaving(true); setError('')
     const data = {
       name:      form.name.trim(),
       mode:      form.mode,
-      imageUrl:  form.mode === 'image' ? (form.imageUrl?.trim() || '') : '',
+      imageUrls:     form.mode === 'image' ? (form.imageUrls || []).filter(u => u.trim()) : [],
+      headerText:    form.headerText?.trim()    || '',
+      headerLogoUrl: form.headerLogoUrl?.trim() || '',
       templates: form.mode === 'templates' ? (form.templates || []) : [],
       holdIds:   form.holdIds || [],
       duration:  Math.max(5, Math.min(120, parseInt(form.duration) || 15)),
@@ -3723,7 +3728,7 @@ function InfoScreensPage({ authUser }) {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: form.mode === 'templates' ? 20 : 0 }}>
                 {[
                   { v: 'templates', label: 'Skabeloner', icon: '🗓', desc: 'Live-data: begivenheder og/eller nyheder' },
-                  { v: 'image',     label: 'Stillbillede', icon: '🖼', desc: 'Et fast billede der fylder hele skærmen' },
+                  { v: 'image',     label: 'Billeder',      icon: '🖼', desc: 'Et eller flere billeder i rotation' },
                 ].map(opt => (
                   <button type="button" key={opt.v}
                     onClick={() => setF('mode', opt.v)}
@@ -3780,19 +3785,71 @@ function InfoScreensPage({ authUser }) {
                 </>
               )}
 
-              {/* Billede-upload */}
+              {/* Billede-upload (én eller flere) */}
               {form.mode === 'image' && (
-                <div className="form-group" style={{ marginTop: 4 }}>
-                  <label className="form-label">Billede *</label>
-                  <ImageUploader value={form.imageUrl} onChange={url => setF('imageUrl', url)}
-                    hint="Anbefalet: 1920 × 1080 px (16:9) · maks 10 MB" />
-                  <p className="form-label" style={{ marginTop: 10 }}>Eller indsæt en URL direkte:</p>
-                  <input className="form-control" type="url"
-                    value={form.imageUrl}
-                    onChange={e => setF('imageUrl', e.target.value)}
-                    placeholder="https://…" />
+                <div style={{ marginTop: 4 }}>
+                  <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', marginBottom: 10 }}>Billeder *</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {(form.imageUrls || []).map((url, i) => (
+                      <div key={i} style={{ border: '1.5px solid var(--border)', borderRadius: 10, padding: 14 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)' }}>Billede {i + 1}</span>
+                          <button type="button" className="btn btn-ghost btn-sm" style={{ color: '#dc2626' }}
+                            onClick={() => setF('imageUrls', form.imageUrls.filter((_, j) => j !== i))}>
+                            <Icon name="trash" size={13} />
+                          </button>
+                        </div>
+                        <ImageUploader value={url} onChange={newUrl => {
+                          const updated = [...form.imageUrls]; updated[i] = newUrl; setF('imageUrls', updated)
+                        }} hint="1920 × 1080 px (16:9) · maks 10 MB" />
+                        <p style={{ fontSize: 11, color: 'var(--text3)', margin: '8px 0 4px' }}>Eller indsæt URL direkte:</p>
+                        <input className="form-control" type="url" value={url}
+                          onChange={e => {
+                            const updated = [...form.imageUrls]; updated[i] = e.target.value; setF('imageUrls', updated)
+                          }}
+                          placeholder="https://…" />
+                      </div>
+                    ))}
+                  </div>
+                  <button type="button" className="btn btn-ghost btn-sm" style={{ marginTop: 10 }}
+                    onClick={() => setF('imageUrls', [...(form.imageUrls || []), ''])}>
+                    + Tilføj billede
+                  </button>
+                  {(form.imageUrls || []).length > 1 && (
+                    <div style={{ marginTop: 16 }}>
+                      <label className="form-label">Skift billede hvert (sekunder)</label>
+                      <input type="number" className="form-control" min={5} max={120}
+                        value={form.duration} onChange={e => setF('duration', e.target.value)}
+                        style={{ width: 100 }} />
+                      <p className="form-hint">5–120 sekunder · standard: 15</p>
+                    </div>
+                  )}
                 </div>
               )}
+            </div>
+
+            {/* Topbjælke */}
+            <div className="card card-pad">
+              <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 14 }}>Topbjælke</p>
+              <div className="form-group">
+                <label className="form-label">Tekst / klubnavn</label>
+                <input className="form-control"
+                  value={form.headerText}
+                  onChange={e => setF('headerText', e.target.value)}
+                  placeholder="Sejs-Svejbæk IF" />
+                <p className="form-hint">Tomt = viser "Sejs-Svejbæk IF"</p>
+              </div>
+              <div className="form-group" style={{ marginTop: 14 }}>
+                <label className="form-label">Logo / billede</label>
+                <ImageUploader value={form.headerLogoUrl} onChange={url => setF('headerLogoUrl', url)}
+                  hint="PNG med transparent baggrund anbefales · maks 2 MB" />
+                <p style={{ fontSize: 11, color: 'var(--text3)', margin: '8px 0 4px' }}>Eller URL:</p>
+                <input className="form-control" type="url"
+                  value={form.headerLogoUrl}
+                  onChange={e => setF('headerLogoUrl', e.target.value)}
+                  placeholder="https://…" />
+                <p className="form-hint">Tomt = bruger SSIF-logoet</p>
+              </div>
             </div>
 
             {error && <div className="alert-error">{error}</div>}
@@ -3885,7 +3942,8 @@ function InfoScreensPage({ authUser }) {
           {screens.map(sc => {
             const url         = INFOSCREEN_BASE_URL + sc.id
             const isCopied    = copied === sc.id
-            const modeLabel   = sc.mode === 'image' ? 'Stillbillede' : 'Skabeloner'
+            const imgCount    = sc.imageUrls?.length || (sc.imageUrl ? 1 : 0)
+            const modeLabel   = sc.mode === 'image' ? (imgCount > 1 ? `${imgCount} billeder` : 'Stillbillede') : 'Skabeloner'
             const tmplLabels  = (sc.templates || []).map(t => TEMPLATE_OPTIONS.find(o => o.id === t)?.label || t)
             return (
               <div key={sc.id} className="card" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 16 }}>
