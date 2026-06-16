@@ -17,6 +17,12 @@
 
 define('SMS_PRICE_DKK', 0.29); // GatewayAPI, Danmark
 
+// ── Sikkerhedsgrænser ───────────────────────────────────────────────────────
+// Sanity-caps der forhindrer utilsigtede/ondsindede masseudsendelser med
+// store omkostninger (fx pga. en fejlkonfigureret 'alle'-scope).
+define('MAX_RECIPIENTS',     2000); // maks. modtagere pr. udsendelse (alle/gruppe/manuel)
+define('MAX_MANUAL_NUMBERS', 200);  // maks. manuelt indtastede numre
+
 require_once __DIR__ . '/_auth.php';
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
@@ -83,6 +89,11 @@ $parts = sms_parts($text);
 // ── Manuel scope: parse numre direkte, ingen Conventus-kald ──────────────────
 if ($scope === 'manual') {
     $msisdns = parse_manual_numbers($manualInput);
+    if (count($msisdns) > MAX_MANUAL_NUMBERS) {
+        http_response_code(400);
+        echo json_encode(['error' => 'For mange numre (' . count($msisdns) . ') — maks ' . MAX_MANUAL_NUMBERS . ' ved manuel indtastning']);
+        exit;
+    }
     if ($action === 'preview') {
         echo json_encode(['ok' => true, 'count' => count($msisdns), 'parts' => $parts,
                           'estimatedCost' => round(count($msisdns) * $parts * SMS_PRICE_DKK, 2)]);
@@ -112,6 +123,12 @@ $dbg     = ($action === 'preview');
 $result  = fetch_conventus_msisdns_debug($conventusKey, $targetGroupIds, $dbg);
 $msisdns = $result['msisdns'];
 
+if (count($msisdns) > MAX_RECIPIENTS) {
+    http_response_code(400);
+    echo json_encode(['error' => 'For mange modtagere (' . count($msisdns) . ') — maks ' . MAX_RECIPIENTS . ' pr. udsendelse. Vælg en mere afgrænset gruppe.']);
+    exit;
+}
+
 if ($action === 'preview') {
     $resp = ['ok' => true, 'count' => count($msisdns), 'parts' => $parts,
              'ucs2'          => sms_is_ucs2($text),
@@ -121,9 +138,6 @@ if ($action === 'preview') {
                  'conventus_fetched'  => $result['total'],
                  'conventus_ok'       => $result['api_ok'],
                  'sample_groups'      => $result['sample_groups'],
-                 'raw_prefix'         => $result['raw_prefix'] ?? '',
-                 'key_length'         => strlen($conventusKey),
-                 'key_hint'           => strlen($conventusKey) > 4 ? substr($conventusKey,0,2).'...'.substr($conventusKey,-2) : '(tom)',
              ]];
     echo json_encode($resp);
     exit;
@@ -205,11 +219,9 @@ function fetch_conventus_msisdns_debug(string $apiKey, array $targetGroupIds, bo
         $raw = mb_convert_encoding($raw, 'UTF-8', 'ISO-8859-1');
         $raw = preg_replace('/encoding=["\']ISO-8859-1["\']/i', 'encoding="UTF-8"', $raw);
     }
-    if (strpos(ltrim($raw), '<') !== 0) return ['msisdns' => [], 'total' => 0, 'api_ok' => false, 'sample_groups' => [], 'raw_prefix' => substr($raw, 0, 200)];
+    if (strpos(ltrim($raw), '<') !== 0) return ['msisdns' => [], 'total' => 0, 'api_ok' => false, 'sample_groups' => []];
 
-    $result = parse_msisdns_from_xml($raw, $targetGroupIds, $debug);
-    if ($debug) $result['raw_prefix'] = substr($raw, 0, 300); // første 300 tegn af XML
-    return $result;
+    return parse_msisdns_from_xml($raw, $targetGroupIds, $debug);
 }
 
 // Behold den gamle signatur som alias (bruges af send_and_log indirekte)
@@ -245,7 +257,7 @@ function parse_msisdns_from_xml(string $raw, array $targetGroupIds, bool $debug 
 
         $total++;
 
-        // Indsaml gruppe-IDs fra de første 3 membres til debug
+        // Indsaml gruppe-IDs fra de første 3 membres til debug (uden navn/PII)
         if ($debug && count($sampleGroups) < 3 && isset($k->relationer)) {
             $gids = [];
             foreach ($k->relationer->children() as $relType) {
@@ -255,7 +267,7 @@ function parse_msisdns_from_xml(string $raw, array $targetGroupIds, bool $debug 
                     }
                 }
             }
-            $sampleGroups[] = ['name' => trim((string)($k->navn ?? '')), 'groups' => $gids];
+            $sampleGroups[] = ['groups' => $gids];
         }
 
         if ($filterByGroup) {

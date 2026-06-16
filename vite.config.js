@@ -8,8 +8,9 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
-        main:  resolve(__dirname, 'index.html'),
-        admin: resolve(__dirname, 'admin/index.html'),
+        main:       resolve(__dirname, 'index.html'),
+        admin:      resolve(__dirname, 'admin/index.html'),
+        infoscreen: resolve(__dirname, 'infoscreen/index.html'),
       },
       output: {
         manualChunks: {

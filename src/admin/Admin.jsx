@@ -90,6 +90,12 @@ function Icon({ name, size = 18, color = 'currentColor', sw = 1.75 }) {
     search:   <><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></>,
     eye:      <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>,
     sms:      <><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><line x1="9" y1="10" x2="9" y2="10" strokeWidth={3}/><line x1="12" y1="10" x2="12" y2="10" strokeWidth={3}/><line x1="15" y1="10" x2="15" y2="10" strokeWidth={3}/></>,
+    monitor:  <><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></>,
+    star:     <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>,
+    shirt:    <><path d="M20.38 3.46L16 2a4 4 0 01-8 0L3.62 3.46a2 2 0 00-1.34 2.23l.58 3.57a1 1 0 00.99.86H6v10c0 1.1.9 2 2 2h8a2 2 0 002-2V10h2.15a1 1 0 00.99-.86l.58-3.57a2 2 0 00-1.34-2.23z"/></>,
+    location: <><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></>,
+    copy:     <><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></>,
+    refresh:  <><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></>,
   }
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -304,6 +310,7 @@ function Sidebar({ page, setPage, userDoc, user, onLogout }) {
     { id: 'events',  label: 'Begivenheder', icon: 'calendar' },
     { id: 'banners', label: 'Forsidebanners', icon: 'star'   },
     ...(userDoc?.role === 'admin' ? [
+      { id: 'infoscreens',  label: 'Infoskærme',    icon: 'monitor' },
       { id: 'kommunikation', label: 'Kommunikation', icon: 'sms'     },
       { id: 'support',      label: 'Support',       icon: 'message' },
       { id: 'appusers',     label: 'App-brugere',   icon: 'eye'     },
@@ -3191,25 +3198,6 @@ function KommunikationPage({ authUser, userDoc }) {
                       <span style={{ color: 'var(--text3)', minWidth: 16 }}>→</span>
                       <span>Hold-ID sendt til server: <code style={{ background: '#f0f0f0', padding: '1px 5px', borderRadius: 4 }}>{JSON.stringify(preview.debug.hold_ids_received)}</code></span>
                     </div>
-                    {preview.debug.key_length != null && (
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <span style={{ color: preview.debug.key_length > 10 ? 'var(--green)' : '#dc2626', fontWeight: 700 }}>
-                          {preview.debug.key_length > 10 ? '✓' : '✗'}
-                        </span>
-                        <span>
-                          CONVENTUS_KEY: {preview.debug.key_length} tegn
-                          {preview.debug.key_hint && <code style={{ marginLeft: 6, background: '#f0f0f0', padding: '1px 5px', borderRadius: 4 }}>{preview.debug.key_hint}</code>}
-                          {preview.debug.key_length === 25 && <strong style={{ color: '#dc2626', marginLeft: 6 }}>← PLACEHOLDER ikke erstattet af deploy!</strong>}
-                          {preview.debug.key_length === 0 && <strong style={{ color: '#dc2626', marginLeft: 6 }}>← Nøgle mangler</strong>}
-                        </span>
-                      </div>
-                    )}
-                    {preview.debug.raw_prefix && (
-                      <div style={{ marginTop: 6 }}>
-                        <p style={{ color: 'var(--text3)', marginBottom: 4 }}>Første 300 tegn af Conventus svar:</p>
-                        <pre style={{ background: '#f0f0f0', padding: '6px 10px', borderRadius: 6, fontSize: 10, overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all', margin: 0 }}>{preview.debug.raw_prefix}</pre>
-                      </div>
-                    )}
                     {preview.debug.sample_groups?.length > 0 && (
                       <div style={{ marginTop: 4 }}>
                         <p style={{ color: 'var(--text3)', marginBottom: 4 }}>
@@ -3217,7 +3205,7 @@ function KommunikationPage({ authUser, userDoc }) {
                         </p>
                         {preview.debug.sample_groups.map((s, i) => (
                           <div key={i} style={{ padding: '4px 8px', background: '#f5f5f5', borderRadius: 5, marginBottom: 3, fontFamily: 'monospace', fontSize: 11 }}>
-                            <strong>{s.name || '–'}</strong>: [{s.groups?.join(', ') || 'ingen'}]
+                            Medlem {i + 1}: [{s.groups?.join(', ') || 'ingen'}]
                           </div>
                         ))}
                         <p style={{ marginTop: 6, color: '#dc2626', fontSize: 11 }}>
@@ -3573,17 +3561,413 @@ function SupportPage({ authUser }) {
   )
 }
 
+// ─── Infoskærme ───────────────────────────────────────────────────────────────
+
+const INFOSCREEN_BASE_URL = 'https://sejssvejbaek-if.dk/app/infoscreen/?s='
+
+const TEMPLATE_OPTIONS = [
+  { id: 'events', label: 'Kommende begivenheder', icon: '📅', desc: 'Viser træninger og kampe de næste 21 dage' },
+  { id: 'news',   label: 'Nyheder fra SSIF',       icon: '📰', desc: 'Viser de seneste 4 nyheder fra klubben' },
+]
+
+const BLANK_SCREEN = {
+  name: '', mode: 'templates', templates: ['events'], imageUrl: '', holdIds: [], duration: 15,
+}
+
+function InfoScreensPage({ authUser }) {
+  const [screens,  setScreens]  = useState([])
+  const [loading,  setLoading]  = useState(true)
+  const [holds,    setHolds]    = useState([])
+  const [editing,  setEditing]  = useState(null)   // null | 'new' | screenId
+  const [form,     setForm]     = useState(null)
+  const [saving,   setSaving]   = useState(false)
+  const [error,    setError]    = useState('')
+  const [deleting, setDeleting] = useState(null)
+  const [copied,   setCopied]   = useState(null)
+  const [pushing,  setPushing]  = useState(null)
+
+  useEffect(() => {
+    getDocs(query(collection(db, 'infoscreens'), orderBy('createdAt', 'desc')))
+      .then(s => setScreens(s.docs.map(d => ({ id: d.id, ...d.data() }))))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+    getDocs(collection(db, 'holds'))
+      .then(s => setHolds(
+        s.docs.map(d => ({ id: d.id, ...d.data() }))
+              .filter(h => h.aktiv)
+              .sort((a, b) => (a.titel || '').localeCompare(b.titel || '', 'da'))
+      ))
+      .catch(() => {})
+  }, [])
+
+  function setF(k, v) { setForm(prev => ({ ...prev, [k]: v })) }
+
+  function toggleTemplate(t) {
+    setF('templates', (form.templates || []).includes(t)
+      ? form.templates.filter(x => x !== t)
+      : [...(form.templates || []), t])
+  }
+
+  function toggleHold(hid) {
+    const sid = String(hid)
+    setF('holdIds', (form.holdIds || []).includes(sid)
+      ? form.holdIds.filter(x => x !== sid)
+      : [...(form.holdIds || []), sid])
+  }
+
+  function openNew() {
+    setForm({ ...BLANK_SCREEN }); setEditing('new'); setError('')
+  }
+
+  function openEdit(sc) {
+    setForm({
+      name:      sc.name || '',
+      mode:      sc.mode || 'templates',
+      templates: sc.templates || ['events'],
+      imageUrl:  sc.imageUrl || '',
+      holdIds:   sc.holdIds || [],
+      duration:  sc.duration ?? 15,
+    })
+    setEditing(sc.id); setError('')
+  }
+
+  function closeForm() { setForm(null); setEditing(null); setError('') }
+
+  async function handleSave(e) {
+    e.preventDefault()
+    if (!form.name.trim())                                      { setError('Skriv et navn til skærmen'); return }
+    if (form.mode === 'templates' && !form.templates?.length)   { setError('Vælg mindst én skabelon'); return }
+    if (form.mode === 'image' && !form.imageUrl?.trim())        { setError('Upload et billede eller indsæt en URL'); return }
+
+    setSaving(true); setError('')
+    const data = {
+      name:      form.name.trim(),
+      mode:      form.mode,
+      imageUrl:  form.mode === 'image' ? (form.imageUrl?.trim() || '') : '',
+      templates: form.mode === 'templates' ? (form.templates || []) : [],
+      holdIds:   form.holdIds || [],
+      duration:  Math.max(5, Math.min(120, parseInt(form.duration) || 15)),
+      updatedAt: serverTimestamp(),
+    }
+    try {
+      if (editing === 'new') {
+        const ref = await addDoc(collection(db, 'infoscreens'), { ...data, createdAt: serverTimestamp() })
+        setScreens(prev => [{ ...data, id: ref.id }, ...prev])
+      } else {
+        await updateDoc(doc(db, 'infoscreens', editing), data)
+        setScreens(prev => prev.map(s => s.id === editing ? { ...s, ...data } : s))
+      }
+      closeForm()
+    } catch (err) { setError('Fejl: ' + err.message) }
+    finally { setSaving(false) }
+  }
+
+  async function handleDelete(sc) {
+    if (!window.confirm(`Slet skærmen "${sc.name}"? Dette kan ikke fortrydes.`)) return
+    setDeleting(sc.id)
+    try {
+      await deleteDoc(doc(db, 'infoscreens', sc.id))
+      setScreens(prev => prev.filter(s => s.id !== sc.id))
+    } catch {}
+    setDeleting(null)
+  }
+
+  function copyUrl(id) {
+    const url = INFOSCREEN_BASE_URL + id
+    navigator.clipboard?.writeText(url).catch(() => {
+      const el = document.createElement('textarea')
+      el.value = url; document.body.appendChild(el); el.select()
+      try { document.execCommand('copy') } finally { document.body.removeChild(el) }
+    })
+    setCopied(id)
+    setTimeout(() => setCopied(c => c === id ? null : c), 2000)
+  }
+
+  async function pushContent(id) {
+    setPushing(id)
+    try {
+      await updateDoc(doc(db, 'infoscreens', id), { contentVersion: Date.now() })
+    } catch (_) {}
+    setPushing(null)
+  }
+
+  // ── Edit/Create form ──────────────────────────────────────────────────────────
+  if (form !== null) {
+    return (
+      <>
+        <div className="page-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button className="btn btn-ghost btn-sm" onClick={closeForm}>← Tilbage</button>
+            <h1 className="page-title">{editing === 'new' ? 'Ny infoskærm' : `Rediger: ${form.name || '…'}`}</h1>
+          </div>
+        </div>
+
+        <form onSubmit={handleSave} style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 20, alignItems: 'start' }}>
+          {/* Venstre */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* Navn */}
+            <div className="card card-pad">
+              <div className="form-group">
+                <label className="form-label">Skærmens navn *</label>
+                <input className="form-control" autoFocus required
+                  value={form.name}
+                  onChange={e => setF('name', e.target.value)}
+                  placeholder="fx Hal 1 · Indgang, Kantine, Udendørs tavle…" />
+                <p className="form-hint">Vises kun i backoffice — ikke på selve skærmen</p>
+              </div>
+            </div>
+
+            {/* Indholds-type */}
+            <div className="card card-pad">
+              <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 12 }}>Indholdstype</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: form.mode === 'templates' ? 20 : 0 }}>
+                {[
+                  { v: 'templates', label: 'Skabeloner', icon: '🗓', desc: 'Live-data: begivenheder og/eller nyheder' },
+                  { v: 'image',     label: 'Stillbillede', icon: '🖼', desc: 'Et fast billede der fylder hele skærmen' },
+                ].map(opt => (
+                  <button type="button" key={opt.v}
+                    onClick={() => setF('mode', opt.v)}
+                    style={{
+                      padding: '14px 16px', borderRadius: 10, border: '2px solid',
+                      borderColor: form.mode === opt.v ? 'var(--green)' : 'var(--border)',
+                      background: form.mode === opt.v ? 'var(--green-soft, #f0fdf4)' : 'var(--bg)',
+                      cursor: 'pointer', textAlign: 'left',
+                    }}>
+                    <div style={{ fontSize: 20, marginBottom: 4 }}>{opt.icon}</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: form.mode === opt.v ? 'var(--green)' : 'var(--text)' }}>{opt.label}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>{opt.desc}</div>
+                  </button>
+                ))}
+              </div>
+
+              {/* Skabelon-valg */}
+              {form.mode === 'templates' && (
+                <>
+                  <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', marginBottom: 10 }}>Vælg skabeloner *</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {TEMPLATE_OPTIONS.map(t => {
+                      const checked = (form.templates || []).includes(t.id)
+                      return (
+                        <label key={t.id} style={{
+                          display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
+                          borderRadius: 8, border: '1.5px solid',
+                          borderColor: checked ? 'var(--green)' : 'var(--border)',
+                          background: checked ? 'var(--green-soft, #f0fdf4)' : 'var(--bg)',
+                          cursor: 'pointer',
+                        }}>
+                          <input type="checkbox" checked={checked}
+                            onChange={() => toggleTemplate(t.id)}
+                            style={{ width: 16, height: 16, accentColor: 'var(--green)', flexShrink: 0 }} />
+                          <span style={{ fontSize: 1.3, lineHeight: 1 }}>{t.icon}</span>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: checked ? 700 : 500, color: checked ? 'var(--green)' : 'var(--text)' }}>{t.label}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>{t.desc}</div>
+                          </div>
+                        </label>
+                      )
+                    })}
+                  </div>
+                  {(form.templates || []).length > 1 && (
+                    <div style={{ marginTop: 16 }}>
+                      <label className="form-label">Skift slide hvert (sekunder)</label>
+                      <input type="number" className="form-control" min={5} max={120}
+                        value={form.duration}
+                        onChange={e => setF('duration', e.target.value)}
+                        style={{ width: 100 }} />
+                      <p className="form-hint">5–120 sekunder · standard: 15</p>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Billede-upload */}
+              {form.mode === 'image' && (
+                <div className="form-group" style={{ marginTop: 4 }}>
+                  <label className="form-label">Billede *</label>
+                  <ImageUploader value={form.imageUrl} onChange={url => setF('imageUrl', url)}
+                    hint="Anbefalet: 1920 × 1080 px (16:9) · maks 10 MB" />
+                  <p className="form-label" style={{ marginTop: 10 }}>Eller indsæt en URL direkte:</p>
+                  <input className="form-control" type="url"
+                    value={form.imageUrl}
+                    onChange={e => setF('imageUrl', e.target.value)}
+                    placeholder="https://…" />
+                </div>
+              )}
+            </div>
+
+            {error && <div className="alert-error">{error}</div>}
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button type="button" className="btn btn-ghost" onClick={closeForm}>Annuller</button>
+              <button type="submit" className="btn btn-primary" disabled={saving}>
+                {saving ? 'Gemmer…' : editing === 'new' ? 'Opret skærm' : 'Gem ændringer'}
+              </button>
+            </div>
+          </div>
+
+          {/* Højre: Hold-filter */}
+          <div className="card card-pad">
+            <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>Hold-filter</p>
+            <p style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 12, lineHeight: 1.5 }}>
+              Filtrer begivenheder til specifikke hold. Tom liste = alle aktive hold.
+            </p>
+            {holds.length === 0 ? (
+              <p style={{ fontSize: 12, color: 'var(--text3)' }}>Ingen aktive hold fundet</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 400, overflowY: 'auto' }}>
+                {holds.map(h => {
+                  const sid     = String(h.conventus_id)
+                  const checked = (form.holdIds || []).includes(sid)
+                  return (
+                    <label key={h.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 8,
+                      padding: '7px 10px', borderRadius: 6, cursor: 'pointer',
+                      background: checked ? 'var(--green-soft, #f0fdf4)' : 'transparent',
+                    }}>
+                      <input type="checkbox" checked={checked}
+                        onChange={() => toggleHold(h.conventus_id)}
+                        style={{ accentColor: 'var(--green)', flexShrink: 0 }} />
+                      <span style={{ fontSize: 13, color: checked ? 'var(--green)' : 'var(--text)', fontWeight: checked ? 600 : 400 }}>
+                        {h.titel}
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
+            )}
+            {(form.holdIds || []).length > 0 && (
+              <button type="button" className="btn btn-ghost btn-sm" style={{ marginTop: 10 }}
+                onClick={() => setF('holdIds', [])}>
+                Nulstil filter (vis alle)
+              </button>
+            )}
+          </div>
+        </form>
+      </>
+    )
+  }
+
+  // ── Liste over skærme ─────────────────────────────────────────────────────────
+  return (
+    <>
+      <div className="page-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h1 className="page-title">Infoskærme</h1>
+        <button className="btn btn-primary" onClick={openNew}>
+          <Icon name="plus" size={15} color="white" />
+          Ny infoskærm
+        </button>
+      </div>
+
+      {/* Vejledning */}
+      <div className="card card-pad" style={{ marginBottom: 20, display: 'flex', gap: 16, alignItems: 'flex-start', background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+        <div style={{ fontSize: 28, flexShrink: 0 }}>🖥</div>
+        <div>
+          <p style={{ fontWeight: 700, fontSize: 13, color: 'var(--green)', marginBottom: 4 }}>Sådan virker infoskærme</p>
+          <p style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.6 }}>
+            Opret en skærm, kopiér dens URL og indsæt den i browseren på din skærm/tv.
+            Skærmen viser live-indhold fra klubsystemet — begivenheder og nyheder opdateres automatisk.
+            Åbn URL'en i kiosk-tilstand (F11 i Chrome/Edge) for en ren fuldskærmsvisning.
+          </p>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="loading-dots"><span/><span/><span/></div>
+      ) : screens.length === 0 ? (
+        <div className="card card-pad" style={{ textAlign: 'center', padding: '60px 20px' }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🖥</div>
+          <p style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>Ingen infoskærme endnu</p>
+          <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>Opret din første skærm og vis live-indhold på din hal-skærm, kantine-tv eller udendørs tavle.</p>
+          <button className="btn btn-primary" onClick={openNew}>Opret første skærm</button>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {screens.map(sc => {
+            const url         = INFOSCREEN_BASE_URL + sc.id
+            const isCopied    = copied === sc.id
+            const modeLabel   = sc.mode === 'image' ? 'Stillbillede' : 'Skabeloner'
+            const tmplLabels  = (sc.templates || []).map(t => TEMPLATE_OPTIONS.find(o => o.id === t)?.label || t)
+            return (
+              <div key={sc.id} className="card" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 16 }}>
+                {/* Ikon */}
+                <div style={{ width: 44, height: 44, borderRadius: 10, background: 'var(--green-soft, #f0fdf4)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Icon name="monitor" size={20} color="var(--green)" />
+                </div>
+                {/* Info */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)', marginBottom: 3 }}>{sc.name}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: sc.mode === 'image' ? '#fef3c7' : '#e0f2fe', color: sc.mode === 'image' ? '#b45309' : '#0369a1' }}>
+                      {modeLabel}
+                    </span>
+                    {tmplLabels.map((l, i) => (
+                      <span key={i} style={{ fontSize: 11, padding: '2px 7px', borderRadius: 4, background: '#f0fdf4', color: 'var(--green)', fontWeight: 600 }}>{l}</span>
+                    ))}
+                    {(sc.holdIds || []).length > 0 && (
+                      <span style={{ fontSize: 11, color: 'var(--text3)' }}>{sc.holdIds.length} hold-filter</span>
+                    )}
+                    {sc.templates?.length > 1 && (
+                      <span style={{ fontSize: 11, color: 'var(--text3)' }}>· skifter hvert {sc.duration ?? 15}s</span>
+                    )}
+                  </div>
+                  {/* URL row */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
+                    <code style={{ fontSize: 11, background: '#f1f5f9', padding: '3px 8px', borderRadius: 5, color: '#475569', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {url}
+                    </code>
+                    <button type="button"
+                      onClick={() => copyUrl(sc.id)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: isCopied ? 'var(--green-soft, #f0fdf4)' : 'white', cursor: 'pointer', fontSize: 11, fontWeight: 600, color: isCopied ? 'var(--green)' : 'var(--text2)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      <Icon name={isCopied ? 'check' : 'copy'} size={12} color={isCopied ? 'var(--green)' : 'var(--text2)'} sw={2.5} />
+                      {isCopied ? 'Kopieret!' : 'Kopiér URL'}
+                    </button>
+                    <a href={url} target="_blank" rel="noopener noreferrer"
+                      style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'white', textDecoration: 'none', fontSize: 11, fontWeight: 600, color: 'var(--text2)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      <Icon name="link" size={12} color="var(--text2)" />
+                      Åbn
+                    </a>
+                  </div>
+                </div>
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    title="Opdater indhold på skærmen nu"
+                    disabled={pushing === sc.id}
+                    onClick={() => pushContent(sc.id)}
+                    style={{ color: pushing === sc.id ? 'var(--green)' : undefined }}>
+                    <Icon name="refresh" size={14} />
+                  </button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => openEdit(sc)}>
+                    <Icon name="edit" size={14} />
+                  </button>
+                  <button className="btn btn-ghost btn-sm" style={{ color: '#dc2626' }}
+                    disabled={deleting === sc.id}
+                    onClick={() => handleDelete(sc)}>
+                    <Icon name="trash" size={14} />
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </>
+  )
+}
+
 const PAGE_TITLES = {
-  dashboard: 'Dashboard',
-  messages:  'Beskeder',
-  news:      'Nyheder',
-  teams:     'Hold',
-  events:    'Begivenheder',
-  banners:   'Forsidebanners',
-  kommunikation: 'Kommunikation',
-  appusers:  'App-brugere',
-  users:     'Adgang',
-  support:   'Support',
+  dashboard:    'Dashboard',
+  messages:     'Beskeder',
+  news:         'Nyheder',
+  teams:        'Hold',
+  events:       'Begivenheder',
+  banners:      'Forsidebanners',
+  infoscreens:  'Infoskærme',
+  kommunikation:'Kommunikation',
+  appusers:     'App-brugere',
+  users:        'Adgang',
+  support:      'Support',
 }
 
 export default function AdminApp() {
@@ -3649,6 +4033,10 @@ export default function AdminApp() {
       case 'appusers':
         return userDoc.role === 'admin'
           ? <AppUsersPage />
+          : <EmptyState icon="shield" text="Kun administratorer har adgang" />
+      case 'infoscreens':
+        return userDoc.role === 'admin'
+          ? <InfoScreensPage authUser={authUser} />
           : <EmptyState icon="shield" text="Kun administratorer har adgang" />
       case 'users':
         return userDoc.role === 'admin'

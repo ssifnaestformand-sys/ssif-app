@@ -20,10 +20,31 @@ service cloud.firestore {
 
     // ── Brugerprofiler ───────────────────────────────────────────────────────
     // Brugere kan læse og opdatere deres egen profil.
-    // Admin kan læse alle profiler.
+    // Admin kan læse/skrive alle profiler.
+    //
+    // SIKKERHED: 'role' styrer adgang til admin-API'er (bl.a. send-sms.php) og
+    // til isAdmin()/isTrainerOrAdmin() i resten af disse regler. En almindelig
+    // bruger må derfor ALDRIG kunne sætte sin egen role til 'admin' — ellers
+    // kan enhver signeret bruger forfremme sig selv til admin direkte via
+    // Firestore-klienten og dermed udsende SMS til hele klubben m.m.
     match /users/{uid} {
-      allow read:  if isOwner(uid) || isAdmin();
-      allow write: if isOwner(uid) || isAdmin();
+      allow read: if isOwner(uid) || isAdmin();
+
+      // Ny profil oprettes altid med standard-rollen 'Medlem'.
+      allow create: if isOwner(uid) && request.resource.data.role == 'Medlem';
+
+      // Egen profil må opdateres, men:
+      //  - aldrig hvis den nuværende role allerede er 'admin' (kun admin selv kan ændre den)
+      //  - den nye role skal enten være uændret, eller 'Medlem'/'trainer'
+      //    (aldrig 'admin') — trainer-status synkes klientside ud fra
+      //    members.lederHolds, som kun admin/service-account kan skrive.
+      allow update: if isAdmin()
+        || (isOwner(uid)
+            && resource.data.role != 'admin'
+            && (request.resource.data.role == resource.data.role
+                || request.resource.data.role in ['Medlem', 'trainer']));
+
+      allow delete: if isAdmin();
     }
 
     // ── Hold ─────────────────────────────────────────────────────────────────
@@ -90,6 +111,26 @@ service cloud.firestore {
     match /conventus_pending/{token} {
       allow read:  if true;
       allow write: if false; // kun via service account (PHP)
+    }
+
+    // ── Infoskærme ───────────────────────────────────────────────────────────
+    // Konfiguration af infoskærme (navn, mode, templates, holdIds, duration).
+    // Infoskærme-player logger ind anonymt og kan dermed læse konfigurationen.
+    // Kun admin kan oprette/redigere/slette skærme.
+    match /infoscreens/{screenId} {
+      allow read:   if isSignedIn(); // anonym auth er tilstrækkeligt
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ── Kommunikations-log (SMS/email-udsendelser) ───────────────────────────
+    // Skrives udelukkende af send-sms.php / send-bulk-email.php via
+    // service account (bypasser disse regler). Kun admin kan læse i backoffice.
+    // Indeholder ALDRIG telefonnumre eller andre personnumre.
+    match /kommunikation_logs/{logId} {
+      allow read:  if isAdmin();
+      allow write: if false;
     }
   }
 }
