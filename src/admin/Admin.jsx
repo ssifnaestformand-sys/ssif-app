@@ -811,15 +811,65 @@ function MessagesPage({ userDoc, authUser }) {
   )
 }
 
+// ─── MediaLibraryPicker ───────────────────────────────────────────────────────
+
+function MediaLibraryPicker({ onSelect, onClose }) {
+  const [images,  setImages]  = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    getDocs(query(collection(db, 'media_library'), orderBy('uploadedAt', 'desc'), limit(100)))
+      .then(snap => setImages(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div style={{ background: 'var(--surface,#fff)', borderRadius: 14, padding: 24, width: '90%', maxWidth: 820, maxHeight: '80vh', display: 'flex', flexDirection: 'column', gap: 16, boxShadow: '0 24px 64px rgba(0,0,0,.3)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>🖼 Billedbibliotek</h3>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>✕ Luk</button>
+        </div>
+        {loading ? (
+          <div className="loading-dots" style={{ padding: '40px 0', alignSelf: 'center' }}><span/><span/><span/></div>
+        ) : images.length === 0 ? (
+          <p style={{ textAlign: 'center', color: 'var(--text3)', padding: '48px 0', fontSize: 14, lineHeight: 1.7 }}>
+            Ingen billeder i biblioteket endnu.<br/>
+            Upload et billede i et slide — det gemmes automatisk her.
+          </p>
+        ) : (
+          <div style={{ overflowY: 'auto', flex: 1 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 8 }}>
+              {images.map(img => (
+                <div key={img.id} onClick={() => { onSelect(img.url); onClose() }}
+                  title={img.name || img.url}
+                  style={{ aspectRatio: '16/9', borderRadius: 8, overflow: 'hidden', cursor: 'pointer',
+                    border: '2px solid var(--border)', background: 'var(--bg)', transition: 'border-color .15s, transform .15s' }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--green)'; e.currentTarget.style.transform = 'scale(1.03)' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.transform = '' }}>
+                  <img src={img.url} alt={img.name || ''} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── ImageUploader ────────────────────────────────────────────────────────────
 
 // aspectRatio: CSS aspect-ratio streng, fx '3/1' for banners, 'auto' for nyheder
 // hint: vejledende tekst under uploadzonen
-function ImageUploader({ value, onChange, aspectRatio = 'auto', hint = '' }) {
-  const [dragging, setDragging] = useState(false)
-  const [progress, setProgress] = useState(null) // null | 0-100
-  const [error, setError]       = useState('')
-  const inputRef                = useRef(null)
+function ImageUploader({ value, onChange, aspectRatio = 'auto', hint = '', library = true }) {
+  const [dragging,    setDragging]    = useState(false)
+  const [progress,    setProgress]    = useState(null) // null | 0-100
+  const [error,       setError]       = useState('')
+  const [pickerOpen,  setPickerOpen]  = useState(false)
+  const inputRef                      = useRef(null)
 
   async function handleFile(file) {
     if (!file || !file.type.startsWith('image/')) { setError('Kun billedfiler tilladt'); return }
@@ -846,7 +896,15 @@ function ImageUploader({ value, onChange, aspectRatio = 'auto', hint = '' }) {
           if (xhr.status === 200) {
             try {
               const data = JSON.parse(xhr.responseText)
-              if (data.url) { onChange(data.url); setProgress(null); resolve() }
+              if (data.url) {
+                onChange(data.url)
+                setProgress(null)
+                // Gem til billedbibliotek (best-effort)
+                addDoc(collection(db, 'media_library'), {
+                  url: data.url, name: file.name, size: file.size, uploadedAt: serverTimestamp(),
+                }).catch(() => {})
+                resolve()
+              }
               else reject(new Error(data.error || 'Ukendt fejl'))
             } catch { reject(new Error('Ugyldigt svar fra serveren')) }
           } else {
@@ -936,11 +994,26 @@ function ImageUploader({ value, onChange, aspectRatio = 'auto', hint = '' }) {
 
       {hint && !value && <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 5 }}>{hint}</p>}
       {error && <p style={{ fontSize: 12, color: '#dc3545', marginTop: 5, whiteSpace: 'pre-wrap' }}>{error}</p>}
-      {value && progress === null && (
-        <button type="button" style={{ fontSize: 12, color: '#dc3545', background: 'none', border: 'none', cursor: 'pointer', marginTop: 4, padding: 0 }}
-                onClick={e => { e.stopPropagation(); onChange('') }}>
-          Fjern billede
-        </button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+        {value && progress === null && (
+          <button type="button" style={{ fontSize: 12, color: '#dc3545', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                  onClick={e => { e.stopPropagation(); onChange('') }}>
+            Fjern billede
+          </button>
+        )}
+        {library && progress === null && (
+          <button type="button"
+            onClick={e => { e.stopPropagation(); setPickerOpen(true) }}
+            style={{ fontSize: 12, color: 'var(--text2)', background: 'none', border: '1px solid var(--border)', borderRadius: 5, cursor: 'pointer', padding: '3px 10px' }}>
+            📚 Bibliotek
+          </button>
+        )}
+      </div>
+      {pickerOpen && (
+        <MediaLibraryPicker
+          onSelect={url => { onChange(url); setPickerOpen(false) }}
+          onClose={() => setPickerOpen(false)}
+        />
       )}
     </div>
   )
@@ -3571,6 +3644,7 @@ const BLOCK_DEFS = [
   { type: 'image',     label: 'Billede',       icon: '🖼',  desc: 'Foto, logo eller grafik' },
   { type: 'text',      label: 'Tekst',         icon: '✏️', desc: 'Fritekst med valgfri styling' },
   { type: 'countdown', label: 'Nedtælling',    icon: '⏱',  desc: 'Dage til en bestemt dato' },
+  { type: 'embed',     label: 'Indlejring',    icon: '🌐', desc: 'URL, iframe-widget eller HTML/JS-script' },
 ]
 
 const SLIDE_LAYOUTS = [
@@ -3592,6 +3666,7 @@ function defaultBlock(type) {
     case 'image':     return { id, type, url: '', fit: 'cover' }
     case 'text':      return { id, type, text: '', fontSize: 64, color: '#ffffff', bold: false, italic: false, align: 'center' }
     case 'countdown': return { id, type, label: 'Dage til', targetDate: '' }
+    case 'embed':     return { id, type, mode: 'iframe', src: '', html: '', bg: '#000000' }
     default:          return { id, type }
   }
 }
@@ -3699,6 +3774,44 @@ function BlockEditor({ block, onChange, holds }) {
         <label className="form-label">Dato</label>
         <input type="date" className="form-control" value={block.targetDate || ''}
           onChange={e => onChange({ targetDate: e.target.value })} />
+      </div>
+    </>
+  )
+  if (block.type === 'embed') return (
+    <>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+        {[['iframe', '🔗 URL / iframe'], ['html', '💻 HTML / JavaScript']].map(([v, l]) => (
+          <button key={v} type="button" onClick={() => onChange({ mode: v })}
+            style={{ padding: '5px 14px', borderRadius: 6, border: '1.5px solid', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              borderColor: (block.mode || 'iframe') === v ? 'var(--green)' : 'var(--border)',
+              background:  (block.mode || 'iframe') === v ? 'var(--green-soft,#f0fdf4)' : 'var(--bg)',
+              color:       (block.mode || 'iframe') === v ? 'var(--green)' : 'var(--text2)' }}>{l}</button>
+        ))}
+      </div>
+      {(block.mode || 'iframe') === 'iframe' ? (
+        <div className="form-group">
+          <label className="form-label">URL</label>
+          <input className="form-control" type="url" value={block.src || ''}
+            onChange={e => onChange({ src: e.target.value })} placeholder="https://…" />
+          <p className="form-hint">Understøtter de fleste widgets og embeds der tillader iframe</p>
+        </div>
+      ) : (
+        <div className="form-group">
+          <label className="form-label">HTML / JavaScript</label>
+          <textarea className="form-control" rows={8} value={block.html || ''}
+            onChange={e => onChange({ html: e.target.value })}
+            placeholder={'<div id="widget"></div>\n<script>\n  // Hent data og vis det her\n  document.getElementById(\'widget\').textContent = \'Hej!\'\n</script>'}
+            style={{ fontFamily: 'monospace', fontSize: 12, resize: 'vertical' }} />
+          <p className="form-hint">Kører isoleret — kan bruge &lt;script&gt;, fetch() og eksterne CDN-biblioteker</p>
+        </div>
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
+        <label className="form-label" style={{ marginBottom: 0, whiteSpace: 'nowrap' }}>Baggrund</label>
+        <input type="color" value={block.bg || '#000000'}
+          onChange={e => onChange({ bg: e.target.value })}
+          style={{ width: 36, height: 28, padding: 2, border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer' }} />
+        <input className="form-control" value={block.bg || '#000000'}
+          onChange={e => onChange({ bg: e.target.value })} style={{ width: 90 }} placeholder="#000000" />
       </div>
     </>
   )

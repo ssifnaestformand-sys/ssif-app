@@ -225,13 +225,41 @@ function CountdownBlock({ block }) {
   )
 }
 
+function EmbedBlock({ block }) {
+  const bg = block.bg || '#000000'
+  if ((block.mode || 'iframe') === 'html') {
+    if (!block.html) return (
+      <div className="is-empty-block">
+        <span className="is-empty-icon">🌐</span>
+        <p>Ingen HTML konfigureret</p>
+      </div>
+    )
+    const srcdoc = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>*{box-sizing:border-box}body{margin:0;background:${bg};overflow:hidden;width:100vw;height:100vh;}</style></head><body>${block.html}</body></html>`
+    return <div className="is-embed-block"><iframe srcdoc={srcdoc} title="embed" sandbox="allow-scripts" /></div>
+  }
+  if (!block.src) return (
+    <div className="is-empty-block">
+      <span className="is-empty-icon">🌐</span>
+      <p>Ingen URL konfigureret</p>
+    </div>
+  )
+  return (
+    <div className="is-embed-block">
+      <iframe src={block.src} title="embed"
+        style={{ background: bg }}
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups" />
+    </div>
+  )
+}
+
 function renderBlock(block, events, news) {
   switch (block.type) {
-    case 'events':    return <EventsBlock   key={block.id} block={block} events={events} />
-    case 'news':      return <NewsBlock     key={block.id} news={news} />
-    case 'image':     return <ImageBlock    key={block.id} block={block} />
-    case 'text':      return <TextBlock     key={block.id} block={block} />
+    case 'events':    return <EventsBlock    key={block.id} block={block} events={events} />
+    case 'news':      return <NewsBlock      key={block.id} news={news} />
+    case 'image':     return <ImageBlock     key={block.id} block={block} />
+    case 'text':      return <TextBlock      key={block.id} block={block} />
     case 'countdown': return <CountdownBlock key={block.id} block={block} />
+    case 'embed':     return <EmbedBlock     key={block.id} block={block} />
     default:          return null
   }
 }
@@ -516,7 +544,7 @@ export default function Infoscreen() {
       <InfoHeader time={time} config={config} />
       <main className="is-main">
         {currentSlide
-          ? <SlideLayout slide={currentSlide} events={events} news={news} />
+          ? <SlideLayout key={currentSlide.id} slide={currentSlide} events={events} news={news} />
           : <div className="is-empty-block"><p>Ingen slides konfigureret</p></div>
         }
       </main>
