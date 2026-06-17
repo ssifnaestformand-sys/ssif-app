@@ -4178,16 +4178,14 @@ function InfoScreensPage({ authUser }) {
                         <button type="button" className="btn btn-ghost btn-sm" onClick={() => patchSlide(safeIdx, { bgColor: '' })}>✕ Ryd</button>
                       )}
                     </div>
-                    <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                      <input className="form-control" type="url" value={slide.bgImageUrl || ''}
-                        onChange={e => patchSlide(safeIdx, { bgImageUrl: e.target.value })}
-                        placeholder="Baggrundsbillede-URL (https://…)" />
-                      <BgImageLibraryBtn value={slide.bgImageUrl || ''} onSelect={url => patchSlide(safeIdx, { bgImageUrl: url })} />
+                    <div style={{ marginTop: 8 }}>
+                      <p style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 6 }}>Baggrundsbillede</p>
+                      <ImageUploader
+                        value={slide.bgImageUrl || ''}
+                        onChange={url => patchSlide(safeIdx, { bgImageUrl: url })}
+                        hint="Anbefalet 1920×1080 · maks 10 MB"
+                      />
                     </div>
-                    {slide.bgImageUrl && (
-                      <button type="button" className="btn btn-ghost btn-sm" style={{ marginTop: 4, fontSize: 11, color: '#dc2626' }}
-                        onClick={() => patchSlide(safeIdx, { bgImageUrl: '' })}>✕ Fjern baggrundsbillede</button>
-                    )}
                   </div>
 
                   {/* Schedule */}

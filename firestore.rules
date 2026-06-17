@@ -124,6 +124,14 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ── Billedbibliotek (infoskærm-uploads) ─────────────────────────────────
+    // Admin og trænere kan uploade og læse billeder. Kun admin kan slette.
+    match /media_library/{imgId} {
+      allow read:   if isTrainerOrAdmin();
+      allow create: if isTrainerOrAdmin();
+      allow delete: if isAdmin();
+    }
+
     // ── Kommunikations-log (SMS/email-udsendelser) ───────────────────────────
     // Skrives udelukkende af send-sms.php / send-bulk-email.php via
     // service account (bypasser disse regler). Kun admin kan læse i backoffice.
