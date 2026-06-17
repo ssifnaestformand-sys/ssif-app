@@ -6,15 +6,20 @@ service cloud.firestore {
     function isSignedIn() {
       return request.auth != null;
     }
+    // Udelukker anonyme logins (infoskærme) fra følsomme samlinger.
+    function isRealUser() {
+      return isSignedIn()
+        && request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
     function isOwner(uid) {
-      return isSignedIn() && request.auth.uid == uid;
+      return isRealUser() && request.auth.uid == uid;
     }
     function isAdmin() {
-      return isSignedIn() &&
+      return isRealUser() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
     function isTrainerOrAdmin() {
-      return isSignedIn() &&
+      return isRealUser() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'trainer'];
     }
 
@@ -48,26 +53,25 @@ service cloud.firestore {
     }
 
     // ── Hold ─────────────────────────────────────────────────────────────────
-    // Alle indloggede kan læse hold. Kun admin/træner kan skrive.
+    // Kun rigtige brugere (ikke anonyme infoskærme) kan læse hold.
     match /holds/{holdId} {
-      allow read:  if isSignedIn();
+      allow read:  if isRealUser();
       allow write: if isTrainerOrAdmin();
     }
 
     // ── Medlemmer (synkroniseret fra Conventus) ───────────────────────────────
-    // Alle indloggede kan læse. Kun admin kan skrive (via sync).
+    // Kun rigtige brugere. Indeholder telefonnumre og e-mails.
     match /members/{memberId} {
-      allow read:  if isSignedIn();
+      allow read:  if isRealUser();
       allow write: if isAdmin();
     }
 
     // ── Beskeder ─────────────────────────────────────────────────────────────
-    // Alle indloggede kan læse beskeder til deres hold.
-    // Trænere og admin kan oprette og slette.
+    // Kun rigtige brugere kan læse og reagere på beskeder.
     match /messages/{msgId} {
-      allow read:   if isSignedIn();
+      allow read:   if isRealUser();
       allow create: if isTrainerOrAdmin();
-      allow update: if isSignedIn(); // reaktioner
+      allow update: if isRealUser(); // reaktioner
       allow delete: if isTrainerOrAdmin();
     }
 
@@ -87,21 +91,21 @@ service cloud.firestore {
 
     // ── Banners ──────────────────────────────────────────────────────────────
     match /banners/{bannerId} {
-      allow read:  if isSignedIn();
+      allow read:  if isRealUser();
       allow write: if isAdmin();
     }
 
     // ── App-indstillinger ────────────────────────────────────────────────────
     match /settings/{settingId} {
-      allow read:  if isSignedIn();
+      allow read:  if isRealUser();
       allow write: if isAdmin();
     }
 
     // ── Support / FAQ ────────────────────────────────────────────────────────
-    // Alle indloggede kan oprette spørgsmål. Kun admin kan besvare/slette.
+    // Kun rigtige brugere kan oprette spørgsmål. Kun admin kan besvare/slette.
     match /support/{supportId} {
-      allow read:   if isSignedIn();
-      allow create: if isSignedIn();
+      allow read:   if isRealUser();
+      allow create: if isRealUser();
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }

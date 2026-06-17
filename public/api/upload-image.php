@@ -36,6 +36,10 @@ if (!$projectId || !verify_firebase_id_token($bearerToken, $projectId)) {
     http_response_code(401); echo json_encode(['error' => 'Uautoriseret']); exit;
 }
 
+// ── Rolletjek — kun admin og trænere må uploade ───────────────────────────────
+$uid = uid_from_token($bearerToken);
+require_role($uid, $projectId, $bearerToken, ['admin', 'trainer']);
+
 // ── Validér fil ───────────────────────────────────────────────────────────────
 if (empty($_FILES['image']) || $_FILES['image']['error'] !== UPLOAD_ERR_OK) {
     $phpErr = $_FILES['image']['error'] ?? -1;
