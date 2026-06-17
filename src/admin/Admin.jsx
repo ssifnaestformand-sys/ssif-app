@@ -3842,6 +3842,25 @@ function migrateScreen(sc) {
   }
 }
 
+function BgImageLibraryBtn({ value, onSelect }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button type="button"
+        onClick={() => setOpen(true)}
+        style={{ padding: '0 12px', borderRadius: 6, border: '1px solid var(--border)', background: value ? 'var(--green-soft,#f0fdf4)' : 'var(--bg)', cursor: 'pointer', fontSize: 12, color: value ? 'var(--green)' : 'var(--text2)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+        📚 Bibliotek
+      </button>
+      {open && (
+        <MediaLibraryPicker
+          onSelect={url => { onSelect(url); setOpen(false) }}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
+  )
+}
+
 function InfoScreensPage({ authUser }) {
   const [screens,       setScreens]       = useState([])
   const [loading,       setLoading]       = useState(true)
@@ -4159,9 +4178,16 @@ function InfoScreensPage({ authUser }) {
                         <button type="button" className="btn btn-ghost btn-sm" onClick={() => patchSlide(safeIdx, { bgColor: '' })}>✕ Ryd</button>
                       )}
                     </div>
-                    <input className="form-control" type="url" value={slide.bgImageUrl || ''}
-                      onChange={e => patchSlide(safeIdx, { bgImageUrl: e.target.value })}
-                      placeholder="Baggrundsbillede-URL (https://…)" style={{ marginTop: 6 }} />
+                    <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                      <input className="form-control" type="url" value={slide.bgImageUrl || ''}
+                        onChange={e => patchSlide(safeIdx, { bgImageUrl: e.target.value })}
+                        placeholder="Baggrundsbillede-URL (https://…)" />
+                      <BgImageLibraryBtn value={slide.bgImageUrl || ''} onSelect={url => patchSlide(safeIdx, { bgImageUrl: url })} />
+                    </div>
+                    {slide.bgImageUrl && (
+                      <button type="button" className="btn btn-ghost btn-sm" style={{ marginTop: 4, fontSize: 11, color: '#dc2626' }}
+                        onClick={() => patchSlide(safeIdx, { bgImageUrl: '' })}>✕ Fjern baggrundsbillede</button>
+                    )}
                   </div>
 
                   {/* Schedule */}
