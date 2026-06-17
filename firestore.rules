@@ -67,11 +67,19 @@ service cloud.firestore {
     }
 
     // ── Beskeder ─────────────────────────────────────────────────────────────
-    // Kun rigtige brugere kan læse og reagere på beskeder.
+    // Kun rigtige brugere kan læse beskeder.
+    // Update er begrænset til reaktioner: kun 'userReactions' og 'reaktioner'
+    // må ændres, og inden for 'userReactions' kun brugerens eget UID-felt.
     match /messages/{msgId} {
       allow read:   if isRealUser();
       allow create: if isTrainerOrAdmin();
-      allow update: if isRealUser(); // reaktioner
+      allow update: if isTrainerOrAdmin()
+        || (isRealUser()
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['userReactions', 'reaktioner'])
+            && request.resource.data.get('userReactions', {})
+                 .diff(resource.data.get('userReactions', {}))
+                 .affectedKeys().hasOnly([request.auth.uid]));
       allow delete: if isTrainerOrAdmin();
     }
 
