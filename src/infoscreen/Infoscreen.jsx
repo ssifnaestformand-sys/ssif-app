@@ -30,8 +30,31 @@ function isSameDay(a, b) {
   return da.getFullYear() === db_.getFullYear() && da.getMonth() === db_.getMonth() && da.getDate() === db_.getDate()
 }
 
+// ── Tidsstyring ───────────────────────────────────────────────────────────────
+
+function parseMins(t) {
+  if (!t) return null
+  const [h, m] = t.split(':').map(Number)
+  return h * 60 + (m || 0)
+}
+
+function isSlideActive(slide) {
+  const sch = slide.schedule
+  if (!sch?.enabled) return true
+  const now = new Date()
+  const days = sch.days || []
+  if (days.length > 0 && !days.includes(now.getDay())) return false
+  if (sch.timeFrom || sch.timeTo) {
+    const nowMins = now.getHours() * 60 + now.getMinutes()
+    const from = parseMins(sch.timeFrom)
+    const to   = parseMins(sch.timeTo)
+    if (from !== null && nowMins < from) return false
+    if (to   !== null && nowMins > to)   return false
+  }
+  return true
+}
+
 // ── Bagudkompatibel normalisering ─────────────────────────────────────────────
-// Konverterer gammelt format (templates/mode) til nyt (slides[])
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2) }
 
@@ -55,7 +78,7 @@ function normalizeConfig(sc) {
   }
   return {
     ...sc,
-    header: { text: sc.headerText || '', logoUrl: sc.headerLogoUrl || '', bgColor: sc.headerBgColor || '#1a5c2a' },
+    header: { text: sc.headerText || '', logoUrl: sc.headerLogoUrl || '', bgColor: sc.headerBgColor || '#1a5c2a', textColor: '#ffffff' },
     slides,
   }
 }
@@ -213,15 +236,76 @@ function renderBlock(block, events, news) {
   }
 }
 
+// ── Zone-player — uafhængig rotation pr. zone ─────────────────────────────────
+
+function ZonePlayer({ zone, events, news }) {
+  const [blockIdx, setBlockIdx] = useState(0)
+  const [elapsed,  setElapsed]  = useState(0)
+  const idxRef     = useRef(0)
+  const elapsedRef = useRef(0)
+
+  const blocks = zone.blocks || []
+
+  useEffect(() => {
+    idxRef.current     = 0
+    elapsedRef.current = 0
+    setBlockIdx(0)
+    setElapsed(0)
+    if (blocks.length <= 1) return
+    const duration = (zone.duration || 10) * 1000
+    const id = setInterval(() => {
+      elapsedRef.current += 100
+      setElapsed(elapsedRef.current)
+      if (elapsedRef.current >= duration) {
+        elapsedRef.current = 0
+        setElapsed(0)
+        idxRef.current = (idxRef.current + 1) % blocks.length
+        setBlockIdx(idxRef.current)
+      }
+    }, 100)
+    return () => clearInterval(id)
+  }, [blocks.length, zone.duration])
+
+  const block = blocks[blockIdx] || blocks[0]
+  return (
+    <div className="is-zone" style={{ width: zone.size || '50%' }}>
+      {block ? renderBlock(block, events, news) : (
+        <div className="is-empty-block"><p>Ingen indhold i zone</p></div>
+      )}
+      {blocks.length > 1 && (
+        <div className="is-zone-progress">
+          <div className="is-zone-progress-fill"
+            style={{ width: `${Math.min(100, (elapsed / ((zone.duration || 10) * 1000)) * 100)}%` }} />
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Layout-wrapper ────────────────────────────────────────────────────────────
 
 function SlideLayout({ slide, events, news }) {
   const blocks = slide.blocks || []
   const layout = slide.layout || 'full'
 
+  const bgStyle = {}
+  if (slide.bgColor)    bgStyle.background = slide.bgColor
+  if (slide.bgImageUrl) { bgStyle.backgroundImage = `url(${slide.bgImageUrl})`; bgStyle.backgroundSize = 'cover'; bgStyle.backgroundPosition = 'center' }
+
+  if (layout === 'zones') {
+    const zones = slide.zones || []
+    return (
+      <div className="is-layout-zones" style={bgStyle}>
+        {zones.length
+          ? zones.map(zone => <ZonePlayer key={zone.id} zone={zone} events={events} news={news} />)
+          : <div className="is-empty-block"><p>Ingen zoner konfigureret</p></div>
+        }
+      </div>
+    )
+  }
   if (layout === 'left-right' && blocks.length >= 2) {
     return (
-      <div className="is-layout-lr">
+      <div className="is-layout-lr" style={bgStyle}>
         <div className="is-layout-slot">{renderBlock(blocks[0], events, news)}</div>
         <div className="is-layout-slot">{renderBlock(blocks[1], events, news)}</div>
       </div>
@@ -229,15 +313,14 @@ function SlideLayout({ slide, events, news }) {
   }
   if (layout === 'top-bottom' && blocks.length >= 2) {
     return (
-      <div className="is-layout-tb">
+      <div className="is-layout-tb" style={bgStyle}>
         <div className="is-layout-slot">{renderBlock(blocks[0], events, news)}</div>
         <div className="is-layout-slot">{renderBlock(blocks[1], events, news)}</div>
       </div>
     )
   }
-  // full (default)
   return (
-    <div className="is-layout-full">
+    <div className="is-layout-full" style={bgStyle}>
       {blocks[0] ? renderBlock(blocks[0], events, news) : (
         <div className="is-empty-block"><p>Ingen indhold</p></div>
       )}
@@ -248,7 +331,8 @@ function SlideLayout({ slide, events, news }) {
 // ── Header ────────────────────────────────────────────────────────────────────
 
 function InfoHeader({ time, config }) {
-  const h = config?.header || {}
+  const h  = config?.header || {}
+  const tc = h.textColor || '#ffffff'
   const pad = n => String(n).padStart(2, '0')
   const timeStr = `${pad(time.getHours())}:${pad(time.getMinutes())}`
   const dateStr = `${DAYS_DA[time.getDay()]} ${time.getDate()}. ${MONTHS_DA[time.getMonth()]} ${time.getFullYear()}`
@@ -256,20 +340,21 @@ function InfoHeader({ time, config }) {
   return (
     <header className="is-header" style={h.bgColor ? { background: h.bgColor } : undefined}>
       <div className="is-header-logo">
-        <img src={h.logoUrl || '../ssif-logo.png'} alt="" className="is-logo"
+        <img src={h.logoUrl || '../ssif-logo-white.png'} alt="" className="is-logo"
           onError={e => {
-            if (h.logoUrl && e.target.src !== window.location.origin + '/../ssif-logo.png') {
-              e.target.src = '../ssif-logo.png'
+            if (h.logoUrl && !e.target._fallback) {
+              e.target._fallback = true
+              e.target.src = '../ssif-logo-white.png'
             } else { e.target.style.display = 'none' }
           }} />
         <div className="is-header-name">
-          <span className="is-club-name">{h.text || 'Sejs-Svejbæk IF'}</span>
-          {config?.name && <span className="is-screen-name">{config.name}</span>}
+          <span className="is-club-name" style={{ color: tc }}>{h.text || 'Sejs-Svejbæk IF'}</span>
+          {config?.name && <span className="is-screen-name" style={{ color: tc, opacity: .65 }}>{config.name}</span>}
         </div>
       </div>
       <div className="is-header-clock">
-        <div className="is-clock">{timeStr}</div>
-        <div className="is-date">{dateStr}</div>
+        <div className="is-clock" style={{ color: tc }}>{timeStr}</div>
+        <div className="is-date" style={{ color: tc, opacity: .7 }}>{dateStr}</div>
       </div>
     </header>
   )
@@ -296,7 +381,7 @@ function SlideProgress({ total, current, elapsed, duration }) {
 function SplashScreen({ message }) {
   return (
     <div className="is-splash">
-      <img src="../ssif-logo.png" alt="SSIF" className="is-splash-logo" onError={e => { e.target.style.display = 'none' }} />
+      <img src="../ssif-logo-white.png" alt="SSIF" className="is-splash-logo" onError={e => { e.target.style.display = 'none' }} />
       <p className="is-splash-msg">{message}</p>
     </div>
   )
@@ -380,27 +465,34 @@ export default function Infoscreen() {
     return () => clearInterval(refreshTimer.current)
   }, [ready])
 
-  // ── Slide-timer (per-slide varighed) ─────────────────────────────────────────
+  // ── Slide-timer med tidsstyring ───────────────────────────────────────────────
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current)
     const slides = config?.slides || []
-    if (slides.length <= 1) return
+    const active = slides.filter(isSlideActive)
+    if (active.length === 0) return
 
-    slideRef.current  = 0
+    slideRef.current   = 0
     elapsedRef.current = 0
     setSlide(0)
     setElapsed(0)
 
+    if (active.length <= 1) return
+
     intervalRef.current = setInterval(() => {
-      const currentSlides = configRef.current?.slides || []
-      if (currentSlides.length <= 1) return
-      const duration = (currentSlides[slideRef.current]?.duration ?? 15) * 1000
+      const allSlides  = configRef.current?.slides || []
+      const nowActive  = allSlides.filter(isSlideActive)
+      if (nowActive.length <= 1) return
+      if (slideRef.current >= nowActive.length) {
+        slideRef.current = 0; elapsedRef.current = 0; setSlide(0); setElapsed(0); return
+      }
+      const duration = (nowActive[slideRef.current]?.duration ?? 15) * 1000
       elapsedRef.current += 100
       setElapsed(elapsedRef.current)
       if (elapsedRef.current >= duration) {
         elapsedRef.current = 0
         setElapsed(0)
-        slideRef.current = (slideRef.current + 1) % currentSlides.length
+        slideRef.current = (slideRef.current + 1) % nowActive.length
         setSlide(slideRef.current)
       }
     }, 100)
@@ -410,12 +502,13 @@ export default function Infoscreen() {
 
   // ── Rendering ─────────────────────────────────────────────────────────────────
 
-  if (!screenId)                    return <SplashScreen message="Ingen skærm-ID — tilføj ?s=SCREENID i URL" />
+  if (!screenId)                     return <SplashScreen message="Ingen skærm-ID — tilføj ?s=SCREENID i URL" />
   if (!ready || config === undefined) return <SplashScreen message="Forbinder…" />
-  if (config === null)               return <SplashScreen message="Skærm ikke fundet. Kontakt administrator." />
+  if (config === null)                return <SplashScreen message="Skærm ikke fundet. Kontakt administrator." />
 
-  const slides       = config.slides || []
-  const currentSlide = slides[slide] || slides[0]
+  const allSlides    = config.slides || []
+  const activeSlides = allSlides.filter(isSlideActive)
+  const currentSlide = activeSlides[slide] ?? activeSlides[0] ?? allSlides[0]
   const duration     = (currentSlide?.duration ?? 15) * 1000
 
   return (
@@ -427,7 +520,7 @@ export default function Infoscreen() {
           : <div className="is-empty-block"><p>Ingen slides konfigureret</p></div>
         }
       </main>
-      <SlideProgress total={slides.length} current={slide} elapsed={elapsed} duration={duration} />
+      <SlideProgress total={activeSlides.length} current={slide} elapsed={elapsed} duration={duration} />
     </div>
   )
 }
