@@ -3565,29 +3565,75 @@ function SupportPage({ authUser }) {
 
 const INFOSCREEN_BASE_URL = 'https://sejssvejbaek-if.dk/app/infoscreen/?s='
 
-const TEMPLATE_OPTIONS = [
-  { id: 'events', label: 'Kommende begivenheder', icon: '📅', desc: 'Viser træninger og kampe de næste 21 dage' },
-  { id: 'news',   label: 'Nyheder fra SSIF',       icon: '📰', desc: 'Viser de seneste 4 nyheder fra klubben' },
-  { id: 'custom', label: 'Fri indhold',             icon: '✏️', desc: 'Byg frit med tekst og billeder' },
+const BLOCK_DEFS = [
+  { type: 'events',    label: 'Begivenheder', icon: '📅', desc: 'Live liste over kommende begivenheder' },
+  { type: 'news',      label: 'Nyheder',      icon: '📰', desc: 'Seneste nyheder fra SSIF' },
+  { type: 'image',     label: 'Billede',       icon: '🖼',  desc: 'Foto, logo eller grafik' },
+  { type: 'text',      label: 'Tekst',         icon: '✏️', desc: 'Fritekst med valgfri styling' },
+  { type: 'countdown', label: 'Nedtælling',    icon: '⏱',  desc: 'Dage til en bestemt dato' },
 ]
 
-const BLANK_SCREEN = {
-  name: '', mode: 'templates', templates: ['events'], imageUrls: [], holdIds: [], duration: 15,
-  headerText: '', headerLogoUrl: '', headerBgColor: '#1a5c2a',
-  customBlocks: [],
+const SLIDE_LAYOUTS = [
+  { id: 'full',       label: 'Fuld',        slots: 1 },
+  { id: 'top-bottom', label: 'Top / bund',  slots: 2 },
+  { id: 'left-right', label: 'Side / side', slots: 2 },
+]
+
+function isUid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2)
+}
+
+function defaultBlock(type) {
+  const id = isUid()
+  switch (type) {
+    case 'events':    return { id, type, holdIds: [] }
+    case 'news':      return { id, type }
+    case 'image':     return { id, type, url: '', fit: 'cover' }
+    case 'text':      return { id, type, text: '', fontSize: 64, color: '#ffffff', bold: false, italic: false, align: 'center' }
+    case 'countdown': return { id, type, label: 'Dage til', targetDate: '' }
+    default:          return { id, type }
+  }
+}
+
+function blankSlide() {
+  return { id: isUid(), duration: 15, layout: 'full', blocks: [] }
+}
+
+function migrateScreen(sc) {
+  if (sc.slides) return sc
+  const slides = []
+  if (sc.mode === 'image') {
+    const urls = sc.imageUrls?.length ? sc.imageUrls : (sc.imageUrl ? [sc.imageUrl] : [])
+    for (const url of urls) {
+      slides.push({ id: isUid(), duration: sc.duration || 15, layout: 'full', blocks: [{ id: isUid(), type: 'image', url, fit: 'cover' }] })
+    }
+  } else {
+    for (const tpl of (sc.templates || ['events'])) {
+      const slide = { id: isUid(), duration: sc.duration || 15, layout: 'full', blocks: [] }
+      if (tpl === 'events')       slide.blocks.push({ id: isUid(), type: 'events', holdIds: sc.holdIds || [] })
+      else if (tpl === 'news')    slide.blocks.push({ id: isUid(), type: 'news' })
+      else if (tpl === 'custom')  slide.blocks.push(...(sc.customBlocks || []).map(b => ({ ...b, id: isUid() })))
+      slides.push(slide)
+    }
+  }
+  return {
+    ...sc,
+    header: { text: sc.headerText || '', logoUrl: sc.headerLogoUrl || '', bgColor: sc.headerBgColor || '#1a5c2a' },
+    slides,
+  }
 }
 
 function InfoScreensPage({ authUser }) {
-  const [screens,  setScreens]  = useState([])
-  const [loading,  setLoading]  = useState(true)
-  const [holds,    setHolds]    = useState([])
-  const [editing,  setEditing]  = useState(null)   // null | 'new' | screenId
-  const [form,     setForm]     = useState(null)
-  const [saving,   setSaving]   = useState(false)
-  const [error,    setError]    = useState('')
-  const [deleting, setDeleting] = useState(null)
-  const [copied,   setCopied]   = useState(null)
-  const [pushing,  setPushing]  = useState(null)
+  const [screens,       setScreens]       = useState([])
+  const [loading,       setLoading]       = useState(true)
+  const [holds,         setHolds]         = useState([])
+  const [editor,        setEditor]        = useState(null)
+  const [saving,        setSaving]        = useState(false)
+  const [deleting,      setDeleting]      = useState(null)
+  const [copied,        setCopied]        = useState(null)
+  const [pushing,       setPushing]       = useState(null)
+  const [selectedSlide, setSelectedSlide] = useState(0)
+  const [activeTab,     setActiveTab]     = useState('slides')
 
   useEffect(() => {
     getDocs(query(collection(db, 'infoscreens'), orderBy('createdAt', 'desc')))
@@ -3603,496 +3649,420 @@ function InfoScreensPage({ authUser }) {
       .catch(() => {})
   }, [])
 
-  function setF(k, v) { setForm(prev => ({ ...prev, [k]: v })) }
-
-  function toggleTemplate(t) {
-    setF('templates', (form.templates || []).includes(t)
-      ? form.templates.filter(x => x !== t)
-      : [...(form.templates || []), t])
-  }
-
-  function toggleHold(hid) {
-    const sid = String(hid)
-    setF('holdIds', (form.holdIds || []).includes(sid)
-      ? form.holdIds.filter(x => x !== sid)
-      : [...(form.holdIds || []), sid])
-  }
-
   function openNew() {
-    setForm({ ...BLANK_SCREEN }); setEditing('new'); setError('')
+    setEditor({ id: 'new', config: { name: '', header: { text: '', logoUrl: '', bgColor: '#1a5c2a' }, slides: [blankSlide()] } })
+    setSelectedSlide(0)
+    setActiveTab('slides')
   }
 
   function openEdit(sc) {
-    setForm({
-      name:      sc.name || '',
-      mode:      sc.mode || 'templates',
-      templates: sc.templates || ['events'],
-      imageUrls:     sc.imageUrls    || (sc.imageUrl ? [sc.imageUrl] : []),
-      headerText:    sc.headerText    || '',
-      headerLogoUrl: sc.headerLogoUrl || '',
-      headerBgColor: sc.headerBgColor || '#1a5c2a',
-      customBlocks:  sc.customBlocks  || [],
-      holdIds:   sc.holdIds || [],
-      duration:  sc.duration ?? 15,
-    })
-    setEditing(sc.id); setError('')
+    setEditor({ id: sc.id, config: migrateScreen(sc) })
+    setSelectedSlide(0)
+    setActiveTab('slides')
   }
 
-  function closeForm() { setForm(null); setEditing(null); setError('') }
+  function closeEditor() { setEditor(null) }
 
-  async function handleSave(e) {
-    e.preventDefault()
-    if (!form.name.trim())                                      { setError('Skriv et navn til skærmen'); return }
-    if (form.mode === 'templates' && !form.templates?.length)   { setError('Vælg mindst én skabelon'); return }
-    if (form.mode === 'image' && !form.imageUrls?.length)        { setError('Tilføj mindst ét billede'); return }
+  function patchConfig(fn) { setEditor(e => ({ ...e, config: fn(e.config) })) }
+  function patchHeader(p)  { patchConfig(c => ({ ...c, header: { ...c.header, ...p } })) }
+  function patchSlides(fn) { patchConfig(c => ({ ...c, slides: fn(c.slides) })) }
+  function patchSlide(idx, p) {
+    patchSlides(ss => ss.map((s, i) => i === idx ? { ...s, ...p } : s))
+  }
+  function patchBlock(slideIdx, blockId, p) {
+    patchSlides(ss => ss.map((s, i) => i === slideIdx
+      ? { ...s, blocks: s.blocks.map(b => b.id === blockId ? { ...b, ...p } : b) } : s))
+  }
 
-    setSaving(true); setError('')
-    const data = {
-      name:      form.name.trim(),
-      mode:      form.mode,
-      imageUrls:     form.mode === 'image' ? (form.imageUrls || []).filter(u => u.trim()) : [],
-      headerText:    form.headerText?.trim()    || '',
-      headerLogoUrl: form.headerLogoUrl?.trim() || '',
-      headerBgColor: form.headerBgColor         || '#1a5c2a',
-      customBlocks:  form.customBlocks          || [],
-      templates: form.mode === 'templates' ? (form.templates || []) : [],
-      holdIds:   form.holdIds || [],
-      duration:  Math.max(5, Math.min(120, parseInt(form.duration) || 15)),
-      updatedAt: serverTimestamp(),
-    }
+  async function handleSave() {
+    const { id, config } = editor
+    if (!config.name.trim())   { alert('Skriv et navn til skærmen'); return }
+    if (!config.slides.length) { alert('Tilføj mindst ét slide'); return }
+    setSaving(true)
+    const data = { name: config.name.trim(), header: config.header, slides: config.slides, updatedAt: serverTimestamp() }
     try {
-      if (editing === 'new') {
+      if (id === 'new') {
         const ref = await addDoc(collection(db, 'infoscreens'), { ...data, createdAt: serverTimestamp() })
-        setScreens(prev => [{ ...data, id: ref.id }, ...prev])
+        setScreens(p => [{ ...data, id: ref.id }, ...p])
       } else {
-        await updateDoc(doc(db, 'infoscreens', editing), data)
-        setScreens(prev => prev.map(s => s.id === editing ? { ...s, ...data } : s))
+        await updateDoc(doc(db, 'infoscreens', id), data)
+        setScreens(p => p.map(s => s.id === id ? { ...s, ...data } : s))
       }
-      closeForm()
-    } catch (err) { setError('Fejl: ' + err.message) }
+      closeEditor()
+    } catch (err) { alert('Fejl: ' + err.message) }
     finally { setSaving(false) }
   }
 
   async function handleDelete(sc) {
-    if (!window.confirm(`Slet skærmen "${sc.name}"? Dette kan ikke fortrydes.`)) return
+    if (!window.confirm(`Slet "${sc.name}"?`)) return
     setDeleting(sc.id)
-    try {
-      await deleteDoc(doc(db, 'infoscreens', sc.id))
-      setScreens(prev => prev.filter(s => s.id !== sc.id))
-    } catch {}
+    try { await deleteDoc(doc(db, 'infoscreens', sc.id)); setScreens(p => p.filter(s => s.id !== sc.id)) } catch {}
     setDeleting(null)
+  }
+
+  async function pushContent(id) {
+    setPushing(id)
+    try { await updateDoc(doc(db, 'infoscreens', id), { contentVersion: Date.now() }) } catch {}
+    setPushing(null)
   }
 
   function copyUrl(id) {
     const url = INFOSCREEN_BASE_URL + id
     navigator.clipboard?.writeText(url).catch(() => {
-      const el = document.createElement('textarea')
-      el.value = url; document.body.appendChild(el); el.select()
+      const el = document.createElement('textarea'); el.value = url
+      document.body.appendChild(el); el.select()
       try { document.execCommand('copy') } finally { document.body.removeChild(el) }
     })
     setCopied(id)
     setTimeout(() => setCopied(c => c === id ? null : c), 2000)
   }
 
-  function newBlockId() {
-    return Date.now().toString(36) + Math.random().toString(36).slice(2)
-  }
-  function addBlock(type) {
-    const block = type === 'text'
-      ? { id: newBlockId(), type: 'text',  text: '', fontSize: 48, color: '#ffffff', bold: false, italic: false, align: 'left' }
-      : { id: newBlockId(), type: 'image', url: '',  height: 300, fit: 'contain' }
-    setF('customBlocks', [...(form.customBlocks || []), block])
-  }
-  function updateBlock(id, patch) {
-    setF('customBlocks', (form.customBlocks || []).map(b => b.id === id ? { ...b, ...patch } : b))
-  }
-  function removeBlock(id) {
-    setF('customBlocks', (form.customBlocks || []).filter(b => b.id !== id))
-  }
-  function moveBlock(id, dir) {
-    const blocks = [...(form.customBlocks || [])]
-    const i = blocks.findIndex(b => b.id === id)
-    if (i + dir < 0 || i + dir >= blocks.length) return
-    const [block] = blocks.splice(i, 1)
-    blocks.splice(i + dir, 0, block)
-    setF('customBlocks', blocks)
-  }
+  // ── Editor view ──────────────────────────────────────────────────────────────
+  if (editor) {
+    const { id, config } = editor
+    const slides = config.slides || []
+    const safeIdx = Math.min(selectedSlide, Math.max(0, slides.length - 1))
+    const slide = slides[safeIdx]
+    const layout = SLIDE_LAYOUTS.find(l => l.id === (slide?.layout || 'full')) || SLIDE_LAYOUTS[0]
 
-  async function pushContent(id) {
-    setPushing(id)
-    try {
-      await updateDoc(doc(db, 'infoscreens', id), { contentVersion: Date.now() })
-    } catch (_) {}
-    setPushing(null)
-  }
+    function addSlide() {
+      const s = blankSlide()
+      patchSlides(ss => [...ss, s])
+      setSelectedSlide(slides.length)
+    }
+    function delSlide(i) {
+      patchSlides(ss => ss.filter((_, j) => j !== i))
+      setSelectedSlide(p => Math.min(p, Math.max(0, slides.length - 2)))
+    }
+    function moveSlide(i, dir) {
+      patchSlides(ss => { const a = [...ss]; const [item] = a.splice(i, 1); a.splice(i + dir, 0, item); return a })
+      setSelectedSlide(i + dir)
+    }
+    function addBlock(type) {
+      patchSlide(safeIdx, { blocks: [...(slide?.blocks || []), defaultBlock(type)] })
+    }
+    function delBlock(blockId) {
+      patchSlide(safeIdx, { blocks: (slide?.blocks || []).filter(b => b.id !== blockId) })
+    }
+    function moveBlock(blockId, dir) {
+      const blocks = [...(slide?.blocks || [])]
+      const i = blocks.findIndex(b => b.id === blockId)
+      if (i + dir < 0 || i + dir >= blocks.length) return
+      const [b] = blocks.splice(i, 1); blocks.splice(i + dir, 0, b)
+      patchSlide(safeIdx, { blocks })
+    }
 
-  // ── Edit/Create form ──────────────────────────────────────────────────────────
-  if (form !== null) {
     return (
       <>
-        <div className="page-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <button className="btn btn-ghost btn-sm" onClick={closeForm}>← Tilbage</button>
-            <h1 className="page-title">{editing === 'new' ? 'Ny infoskærm' : `Rediger: ${form.name || '…'}`}</h1>
+        {/* Top bar */}
+        <div className="page-header" style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
+            <button className="btn btn-ghost btn-sm" onClick={closeEditor}>← Tilbage</button>
+            <input value={config.name}
+              onChange={e => patchConfig(c => ({ ...c, name: e.target.value }))}
+              placeholder="Skærmens navn…"
+              style={{ fontSize: 18, fontWeight: 700, border: 'none', outline: 'none', background: 'transparent', color: 'var(--text)', flex: 1, minWidth: 0 }} />
           </div>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+            {saving ? 'Gemmer…' : '💾 Gem skærm'}
+          </button>
         </div>
 
-        <form onSubmit={handleSave} style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 20, alignItems: 'start' }}>
-          {/* Venstre */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {/* Navn */}
-            <div className="card card-pad">
-              <div className="form-group">
-                <label className="form-label">Skærmens navn *</label>
-                <input className="form-control" autoFocus required
-                  value={form.name}
-                  onChange={e => setF('name', e.target.value)}
-                  placeholder="fx Hal 1 · Indgang, Kantine, Udendørs tavle…" />
-                <p className="form-hint">Vises kun i backoffice — ikke på selve skærmen</p>
-              </div>
-            </div>
+        {/* Tabs */}
+        <div style={{ display: 'flex', gap: 2, marginBottom: 16, borderBottom: '2px solid var(--border)' }}>
+          {[['slides', '📋 Slides'], ['header', '🎨 Topbjælke']].map(([tab, label]) => (
+            <button key={tab} type="button" onClick={() => setActiveTab(tab)}
+              style={{ padding: '8px 18px', background: 'none', border: 'none', cursor: 'pointer',
+                fontWeight: activeTab === tab ? 700 : 500,
+                color: activeTab === tab ? 'var(--green)' : 'var(--text2)',
+                borderBottom: activeTab === tab ? '2px solid var(--green)' : '2px solid transparent',
+                marginBottom: -2 }}>
+              {label}
+            </button>
+          ))}
+        </div>
 
-            {/* Indholds-type */}
-            <div className="card card-pad">
-              <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 12 }}>Indholdstype</p>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: form.mode === 'templates' ? 20 : 0 }}>
-                {[
-                  { v: 'templates', label: 'Skabeloner', icon: '🗓', desc: 'Live-data: begivenheder og/eller nyheder' },
-                  { v: 'image',     label: 'Billeder',      icon: '🖼', desc: 'Et eller flere billeder i rotation' },
-                ].map(opt => (
-                  <button type="button" key={opt.v}
-                    onClick={() => setF('mode', opt.v)}
-                    style={{
-                      padding: '14px 16px', borderRadius: 10, border: '2px solid',
-                      borderColor: form.mode === opt.v ? 'var(--green)' : 'var(--border)',
-                      background: form.mode === opt.v ? 'var(--green-soft, #f0fdf4)' : 'var(--bg)',
-                      cursor: 'pointer', textAlign: 'left',
-                    }}>
-                    <div style={{ fontSize: 20, marginBottom: 4 }}>{opt.icon}</div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: form.mode === opt.v ? 'var(--green)' : 'var(--text)' }}>{opt.label}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>{opt.desc}</div>
-                  </button>
-                ))}
-              </div>
-
-              {/* Skabelon-valg */}
-              {form.mode === 'templates' && (
-                <>
-                  <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', marginBottom: 10 }}>Vælg skabeloner *</p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {TEMPLATE_OPTIONS.map(t => {
-                      const checked = (form.templates || []).includes(t.id)
-                      return (
-                        <label key={t.id} style={{
-                          display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
-                          borderRadius: 8, border: '1.5px solid',
-                          borderColor: checked ? 'var(--green)' : 'var(--border)',
-                          background: checked ? 'var(--green-soft, #f0fdf4)' : 'var(--bg)',
-                          cursor: 'pointer',
-                        }}>
-                          <input type="checkbox" checked={checked}
-                            onChange={() => toggleTemplate(t.id)}
-                            style={{ width: 16, height: 16, accentColor: 'var(--green)', flexShrink: 0 }} />
-                          <span style={{ fontSize: 1.3, lineHeight: 1 }}>{t.icon}</span>
-                          <div>
-                            <div style={{ fontSize: 13, fontWeight: checked ? 700 : 500, color: checked ? 'var(--green)' : 'var(--text)' }}>{t.label}</div>
-                            <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>{t.desc}</div>
-                          </div>
-                        </label>
-                      )
-                    })}
-                  </div>
-                  {(form.templates || []).length > 1 && (
-                    <div style={{ marginTop: 16 }}>
-                      <label className="form-label">Skift slide hvert (sekunder)</label>
-                      <input type="number" className="form-control" min={5} max={120}
-                        value={form.duration}
-                        onChange={e => setF('duration', e.target.value)}
-                        style={{ width: 100 }} />
-                      <p className="form-hint">5–120 sekunder · standard: 15</p>
-                    </div>
-                  )}
-
-                  {/* Block editor — vises når "Fri indhold" er valgt */}
-                  {(form.templates || []).includes('custom') && (
-                    <div style={{ marginTop: 20, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
-                      <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 12 }}>Blokke til "Fri indhold"</p>
-                      {(form.customBlocks || []).length === 0 && (
-                        <p style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 12 }}>Tilføj tekst og billeder herunder.</p>
-                      )}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        {(form.customBlocks || []).map((block, i) => (
-                          <div key={block.id} style={{ border: '1.5px solid var(--border)', borderRadius: 10, padding: 14, background: 'var(--bg)' }}>
-                            {/* Block-header */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
-                              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', flex: 1 }}>
-                                {block.type === 'text' ? '✏️ Tekst' : '🖼 Billede'}
-                              </span>
-                              <button type="button" className="btn btn-ghost btn-sm" disabled={i === 0} onClick={() => moveBlock(block.id, -1)}>↑</button>
-                              <button type="button" className="btn btn-ghost btn-sm" disabled={i === (form.customBlocks.length - 1)} onClick={() => moveBlock(block.id, 1)}>↓</button>
-                              <button type="button" className="btn btn-ghost btn-sm" style={{ color: '#dc2626' }} onClick={() => removeBlock(block.id)}>
-                                <Icon name="trash" size={13} />
-                              </button>
-                            </div>
-
-                            {block.type === 'text' && (
-                              <>
-                                <textarea className="form-control" rows={3}
-                                  value={block.text}
-                                  onChange={e => updateBlock(block.id, { text: e.target.value })}
-                                  placeholder="Skriv din tekst her…"
-                                  style={{ marginBottom: 10, resize: 'vertical' }} />
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                                  <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
-                                    Størrelse:
-                                    <input type="number" min={12} max={200} value={block.fontSize || 48}
-                                      onChange={e => updateBlock(block.id, { fontSize: parseInt(e.target.value) || 48 })}
-                                      className="form-control" style={{ width: 68, marginLeft: 4 }} />
-                                  </label>
-                                  <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5 }}>
-                                    Farve:
-                                    <input type="color" value={block.color || '#ffffff'}
-                                      onChange={e => updateBlock(block.id, { color: e.target.value })}
-                                      style={{ width: 36, height: 28, padding: 2, border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer' }} />
-                                  </label>
-                                  <div style={{ display: 'flex', gap: 4 }}>
-                                    {[['bold','B','bold'],['italic','I','italic']].map(([key, label, style]) => (
-                                      <button key={key} type="button"
-                                        onClick={() => updateBlock(block.id, { [key]: !block[key] })}
-                                        style={{ padding: '3px 9px', borderRadius: 6, border: '1.5px solid', fontSize: 13,
-                                          fontWeight: key === 'bold' ? 800 : 400, fontStyle: key === 'italic' ? 'italic' : 'normal',
-                                          borderColor: block[key] ? 'var(--green)' : 'var(--border)',
-                                          background: block[key] ? 'var(--green-soft,#f0fdf4)' : 'var(--bg)',
-                                          color: block[key] ? 'var(--green)' : 'var(--text2)', cursor: 'pointer' }}>{label}</button>
-                                    ))}
-                                  </div>
-                                  <div style={{ display: 'flex', gap: 4 }}>
-                                    {[['left','←'],['center','↔'],['right','→']].map(([a, icon]) => (
-                                      <button key={a} type="button"
-                                        onClick={() => updateBlock(block.id, { align: a })}
-                                        style={{ padding: '3px 8px', borderRadius: 6, border: '1.5px solid', fontSize: 12,
-                                          borderColor: (block.align||'left') === a ? 'var(--green)' : 'var(--border)',
-                                          background: (block.align||'left') === a ? 'var(--green-soft,#f0fdf4)' : 'var(--bg)',
-                                          color: (block.align||'left') === a ? 'var(--green)' : 'var(--text2)', cursor: 'pointer' }}>{icon}</button>
-                                    ))}
-                                  </div>
-                                </div>
-                              </>
-                            )}
-
-                            {block.type === 'image' && (
-                              <>
-                                <ImageUploader value={block.url} onChange={url => updateBlock(block.id, { url })}
-                                  hint="Anbefalet: 16:9 · maks 10 MB" />
-                                <p style={{ fontSize: 11, color: 'var(--text3)', margin: '8px 0 4px' }}>Eller URL:</p>
-                                <input className="form-control" type="url" value={block.url}
-                                  onChange={e => updateBlock(block.id, { url: e.target.value })}
-                                  placeholder="https://…" style={{ marginBottom: 10 }} />
-                                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                                  <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
-                                    Højde (px):
-                                    <input type="number" min={50} max={900} value={block.height || 300}
-                                      onChange={e => updateBlock(block.id, { height: parseInt(e.target.value) || 300 })}
-                                      className="form-control" style={{ width: 80, marginLeft: 4 }} />
-                                  </label>
-                                  <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5 }}>
-                                    Tilpasning:
-                                    <select className="form-control" value={block.fit || 'contain'}
-                                      onChange={e => updateBlock(block.id, { fit: e.target.value })}
-                                      style={{ width: 130, marginLeft: 4 }}>
-                                      <option value="contain">Tilpas (contain)</option>
-                                      <option value="cover">Udfyld (cover)</option>
-                                    </select>
-                                  </label>
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => addBlock('text')}>✏️ Tilføj tekst</button>
-                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => addBlock('image')}>🖼 Tilføj billede</button>
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-
-              {/* Billede-upload (én eller flere) */}
-              {form.mode === 'image' && (
-                <div style={{ marginTop: 4 }}>
-                  <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', marginBottom: 10 }}>Billeder *</p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {(form.imageUrls || []).map((url, i) => (
-                      <div key={i} style={{ border: '1.5px solid var(--border)', borderRadius: 10, padding: 14 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)' }}>Billede {i + 1}</span>
-                          <button type="button" className="btn btn-ghost btn-sm" style={{ color: '#dc2626' }}
-                            onClick={() => setF('imageUrls', form.imageUrls.filter((_, j) => j !== i))}>
-                            <Icon name="trash" size={13} />
-                          </button>
-                        </div>
-                        <ImageUploader value={url} onChange={newUrl => {
-                          const updated = [...form.imageUrls]; updated[i] = newUrl; setF('imageUrls', updated)
-                        }} hint="1920 × 1080 px (16:9) · maks 10 MB" />
-                        <p style={{ fontSize: 11, color: 'var(--text3)', margin: '8px 0 4px' }}>Eller indsæt URL direkte:</p>
-                        <input className="form-control" type="url" value={url}
-                          onChange={e => {
-                            const updated = [...form.imageUrls]; updated[i] = e.target.value; setF('imageUrls', updated)
-                          }}
-                          placeholder="https://…" />
-                      </div>
-                    ))}
-                  </div>
-                  <button type="button" className="btn btn-ghost btn-sm" style={{ marginTop: 10 }}
-                    onClick={() => setF('imageUrls', [...(form.imageUrls || []), ''])}>
-                    + Tilføj billede
-                  </button>
-                  {(form.imageUrls || []).length > 1 && (
-                    <div style={{ marginTop: 16 }}>
-                      <label className="form-label">Skift billede hvert (sekunder)</label>
-                      <input type="number" className="form-control" min={5} max={120}
-                        value={form.duration} onChange={e => setF('duration', e.target.value)}
-                        style={{ width: 100 }} />
-                      <p className="form-hint">5–120 sekunder · standard: 15</p>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Topbjælke */}
-            <div className="card card-pad">
-              <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 14 }}>Topbjælke</p>
-
-              {/* Live preview */}
-              <div style={{ borderRadius: 8, overflow: 'hidden', marginBottom: 18, boxShadow: '0 1px 4px rgba(0,0,0,.12)' }}>
-                <div style={{ background: form.headerBgColor || '#1a5c2a', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        {/* ── Header tab ── */}
+        {activeTab === 'header' && (
+          <div style={{ maxWidth: 520 }}>
+            <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div style={{ borderRadius: 8, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,.15)' }}>
+                <div style={{ background: config.header.bgColor || '#1a5c2a', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    {form.headerLogoUrl
-                      ? <img src={form.headerLogoUrl} style={{ height: 28, objectFit: 'contain' }} onError={e => { e.target.style.display = 'none' }} />
-                      : <div style={{ width: 28, height: 28, borderRadius: 4, background: 'rgba(255,255,255,.15)' }} />
-                    }
-                    <span style={{ color: '#fff', fontWeight: 800, fontSize: 14, lineHeight: 1 }}>
-                      {form.headerText || 'Sejs-Svejbæk IF'}
-                    </span>
+                    {config.header.logoUrl
+                      ? <img src={config.header.logoUrl} style={{ height: 28, objectFit: 'contain' }} onError={e => { e.target.style.display = 'none' }} />
+                      : <div style={{ width: 28, height: 28, borderRadius: 4, background: 'rgba(255,255,255,.2)' }} />}
+                    <span style={{ color: '#fff', fontWeight: 800, fontSize: 15 }}>{config.header.text || 'Sejs-Svejbæk IF'}</span>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ color: '#fff', fontWeight: 800, fontSize: 20, fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>12:34</div>
-                    <div style={{ color: 'rgba(255,255,255,.65)', fontSize: 10, marginTop: 2 }}>Mandag 16. juni 2026</div>
+                    <div style={{ color: '#fff', fontWeight: 800, fontSize: 22, fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>12:34</div>
+                    <div style={{ color: 'rgba(255,255,255,.65)', fontSize: 10, marginTop: 2 }}>Tirsdag 17. jun 2026</div>
                   </div>
                 </div>
               </div>
-
-              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-                <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  Baggrundsfarve
-                  <input type="color" value={form.headerBgColor || '#1a5c2a'}
-                    onChange={e => setF('headerBgColor', e.target.value)}
-                    style={{ width: 40, height: 30, padding: 2, border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer' }} />
-                </label>
-                <button type="button" className="btn btn-ghost btn-sm"
-                  onClick={() => setF('headerBgColor', '#1a5c2a')}>
-                  Nulstil til SSIF-grøn
-                </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text2)' }}>Baggrundsfarve</label>
+                <input type="color" value={config.header.bgColor || '#1a5c2a'}
+                  onChange={e => patchHeader({ bgColor: e.target.value })}
+                  style={{ width: 40, height: 30, padding: 2, border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer' }} />
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => patchHeader({ bgColor: '#1a5c2a' })}>Nulstil</button>
               </div>
-
               <div className="form-group">
                 <label className="form-label">Tekst / klubnavn</label>
-                <input className="form-control"
-                  value={form.headerText}
-                  onChange={e => setF('headerText', e.target.value)}
-                  placeholder="Sejs-Svejbæk IF" />
-                <p className="form-hint">Tomt = viser "Sejs-Svejbæk IF"</p>
+                <input className="form-control" value={config.header.text}
+                  onChange={e => patchHeader({ text: e.target.value })} placeholder="Sejs-Svejbæk IF" />
+                <p className="form-hint">Tomt = "Sejs-Svejbæk IF"</p>
               </div>
-              <div className="form-group" style={{ marginTop: 14 }}>
-                <label className="form-label">Logo / billede</label>
-                <ImageUploader value={form.headerLogoUrl} onChange={url => setF('headerLogoUrl', url)}
-                  hint="PNG med transparent baggrund anbefales · maks 2 MB" />
-                <p style={{ fontSize: 11, color: 'var(--text3)', margin: '8px 0 4px' }}>Eller URL:</p>
-                <input className="form-control" type="url"
-                  value={form.headerLogoUrl}
-                  onChange={e => setF('headerLogoUrl', e.target.value)}
-                  placeholder="https://…" />
-                <p className="form-hint">Tomt = bruger SSIF-logoet</p>
+              <div className="form-group">
+                <label className="form-label">Logo</label>
+                <ImageUploader value={config.header.logoUrl} onChange={url => patchHeader({ logoUrl: url })} hint="PNG med transparent baggrund anbefales · maks 2 MB" />
+                <input className="form-control" type="url" value={config.header.logoUrl}
+                  onChange={e => patchHeader({ logoUrl: e.target.value })} placeholder="https://…" style={{ marginTop: 8 }} />
+                <p className="form-hint">Tomt = SSIF-logo</p>
               </div>
-            </div>
-
-            {error && <div className="alert-error">{error}</div>}
-
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button type="button" className="btn btn-ghost" onClick={closeForm}>Annuller</button>
-              <button type="submit" className="btn btn-primary" disabled={saving}>
-                {saving ? 'Gemmer…' : editing === 'new' ? 'Opret skærm' : 'Gem ændringer'}
-              </button>
             </div>
           </div>
+        )}
 
-          {/* Højre: Hold-filter */}
-          <div className="card card-pad">
-            <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>Hold-filter</p>
-            <p style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 12, lineHeight: 1.5 }}>
-              Filtrer begivenheder til specifikke hold. Tom liste = alle aktive hold.
-            </p>
-            {holds.length === 0 ? (
-              <p style={{ fontSize: 12, color: 'var(--text3)' }}>Ingen aktive hold fundet</p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 400, overflowY: 'auto' }}>
-                {holds.map(h => {
-                  const sid     = String(h.conventus_id)
-                  const checked = (form.holdIds || []).includes(sid)
+        {/* ── Slides tab ── */}
+        {activeTab === 'slides' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: 16, alignItems: 'start' }}>
+
+            {/* Left: slide list */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {slides.map((s, i) => {
+                const isActive = i === safeIdx
+                const icons = [...new Set((s.blocks || []).map(b => BLOCK_DEFS.find(d => d.type === b.type)?.icon || ''))].join(' ')
+                const names = (s.blocks || []).map(b => BLOCK_DEFS.find(d => d.type === b.type)?.label || b.type).join(' + ')
+                return (
+                  <div key={s.id} onClick={() => setSelectedSlide(i)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 8, cursor: 'pointer', border: '1.5px solid', userSelect: 'none',
+                      borderColor: isActive ? 'var(--green)' : 'var(--border)',
+                      background:  isActive ? 'var(--green-soft,#f0fdf4)' : 'var(--bg)' }}>
+                    <div style={{ width: 24, height: 24, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                      background: isActive ? 'var(--green)' : 'var(--muted,#e5e7eb)' }}>
+                      <span style={{ color: isActive ? '#fff' : 'var(--text2)', fontSize: 11, fontWeight: 800 }}>{i + 1}</span>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: isActive ? 'var(--green)' : 'var(--text)' }}>
+                        {icons || '—'}&nbsp;<span style={{ opacity: .6, fontWeight: 400 }}>{s.duration}s</span>
+                      </div>
+                      {names && <div style={{ fontSize: 11, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 1 }}>{names}</div>}
+                    </div>
+                    <div style={{ display: 'flex', gap: 1, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+                      <button type="button" className="btn btn-ghost btn-sm" disabled={i === 0} onClick={() => moveSlide(i, -1)} style={{ padding: '2px 4px' }}>↑</button>
+                      <button type="button" className="btn btn-ghost btn-sm" disabled={i === slides.length - 1} onClick={() => moveSlide(i, 1)} style={{ padding: '2px 4px' }}>↓</button>
+                      <button type="button" className="btn btn-ghost btn-sm" style={{ color: '#dc2626', padding: '2px 4px' }} onClick={() => delSlide(i)}>
+                        <Icon name="trash" size={11} />
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+              <button type="button" onClick={addSlide}
+                style={{ padding: '10px', borderRadius: 8, border: '1.5px dashed var(--border)', background: 'none', color: 'var(--text3)', fontSize: 13, cursor: 'pointer' }}>
+                + Tilføj slide
+              </button>
+            </div>
+
+            {/* Right: slide editor */}
+            {slide ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {/* Slide settings */}
+                <div className="card card-pad" style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                  <div>
+                    <label className="form-label">Layout</label>
+                    <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                      {SLIDE_LAYOUTS.map(l => (
+                        <button key={l.id} type="button" onClick={() => patchSlide(safeIdx, { layout: l.id })}
+                          style={{ padding: '6px 14px', borderRadius: 6, border: '1.5px solid', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                            borderColor: (slide.layout || 'full') === l.id ? 'var(--green)' : 'var(--border)',
+                            background:  (slide.layout || 'full') === l.id ? 'var(--green-soft,#f0fdf4)' : 'var(--bg)',
+                            color:       (slide.layout || 'full') === l.id ? 'var(--green)' : 'var(--text2)' }}>
+                          {l.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="form-label">Varighed</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                      <input type="number" min={3} max={300} value={slide.duration}
+                        onChange={e => patchSlide(safeIdx, { duration: parseInt(e.target.value) || 15 })}
+                        className="form-control" style={{ width: 72 }} />
+                      <span style={{ fontSize: 12, color: 'var(--text3)' }}>sek</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Blocks */}
+                {(slide.blocks || []).map((block, bi) => {
+                  const def = BLOCK_DEFS.find(d => d.type === block.type)
                   return (
-                    <label key={h.id} style={{
-                      display: 'flex', alignItems: 'center', gap: 8,
-                      padding: '7px 10px', borderRadius: 6, cursor: 'pointer',
-                      background: checked ? 'var(--green-soft, #f0fdf4)' : 'transparent',
-                    }}>
-                      <input type="checkbox" checked={checked}
-                        onChange={() => toggleHold(h.conventus_id)}
-                        style={{ accentColor: 'var(--green)', flexShrink: 0 }} />
-                      <span style={{ fontSize: 13, color: checked ? 'var(--green)' : 'var(--text)', fontWeight: checked ? 600 : 400 }}>
-                        {h.titel}
-                      </span>
-                    </label>
+                    <div key={block.id} className="card card-pad">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                        <span style={{ fontSize: 18, lineHeight: 1 }}>{def?.icon}</span>
+                        <span style={{ fontWeight: 700, fontSize: 14, flex: 1 }}>{def?.label}</span>
+                        <button type="button" className="btn btn-ghost btn-sm" disabled={bi === 0} onClick={() => moveBlock(block.id, -1)}>↑</button>
+                        <button type="button" className="btn btn-ghost btn-sm" disabled={bi === slide.blocks.length - 1} onClick={() => moveBlock(block.id, 1)}>↓</button>
+                        <button type="button" className="btn btn-ghost btn-sm" style={{ color: '#dc2626' }} onClick={() => delBlock(block.id)}>
+                          <Icon name="trash" size={13} />
+                        </button>
+                      </div>
+
+                      {block.type === 'news' && (
+                        <p style={{ fontSize: 12, color: 'var(--text3)' }}>Viser automatisk de seneste 4 nyheder — ingen indstillinger.</p>
+                      )}
+
+                      {block.type === 'events' && (
+                        <>
+                          <label className="form-label">Hold-filter <span style={{ fontWeight: 400, color: 'var(--text3)' }}>(tomt = alle)</span></label>
+                          {holds.length === 0
+                            ? <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: 4 }}>Ingen aktive hold fundet</p>
+                            : <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 180, overflowY: 'auto', marginTop: 6 }}>
+                                {holds.map(h => {
+                                  const sid = String(h.conventus_id)
+                                  const on  = (block.holdIds || []).includes(sid)
+                                  return (
+                                    <label key={h.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', borderRadius: 6, cursor: 'pointer', background: on ? 'var(--green-soft,#f0fdf4)' : 'transparent' }}>
+                                      <input type="checkbox" checked={on} style={{ accentColor: 'var(--green)' }}
+                                        onChange={() => patchBlock(safeIdx, block.id, { holdIds: on ? block.holdIds.filter(x => x !== sid) : [...(block.holdIds || []), sid] })} />
+                                      <span style={{ fontSize: 13, color: on ? 'var(--green)' : 'var(--text)', fontWeight: on ? 600 : 400 }}>{h.titel}</span>
+                                    </label>
+                                  )
+                                })}
+                              </div>
+                          }
+                        </>
+                      )}
+
+                      {block.type === 'image' && (
+                        <>
+                          <ImageUploader value={block.url} onChange={url => patchBlock(safeIdx, block.id, { url })} hint="Anbefalet 1920×1080 · maks 10 MB" />
+                          <input className="form-control" type="url" value={block.url}
+                            onChange={e => patchBlock(safeIdx, block.id, { url: e.target.value })}
+                            placeholder="https://…" style={{ marginTop: 8, marginBottom: 10 }} />
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            {[['cover', 'Udfyld'], ['contain', 'Tilpas']].map(([v, l]) => (
+                              <button key={v} type="button" onClick={() => patchBlock(safeIdx, block.id, { fit: v })}
+                                style={{ padding: '5px 14px', borderRadius: 6, border: '1.5px solid', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                                  borderColor: (block.fit || 'cover') === v ? 'var(--green)' : 'var(--border)',
+                                  background:  (block.fit || 'cover') === v ? 'var(--green-soft,#f0fdf4)' : 'var(--bg)',
+                                  color:       (block.fit || 'cover') === v ? 'var(--green)' : 'var(--text2)' }}>
+                                {l}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+
+                      {block.type === 'text' && (
+                        <>
+                          <textarea className="form-control" rows={3} value={block.text}
+                            onChange={e => patchBlock(safeIdx, block.id, { text: e.target.value })}
+                            placeholder="Skriv din tekst…" style={{ marginBottom: 10, resize: 'vertical' }} />
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+                            <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                              Størrelse
+                              <input type="number" min={12} max={200} value={block.fontSize || 64}
+                                onChange={e => patchBlock(safeIdx, block.id, { fontSize: parseInt(e.target.value) || 64 })}
+                                className="form-control" style={{ width: 68, marginLeft: 4 }} />
+                            </label>
+                            <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                              Farve
+                              <input type="color" value={block.color || '#ffffff'}
+                                onChange={e => patchBlock(safeIdx, block.id, { color: e.target.value })}
+                                style={{ width: 36, height: 28, padding: 2, border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer' }} />
+                            </label>
+                            <div style={{ display: 'flex', gap: 4 }}>
+                              {[['bold', 'B'], ['italic', 'I']].map(([k, l]) => (
+                                <button key={k} type="button" onClick={() => patchBlock(safeIdx, block.id, { [k]: !block[k] })}
+                                  style={{ padding: '4px 9px', borderRadius: 6, border: '1.5px solid', fontSize: 13,
+                                    fontWeight: k === 'bold' ? 800 : 400, fontStyle: k === 'italic' ? 'italic' : 'normal', cursor: 'pointer',
+                                    borderColor: block[k] ? 'var(--green)' : 'var(--border)',
+                                    background:  block[k] ? 'var(--green-soft,#f0fdf4)' : 'var(--bg)',
+                                    color:       block[k] ? 'var(--green)' : 'var(--text2)' }}>{l}</button>
+                              ))}
+                            </div>
+                            <div style={{ display: 'flex', gap: 4 }}>
+                              {[['left', '←'], ['center', '↔'], ['right', '→']].map(([a, ic]) => (
+                                <button key={a} type="button" onClick={() => patchBlock(safeIdx, block.id, { align: a })}
+                                  style={{ padding: '4px 8px', borderRadius: 6, border: '1.5px solid', fontSize: 12, cursor: 'pointer',
+                                    borderColor: (block.align || 'center') === a ? 'var(--green)' : 'var(--border)',
+                                    background:  (block.align || 'center') === a ? 'var(--green-soft,#f0fdf4)' : 'var(--bg)',
+                                    color:       (block.align || 'center') === a ? 'var(--green)' : 'var(--text2)' }}>{ic}</button>
+                              ))}
+                            </div>
+                          </div>
+                        </>
+                      )}
+
+                      {block.type === 'countdown' && (
+                        <>
+                          <div className="form-group">
+                            <label className="form-label">Label</label>
+                            <input className="form-control" value={block.label || ''}
+                              onChange={e => patchBlock(safeIdx, block.id, { label: e.target.value })}
+                              placeholder="fx Dage til sæsonstart" />
+                          </div>
+                          <div className="form-group" style={{ marginTop: 10 }}>
+                            <label className="form-label">Dato</label>
+                            <input type="date" className="form-control" value={block.targetDate || ''}
+                              onChange={e => patchBlock(safeIdx, block.id, { targetDate: e.target.value })} />
+                          </div>
+                        </>
+                      )}
+                    </div>
                   )
                 })}
+
+                {/* Add block */}
+                {(slide.blocks || []).length < layout.slots && (
+                  <div className="card card-pad">
+                    <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>
+                      Vælg indhold{layout.slots > 1 ? ` — slot ${(slide.blocks || []).length + 1} / ${layout.slots}` : ''}
+                    </p>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px,1fr))', gap: 8 }}>
+                      {BLOCK_DEFS.map(def => (
+                        <button key={def.type} type="button" onClick={() => addBlock(def.type)}
+                          style={{ display: 'flex', flexDirection: 'column', gap: 5, padding: '12px', borderRadius: 8, border: '1.5px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', textAlign: 'left' }}
+                          onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--green)'}
+                          onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}>
+                          <span style={{ fontSize: 22 }}>{def.icon}</span>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{def.label}</span>
+                          <span style={{ fontSize: 11, color: 'var(--text3)', lineHeight: 1.4 }}>{def.desc}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="card card-pad" style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--text3)' }}>
+                <div style={{ fontSize: 32, marginBottom: 10 }}>📋</div>
+                <p style={{ fontSize: 14 }}>Tilføj et slide til venstre for at komme i gang.</p>
               </div>
             )}
-            {(form.holdIds || []).length > 0 && (
-              <button type="button" className="btn btn-ghost btn-sm" style={{ marginTop: 10 }}
-                onClick={() => setF('holdIds', [])}>
-                Nulstil filter (vis alle)
-              </button>
-            )}
           </div>
-        </form>
+        )}
       </>
     )
   }
 
-  // ── Liste over skærme ─────────────────────────────────────────────────────────
+  // ── List view ────────────────────────────────────────────────────────────────
   return (
     <>
-      <div className="page-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div className="page-header">
         <h1 className="page-title">Infoskærme</h1>
-        <button className="btn btn-primary" onClick={openNew}>
-          <Icon name="plus" size={15} color="white" />
-          Ny infoskærm
-        </button>
+        <button className="btn btn-primary" onClick={openNew}>+ Ny skærm</button>
       </div>
 
-      {/* Vejledning */}
-      <div className="card card-pad" style={{ marginBottom: 20, display: 'flex', gap: 16, alignItems: 'flex-start', background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
-        <div style={{ fontSize: 28, flexShrink: 0 }}>🖥</div>
-        <div>
-          <p style={{ fontWeight: 700, fontSize: 13, color: 'var(--green)', marginBottom: 4 }}>Sådan virker infoskærme</p>
-          <p style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.6 }}>
-            Opret en skærm, kopiér dens URL og indsæt den i browseren på din skærm/tv.
-            Skærmen viser live-indhold fra klubsystemet — begivenheder og nyheder opdateres automatisk.
-            Åbn URL'en i kiosk-tilstand (F11 i Chrome/Edge) for en ren fuldskærmsvisning.
-          </p>
-        </div>
+      <div className="card card-pad" style={{ marginBottom: 16, background: '#f0fdf4', border: '1px solid #86efac' }}>
+        <p style={{ fontSize: 13, color: '#166534', lineHeight: 1.6 }}>
+          <strong>Sådan virker det:</strong> Opret en skærm og byg dit indhold med slides.
+          Indsæt skærmens URL i Chrome/Edge i kiosk-tilstand (F11).
+          Brug <strong>↻</strong>-knappen til at sende opdateret indhold til alle tilsluttede skærme øjeblikkeligt.
+        </p>
       </div>
 
       {loading ? (
@@ -4107,42 +4077,24 @@ function InfoScreensPage({ authUser }) {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {screens.map(sc => {
-            const url         = INFOSCREEN_BASE_URL + sc.id
-            const isCopied    = copied === sc.id
-            const imgCount    = sc.imageUrls?.length || (sc.imageUrl ? 1 : 0)
-            const modeLabel   = sc.mode === 'image' ? (imgCount > 1 ? `${imgCount} billeder` : 'Stillbillede') : 'Skabeloner'
-            const tmplLabels  = (sc.templates || []).map(t => TEMPLATE_OPTIONS.find(o => o.id === t)?.label || t)
+            const url        = INFOSCREEN_BASE_URL + sc.id
+            const isCopied   = copied === sc.id
+            const slideCount = sc.slides?.length || 0
+            const icons      = [...new Set((sc.slides || []).flatMap(s => (s.blocks || []).map(b => BLOCK_DEFS.find(d => d.type === b.type)?.icon || '')))].filter(Boolean).join(' ')
             return (
               <div key={sc.id} className="card" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 16 }}>
-                {/* Ikon */}
-                <div style={{ width: 44, height: 44, borderRadius: 10, background: 'var(--green-soft, #f0fdf4)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <div style={{ width: 44, height: 44, borderRadius: 10, background: 'var(--green-soft,#f0fdf4)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <Icon name="monitor" size={20} color="var(--green)" />
                 </div>
-                {/* Info */}
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)', marginBottom: 3 }}>{sc.name}</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: sc.mode === 'image' ? '#fef3c7' : '#e0f2fe', color: sc.mode === 'image' ? '#b45309' : '#0369a1' }}>
-                      {modeLabel}
-                    </span>
-                    {tmplLabels.map((l, i) => (
-                      <span key={i} style={{ fontSize: 11, padding: '2px 7px', borderRadius: 4, background: '#f0fdf4', color: 'var(--green)', fontWeight: 600 }}>{l}</span>
-                    ))}
-                    {(sc.holdIds || []).length > 0 && (
-                      <span style={{ fontSize: 11, color: 'var(--text3)' }}>{sc.holdIds.length} hold-filter</span>
-                    )}
-                    {sc.templates?.length > 1 && (
-                      <span style={{ fontSize: 11, color: 'var(--text3)' }}>· skifter hvert {sc.duration ?? 15}s</span>
-                    )}
+                  <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 3 }}>{sc.name}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 6 }}>
+                    {slideCount} slide{slideCount !== 1 ? 's' : ''} · {icons || '—'}
                   </div>
-                  {/* URL row */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
-                    <code style={{ fontSize: 11, background: '#f1f5f9', padding: '3px 8px', borderRadius: 5, color: '#475569', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {url}
-                    </code>
-                    <button type="button"
-                      onClick={() => copyUrl(sc.id)}
-                      style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: isCopied ? 'var(--green-soft, #f0fdf4)' : 'white', cursor: 'pointer', fontSize: 11, fontWeight: 600, color: isCopied ? 'var(--green)' : 'var(--text2)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <code style={{ fontSize: 11, background: '#f1f5f9', padding: '3px 8px', borderRadius: 5, color: '#475569', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{url}</code>
+                    <button type="button" onClick={() => copyUrl(sc.id)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: isCopied ? 'var(--green-soft,#f0fdf4)' : 'white', cursor: 'pointer', fontSize: 11, fontWeight: 600, color: isCopied ? 'var(--green)' : 'var(--text2)', whiteSpace: 'nowrap', flexShrink: 0 }}>
                       <Icon name={isCopied ? 'check' : 'copy'} size={12} color={isCopied ? 'var(--green)' : 'var(--text2)'} sw={2.5} />
                       {isCopied ? 'Kopieret!' : 'Kopiér URL'}
                     </button>
@@ -4153,22 +4105,14 @@ function InfoScreensPage({ authUser }) {
                     </a>
                   </div>
                 </div>
-                {/* Actions */}
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    title="Opdater indhold på skærmen nu"
-                    disabled={pushing === sc.id}
-                    onClick={() => pushContent(sc.id)}
-                    style={{ color: pushing === sc.id ? 'var(--green)' : undefined }}>
+                  <button className="btn btn-ghost btn-sm" title="Send opdateret indhold til skærmen" disabled={pushing === sc.id} onClick={() => pushContent(sc.id)} style={{ color: pushing === sc.id ? 'var(--green)' : undefined }}>
                     <Icon name="refresh" size={14} />
                   </button>
                   <button className="btn btn-ghost btn-sm" onClick={() => openEdit(sc)}>
                     <Icon name="edit" size={14} />
                   </button>
-                  <button className="btn btn-ghost btn-sm" style={{ color: '#dc2626' }}
-                    disabled={deleting === sc.id}
-                    onClick={() => handleDelete(sc)}>
+                  <button className="btn btn-ghost btn-sm" style={{ color: '#dc2626' }} disabled={deleting === sc.id} onClick={() => handleDelete(sc)}>
                     <Icon name="trash" size={14} />
                   </button>
                 </div>
@@ -4180,6 +4124,7 @@ function InfoScreensPage({ authUser }) {
     </>
   )
 }
+
 
 const PAGE_TITLES = {
   dashboard:    'Dashboard',

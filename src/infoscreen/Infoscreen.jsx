@@ -6,74 +6,80 @@ import {
 } from 'firebase/firestore'
 import { auth, db } from '../firebase.js'
 
-// Opdateringsinterval som fallback (selvom contentVersion ikke skifter)
-const REFRESH_INTERVAL_MS = 30 * 60 * 1000 // 30 minutter
+const REFRESH_INTERVAL_MS = 30 * 60 * 1000
 
-// ── Hjælpefunktioner ──────────────────────────────────────────────────────────
+// ── Dato-hjælpere ─────────────────────────────────────────────────────────────
 
-const DAYS_DA  = ['Søndag','Mandag','Tirsdag','Onsdag','Torsdag','Fredag','Lørdag']
+const DAYS_DA   = ['Søndag','Mandag','Tirsdag','Onsdag','Torsdag','Fredag','Lørdag']
 const MONTHS_DA = ['jan','feb','mar','apr','maj','jun','jul','aug','sep','okt','nov','dec']
-
-function fmtDate(ts) {
-  if (!ts) return ''
-  const d = ts.toDate ? ts.toDate() : new Date(ts)
-  return `${DAYS_DA[d.getDay()]} ${d.getDate()}. ${MONTHS_DA[d.getMonth()]}`
-}
 
 function fmtDateShort(ts) {
   if (!ts) return ''
   const d = ts.toDate ? ts.toDate() : new Date(ts)
   return `${d.getDate()}/${d.getMonth() + 1}`
 }
-
 function fmtDayShort(ts) {
   if (!ts) return ''
   const d = ts.toDate ? ts.toDate() : new Date(ts)
   return DAYS_DA[d.getDay()].slice(0, 3).toUpperCase()
 }
-
 function isSameDay(a, b) {
   if (!a || !b) return false
   const da = a.toDate ? a.toDate() : new Date(a)
   const db_ = b.toDate ? b.toDate() : new Date(b)
-  return da.getFullYear() === db_.getFullYear()
-    && da.getMonth() === db_.getMonth()
-    && da.getDate() === db_.getDate()
+  return da.getFullYear() === db_.getFullYear() && da.getMonth() === db_.getMonth() && da.getDate() === db_.getDate()
 }
 
-const TYPE_COLORS = {
-  kamp:       '#ef4444',
-  træning:    '#4ade80',
-  generel:    '#60a5fa',
-  stævne:     '#f59e0b',
-  event:      '#c084fc',
-}
-const TYPE_LABELS = {
-  kamp:    'KAMP',
-  træning: 'TRÆNING',
-  generel: 'BEGIVENHED',
-  stævne:  'STÆVNE',
-  event:   'EVENT',
-}
+// ── Bagudkompatibel normalisering ─────────────────────────────────────────────
+// Konverterer gammelt format (templates/mode) til nyt (slides[])
 
-// ── Enkelt-slide: kommende begivenheder ───────────────────────────────────────
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2) }
 
-function EventsSlide({ events }) {
-  if (!events.length) {
-    return (
-      <div className="is-empty-slide">
-        <div className="is-empty-icon">📅</div>
-        <p>Ingen kommende begivenheder</p>
-      </div>
-    )
+function normalizeConfig(sc) {
+  if (!sc) return sc
+  if (sc.slides) return sc
+  const slides = []
+  if (sc.mode === 'image') {
+    const urls = sc.imageUrls?.length ? sc.imageUrls : (sc.imageUrl ? [sc.imageUrl] : [])
+    for (const url of urls) {
+      slides.push({ id: uid(), duration: sc.duration || 15, layout: 'full', blocks: [{ id: uid(), type: 'image', url, fit: 'cover' }] })
+    }
+  } else {
+    for (const tpl of (sc.templates || ['events'])) {
+      const slide = { id: uid(), duration: sc.duration || 15, layout: 'full', blocks: [] }
+      if (tpl === 'events')       slide.blocks.push({ id: uid(), type: 'events', holdIds: sc.holdIds || [] })
+      else if (tpl === 'news')    slide.blocks.push({ id: uid(), type: 'news' })
+      else if (tpl === 'custom')  slide.blocks.push(...(sc.customBlocks || []).map(b => ({ ...b, id: uid() })))
+      slides.push(slide)
+    }
   }
+  return {
+    ...sc,
+    header: { text: sc.headerText || '', logoUrl: sc.headerLogoUrl || '', bgColor: sc.headerBgColor || '#1a5c2a' },
+    slides,
+  }
+}
 
-  // Gruppér efter dato (ud fra `start`-timestamp)
+// ── Blok-renderers ────────────────────────────────────────────────────────────
+
+const TYPE_COLORS = { kamp: '#ef4444', træning: '#4ade80', generel: '#60a5fa', stævne: '#f59e0b', event: '#c084fc' }
+const TYPE_LABELS = { kamp: 'KAMP', træning: 'TRÆNING', generel: 'BEGIVENHED', stævne: 'STÆVNE', event: 'EVENT' }
+
+function EventsBlock({ block, events }) {
+  const holdIds = new Set(block.holdIds || [])
+  const filtered = holdIds.size > 0 ? events.filter(ev => holdIds.has(String(ev.holdId))) : events
+
+  if (!filtered.length) return (
+    <div className="is-empty-block">
+      <span className="is-empty-icon">📅</span>
+      <p>Ingen kommende begivenheder</p>
+    </div>
+  )
+
   const byDay = []
   let lastDay = null
-  for (const ev of events) {
-    const sameDay = lastDay && isSameDay(ev.start, lastDay)
-    if (!sameDay) {
+  for (const ev of filtered) {
+    if (!lastDay || !isSameDay(ev.start, lastDay)) {
       byDay.push({ day: ev.start, items: [] })
       lastDay = ev.start
     }
@@ -81,11 +87,8 @@ function EventsSlide({ events }) {
   }
 
   return (
-    <div className="is-events-slide">
-      <div className="is-slide-header">
-        <span className="is-slide-icon">📅</span>
-        <span className="is-slide-title">Kommende begivenheder</span>
-      </div>
+    <div className="is-events-block">
+      <div className="is-block-header"><span className="is-block-icon">📅</span><span className="is-block-title">Kommende begivenheder</span></div>
       <div className="is-events-list">
         {byDay.map((group, gi) => (
           <div key={gi} className="is-day-group">
@@ -99,9 +102,7 @@ function EventsSlide({ events }) {
                 const label = TYPE_LABELS[ev.type] || (ev.type || '').toUpperCase()
                 return (
                   <div key={ei} className="is-event-row">
-                    <span className="is-event-badge" style={{ background: color + '22', color }}>
-                      {label}
-                    </span>
+                    <span className="is-event-badge" style={{ background: color + '22', color }}>{label}</span>
                     <span className="is-event-title">{ev.titel}</span>
                     <span className="is-event-meta">
                       {ev.tidStart && <span>{ev.tidStart}</span>}
@@ -119,47 +120,30 @@ function EventsSlide({ events }) {
   )
 }
 
-// ── Enkelt-slide: nyheder ─────────────────────────────────────────────────────
-
-function NewsSlide({ news }) {
-  if (!news.length) {
-    return (
-      <div className="is-empty-slide">
-        <div className="is-empty-icon">📰</div>
-        <p>Ingen nyheder endnu</p>
-      </div>
-    )
-  }
-
+function NewsBlock({ news }) {
+  if (!news.length) return (
+    <div className="is-empty-block">
+      <span className="is-empty-icon">📰</span>
+      <p>Ingen nyheder endnu</p>
+    </div>
+  )
   return (
-    <div className="is-news-slide">
-      <div className="is-slide-header">
-        <span className="is-slide-icon">📰</span>
-        <span className="is-slide-title">Nyheder fra SSIF</span>
-      </div>
+    <div className="is-news-block">
+      <div className="is-block-header"><span className="is-block-icon">📰</span><span className="is-block-title">Nyheder fra SSIF</span></div>
       <div className="is-news-list">
         {news.slice(0, 4).map((item, i) => (
           <div key={i} className="is-news-item">
             {item.imageUrl && (
               <div className="is-news-img-wrap">
-                <img src={item.imageUrl} alt="" className="is-news-img"
-                     onError={e => { e.target.parentElement.style.display = 'none' }} />
+                <img src={item.imageUrl} alt="" className="is-news-img" onError={e => { e.target.parentElement.style.display = 'none' }} />
               </div>
             )}
             <div className="is-news-body">
               {item.category && (
-                <span className="is-news-cat"
-                      style={{ background: (item.categoryColor || '#1a5c2a') + '33',
-                               color: item.categoryColor || '#4ade80' }}>
-                  {item.category}
-                </span>
+                <span className="is-news-cat" style={{ background: (item.categoryColor || '#1a5c2a') + '33', color: item.categoryColor || '#4ade80' }}>{item.category}</span>
               )}
               <div className="is-news-title">{item.title}</div>
-              {item.excerpt && (
-                <div className="is-news-excerpt">
-                  {item.excerpt.length > 140 ? item.excerpt.slice(0, 140) + '…' : item.excerpt}
-                </div>
-              )}
+              {item.excerpt && <div className="is-news-excerpt">{item.excerpt.length > 140 ? item.excerpt.slice(0, 140) + '…' : item.excerpt}</div>}
             </div>
           </div>
         ))}
@@ -168,84 +152,119 @@ function NewsSlide({ news }) {
   )
 }
 
-// ── Fri indhold: tekst- og billedblokke ──────────────────────────────────────
-
-function CustomSlide({ blocks }) {
-  if (!blocks?.length) {
-    return (
-      <div className="is-empty-slide">
-        <div className="is-empty-icon">✏️</div>
-        <p>Ingen blokke tilføjet endnu</p>
-      </div>
-    )
-  }
+function ImageBlock({ block }) {
+  if (!block.url) return (
+    <div className="is-empty-block">
+      <span className="is-empty-icon">🖼</span>
+      <p>Intet billede</p>
+    </div>
+  )
   return (
-    <div className="is-custom-slide">
-      {blocks.map((block, i) => {
-        if (block.type === 'image') {
-          return (
-            <div key={i} className="is-custom-image-wrap" style={{ height: block.height || 300 }}>
-              <img src={block.url} alt=""
-                style={{ width: '100%', height: '100%', objectFit: block.fit || 'contain', display: 'block' }}
-                onError={e => { e.target.style.display = 'none' }} />
-            </div>
-          )
-        }
-        return (
-          <div key={i} className="is-custom-text-block" style={{
-            fontSize:   (block.fontSize || 48) + 'px',
-            color:      block.color     || '#ffffff',
-            fontWeight: block.bold      ? 800 : 400,
-            fontStyle:  block.italic    ? 'italic' : 'normal',
-            textAlign:  block.align     || 'left',
-          }}>
-            {block.text}
-          </div>
-        )
-      })}
+    <div className="is-image-block">
+      <img src={block.url} alt="" style={{ width: '100%', height: '100%', objectFit: block.fit || 'cover', display: 'block' }}
+        onError={e => { e.target.style.display = 'none' }} />
     </div>
   )
 }
 
-// ── Billede-mode ──────────────────────────────────────────────────────────────
-
-function ImageSlide({ url, screenName }) {
-  if (!url) {
-    return (
-      <div className="is-empty-slide">
-        <div className="is-empty-icon">🖼️</div>
-        <p>Intet billede konfigureret</p>
-      </div>
-    )
-  }
+function TextBlock({ block }) {
   return (
-    <div className="is-image-mode">
-      <img src={url} alt={screenName || ''} className="is-image-full" />
+    <div className="is-text-block" style={{
+      fontSize:   (block.fontSize || 64) + 'px',
+      color:      block.color    || '#ffffff',
+      fontWeight: block.bold     ? 800 : 400,
+      fontStyle:  block.italic   ? 'italic' : 'normal',
+      textAlign:  block.align    || 'center',
+    }}>
+      {block.text}
     </div>
   )
 }
 
-// ── Header med ur ────────────────────────────────────────────────────────────
+function CountdownBlock({ block }) {
+  const [days, setDays] = useState(null)
+  useEffect(() => {
+    function calc() {
+      if (!block.targetDate) return
+      const diff = Math.ceil((new Date(block.targetDate) - new Date()) / 86400000)
+      setDays(Math.max(0, diff))
+    }
+    calc()
+    const id = setInterval(calc, 60000)
+    return () => clearInterval(id)
+  }, [block.targetDate])
 
-function InfoHeader({ time, screenName, logoUrl, clubName, bgColor }) {
+  return (
+    <div className="is-countdown-block">
+      <div className="is-countdown-number">{days !== null ? days : '—'}</div>
+      <div className="is-countdown-label">{block.label || 'dage'}</div>
+    </div>
+  )
+}
+
+function renderBlock(block, events, news) {
+  switch (block.type) {
+    case 'events':    return <EventsBlock   key={block.id} block={block} events={events} />
+    case 'news':      return <NewsBlock     key={block.id} news={news} />
+    case 'image':     return <ImageBlock    key={block.id} block={block} />
+    case 'text':      return <TextBlock     key={block.id} block={block} />
+    case 'countdown': return <CountdownBlock key={block.id} block={block} />
+    default:          return null
+  }
+}
+
+// ── Layout-wrapper ────────────────────────────────────────────────────────────
+
+function SlideLayout({ slide, events, news }) {
+  const blocks = slide.blocks || []
+  const layout = slide.layout || 'full'
+
+  if (layout === 'left-right' && blocks.length >= 2) {
+    return (
+      <div className="is-layout-lr">
+        <div className="is-layout-slot">{renderBlock(blocks[0], events, news)}</div>
+        <div className="is-layout-slot">{renderBlock(blocks[1], events, news)}</div>
+      </div>
+    )
+  }
+  if (layout === 'top-bottom' && blocks.length >= 2) {
+    return (
+      <div className="is-layout-tb">
+        <div className="is-layout-slot">{renderBlock(blocks[0], events, news)}</div>
+        <div className="is-layout-slot">{renderBlock(blocks[1], events, news)}</div>
+      </div>
+    )
+  }
+  // full (default)
+  return (
+    <div className="is-layout-full">
+      {blocks[0] ? renderBlock(blocks[0], events, news) : (
+        <div className="is-empty-block"><p>Ingen indhold</p></div>
+      )}
+    </div>
+  )
+}
+
+// ── Header ────────────────────────────────────────────────────────────────────
+
+function InfoHeader({ time, config }) {
+  const h = config?.header || {}
   const pad = n => String(n).padStart(2, '0')
   const timeStr = `${pad(time.getHours())}:${pad(time.getMinutes())}`
   const dateStr = `${DAYS_DA[time.getDay()]} ${time.getDate()}. ${MONTHS_DA[time.getMonth()]} ${time.getFullYear()}`
 
   return (
-    <header className="is-header" style={bgColor ? { background: bgColor } : undefined}>
+    <header className="is-header" style={h.bgColor ? { background: h.bgColor } : undefined}>
       <div className="is-header-logo">
-        <img src={logoUrl || '../ssif-logo.png'} alt="" className="is-logo"
-             onError={e => {
-               if (e.target.src !== window.location.origin + '/../ssif-logo.png') {
-                 e.target.src = '../ssif-logo.png'
-               } else {
-                 e.target.style.display = 'none'
-               }
-             }} />
+        <img src={h.logoUrl || '../ssif-logo.png'} alt="" className="is-logo"
+          onError={e => {
+            if (h.logoUrl && e.target.src !== window.location.origin + '/../ssif-logo.png') {
+              e.target.src = '../ssif-logo.png'
+            } else { e.target.style.display = 'none' }
+          }} />
         <div className="is-header-name">
-          <span className="is-club-name">{clubName || 'Sejs-Svejbæk IF'}</span>
-          {screenName && <span className="is-screen-name">{screenName}</span>}
+          <span className="is-club-name">{h.text || 'Sejs-Svejbæk IF'}</span>
+          {config?.name && <span className="is-screen-name">{config.name}</span>}
         </div>
       </div>
       <div className="is-header-clock">
@@ -256,9 +275,9 @@ function InfoHeader({ time, screenName, logoUrl, clubName, bgColor }) {
   )
 }
 
-// ── Progress bar for slide-rotation ──────────────────────────────────────────
+// ── Progress bar ──────────────────────────────────────────────────────────────
 
-function SlideProgress({ total, current, duration, elapsed }) {
+function SlideProgress({ total, current, elapsed, duration }) {
   if (total <= 1) return null
   return (
     <div className="is-progress-bar-wrap">
@@ -268,20 +287,16 @@ function SlideProgress({ total, current, duration, elapsed }) {
         ))}
       </div>
       <div className="is-progress-track">
-        <div className="is-progress-fill"
-             style={{ width: `${Math.min(100, (elapsed / duration) * 100)}%` }} />
+        <div className="is-progress-fill" style={{ width: `${Math.min(100, (elapsed / duration) * 100)}%` }} />
       </div>
     </div>
   )
 }
 
-// ── Fejl- og loading-visninger ────────────────────────────────────────────────
-
 function SplashScreen({ message }) {
   return (
     <div className="is-splash">
-      <img src="../ssif-logo.png" alt="SSIF" className="is-splash-logo"
-           onError={e => { e.target.style.display = 'none' }} />
+      <img src="../ssif-logo.png" alt="SSIF" className="is-splash-logo" onError={e => { e.target.style.display = 'none' }} />
       <p className="is-splash-msg">{message}</p>
     </div>
   )
@@ -292,8 +307,8 @@ function SplashScreen({ message }) {
 export default function Infoscreen() {
   const screenId = new URLSearchParams(window.location.search).get('s')
 
-  const [ready,   setReady]   = useState(false)   // anonym auth done
-  const [config,  setConfig]  = useState(undefined) // undefined=loading, null=not found
+  const [ready,   setReady]   = useState(false)
+  const [config,  setConfig]  = useState(undefined)
   const [events,  setEvents]  = useState([])
   const [news,    setNews]    = useState([])
   const [time,    setTime]    = useState(new Date())
@@ -304,7 +319,7 @@ export default function Infoscreen() {
   const slideRef       = useRef(0)
   const elapsedRef     = useRef(0)
   const intervalRef    = useRef(null)
-  const lastVersionRef = useRef(Symbol('init')) // sentinel → udløser altid første hentning
+  const lastVersionRef = useRef(Symbol('init'))
   const refreshTimer   = useRef(null)
 
   // ── Anonym login ─────────────────────────────────────────────────────────────
@@ -322,38 +337,27 @@ export default function Infoscreen() {
     return () => clearInterval(id)
   }, [])
 
-  // ── Hent indhold (events + news) med getDocs — aldrig realtime ───────────────
-  // Kaldes kun når contentVersion skifter (admin "pusher") eller 30-min fallback.
+  // ── Fetch events + news med getDocs ──────────────────────────────────────────
   async function fetchContent(cfg) {
     if (!cfg) return
     try {
       const nowTs = Timestamp.fromDate(new Date())
       const cutTs = Timestamp.fromDate(new Date(Date.now() + 21 * 24 * 60 * 60 * 1000))
-      const evQuery = query(
-        collection(db, 'events'),
-        where('start', '>=', nowTs),
-        where('start', '<=', cutTs),
-        orderBy('start'),
-        limit(50),
-      )
       const [evSnap, newsSnap] = await Promise.all([
-        getDocs(evQuery),
+        getDocs(query(collection(db, 'events'), where('start', '>=', nowTs), where('start', '<=', cutTs), orderBy('start'), limit(50))),
         getDocs(query(collection(db, 'news'), orderBy('createdAt', 'desc'), limit(6))),
       ])
-      const hids = new Set(cfg.holdIds || [])
-      let evs = evSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-      if (hids.size > 0) evs = evs.filter(ev => hids.has(String(ev.holdId)))
-      setEvents(evs.slice(0, 20))
+      setEvents(evSnap.docs.map(d => ({ id: d.id, ...d.data() })).slice(0, 20))
       setNews(newsSnap.docs.map(d => ({ id: d.id, ...d.data() })))
     } catch (_) {}
   }
 
-  // ── Hent screen-config (realtime, kun metadata) ──────────────────────────────
-  // Trigger getDocs-hentning når contentVersion ændres — admin "pusher" derved nyt indhold.
+  // ── Config onSnapshot — trigger fetchContent ved ny contentVersion ─────────
   useEffect(() => {
     if (!ready || !screenId) return
     const unsub = onSnapshot(doc(db, 'infoscreens', screenId), snap => {
-      const data = snap.exists() ? { id: snap.id, ...snap.data() } : null
+      const raw  = snap.exists() ? { id: snap.id, ...snap.data() } : null
+      const data = normalizeConfig(raw)
       configRef.current = data
       setConfig(data)
       if (data) {
@@ -367,7 +371,7 @@ export default function Infoscreen() {
     return unsub
   }, [ready, screenId])
 
-  // ── 30-minutters fallback: opdater indhold selvom ingen pusher ───────────────
+  // ── 30-min fallback ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!ready) return
     refreshTimer.current = setInterval(() => {
@@ -376,81 +380,54 @@ export default function Infoscreen() {
     return () => clearInterval(refreshTimer.current)
   }, [ready])
 
-  // ── Slide-timer — virker for både skabeloner og billeder ─────────────────────
+  // ── Slide-timer (per-slide varighed) ─────────────────────────────────────────
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current)
-    const slideCount = config?.mode === 'image'
-      ? (config?.imageUrls?.length || (config?.imageUrl ? 1 : 0))
-      : (config?.templates || []).length
-    if (slideCount <= 1) return
+    const slides = config?.slides || []
+    if (slides.length <= 1) return
 
-    const duration = (config?.duration ?? 15) * 1000
+    slideRef.current  = 0
     elapsedRef.current = 0
-    setElapsed(0)
-    slideRef.current = 0
     setSlide(0)
+    setElapsed(0)
 
     intervalRef.current = setInterval(() => {
+      const currentSlides = configRef.current?.slides || []
+      if (currentSlides.length <= 1) return
+      const duration = (currentSlides[slideRef.current]?.duration ?? 15) * 1000
       elapsedRef.current += 100
       setElapsed(elapsedRef.current)
       if (elapsedRef.current >= duration) {
         elapsedRef.current = 0
         setElapsed(0)
-        slideRef.current = (slideRef.current + 1) % slideCount
+        slideRef.current = (slideRef.current + 1) % currentSlides.length
         setSlide(slideRef.current)
       }
     }, 100)
 
     return () => clearInterval(intervalRef.current)
-  }, [config?.mode, config?.templates?.join(','), (config?.imageUrls || []).join(','), config?.duration])
+  }, [config?.id, (config?.slides || []).length])
 
   // ── Rendering ─────────────────────────────────────────────────────────────────
 
-  if (!screenId) {
-    return <SplashScreen message="Ingen skærm-ID i URL — tilføj ?s=SCREENID" />
-  }
-  if (!ready || config === undefined) {
-    return <SplashScreen message="Forbinder…" />
-  }
-  if (config === null) {
-    return <SplashScreen message="Skærm ikke fundet. Kontakt administrator." />
-  }
+  if (!screenId)                    return <SplashScreen message="Ingen skærm-ID — tilføj ?s=SCREENID i URL" />
+  if (!ready || config === undefined) return <SplashScreen message="Forbinder…" />
+  if (config === null)               return <SplashScreen message="Skærm ikke fundet. Kontakt administrator." />
 
-  const templates  = config.templates || []
-  const imageUrls  = config.imageUrls?.length ? config.imageUrls : (config.imageUrl ? [config.imageUrl] : [])
-  const slideCount = config.mode === 'image' ? imageUrls.length : templates.length
-  const duration   = config.duration ?? 15
-
-  function renderContent() {
-    if (config.mode === 'image') {
-      const url = imageUrls[slide % Math.max(1, imageUrls.length)] || ''
-      return <ImageSlide url={url} screenName={config.name} />
-    }
-    const activeTemplate = templates[slide] || templates[0]
-    if (activeTemplate === 'events') return <EventsSlide events={events} />
-    if (activeTemplate === 'news')   return <NewsSlide   news={news} />
-    if (activeTemplate === 'custom') return <CustomSlide blocks={config.customBlocks} />
-    return (
-      <div className="is-empty-slide">
-        <p>Ingen skabelon valgt</p>
-      </div>
-    )
-  }
+  const slides       = config.slides || []
+  const currentSlide = slides[slide] || slides[0]
+  const duration     = (currentSlide?.duration ?? 15) * 1000
 
   return (
     <div className="is-root">
-      <InfoHeader time={time} screenName={config.name} logoUrl={config.headerLogoUrl} clubName={config.headerText} bgColor={config.headerBgColor} />
+      <InfoHeader time={time} config={config} />
       <main className="is-main">
-        {renderContent()}
+        {currentSlide
+          ? <SlideLayout slide={currentSlide} events={events} news={news} />
+          : <div className="is-empty-block"><p>Ingen slides konfigureret</p></div>
+        }
       </main>
-      {slideCount > 1 && (
-        <SlideProgress
-          total={slideCount}
-          current={slide}
-          duration={duration * 1000}
-          elapsed={elapsed}
-        />
-      )}
+      <SlideProgress total={slides.length} current={slide} elapsed={elapsed} duration={duration} />
     </div>
   )
 }
