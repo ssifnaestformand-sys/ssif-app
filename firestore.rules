@@ -136,6 +136,18 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ── Backoffice-invitationer ──────────────────────────────────────────────
+    // Admin skriver via PHP (service account), men reglerne dækker klientens get/delete.
+    // En inviteret bruger kan hente og slette sin egen invitation (ved accept).
+    match /invitations/{invEmail} {
+      allow get: if isAdmin()
+        || (isRealUser() && resource.data.email == request.auth.token.email);
+      allow list: if isAdmin();
+      allow create, update: if isAdmin();
+      allow delete: if isAdmin()
+        || (isRealUser() && resource.data.email == request.auth.token.email);
+    }
+
     // ── Billedbibliotek (infoskærm-uploads) ─────────────────────────────────
     // Admin og trænere kan uploade og læse billeder. Kun admin kan slette.
     match /media_library/{imgId} {

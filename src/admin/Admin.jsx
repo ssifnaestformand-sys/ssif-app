@@ -283,15 +283,17 @@ function LoginPage() {
   )
 }
 
-function UnauthorizedPage({ user }) {
+function InvitationRequiredPage({ user }) {
   return (
     <div className="admin-login">
       <div className="login-box" style={{ textAlign: 'center' }}>
-        <div style={{ fontSize: 40, marginBottom: 12 }}>🔒</div>
-        <h2 style={{ marginBottom: 8 }}>Ingen adgang</h2>
-        <p style={{ color: 'var(--text2)', marginBottom: 20, fontSize: 14, lineHeight: 1.6 }}>
-          Din konto ({user.email}) er ikke tildelt en rolle endnu.<br />
-          Kontakt en administrator for at få adgang.
+        <div style={{ fontSize: 40, marginBottom: 12 }}>✉️</div>
+        <h2 style={{ marginBottom: 8 }}>Invitation påkrævet</h2>
+        <p style={{ color: 'var(--text2)', marginBottom: 6, fontSize: 14, lineHeight: 1.6 }}>
+          Din konto (<strong>{user.email}</strong>) er ikke inviteret til backoffice.
+        </p>
+        <p style={{ color: 'var(--text2)', marginBottom: 20, fontSize: 13, lineHeight: 1.6 }}>
+          Kontakt en Superadmin for at få en invitation sendt til din email.
         </p>
         <button className="btn btn-ghost" onClick={() => signOut(auth)}>Log ud</button>
       </div>
@@ -2687,12 +2689,13 @@ function UsersPage({ authUser }) {
   const [removingId, setRemovingId]       = useState(null)
   const [roleError, setRoleError]         = useState('')
 
-  // Grant-panel state
-  const [searchEmail, setSearchEmail]     = useState('')
-  const [searchResult, setSearchResult]   = useState(null) // null | 'not-found' | userObj
-  const [grantType, setGrantType]         = useState('custom') // 'superadmin' | 'custom'
-  const [grantPerms, setGrantPerms]       = useState([])
-  const [granting, setGranting]           = useState(false)
+  // Invitation panel state
+  const [invites, setInvites]             = useState([])
+  const [inviteEmail, setInviteEmail]     = useState('')
+  const [inviteType, setInviteType]       = useState('custom') // 'superadmin' | 'custom'
+  const [invitePerms, setInvitePerms]     = useState([])
+  const [inviting, setInviting]           = useState(false)
+  const [inviteMsg, setInviteMsg]         = useState(null) // { ok, emailSent?, error? }
 
   useEffect(() => {
     getDocs(query(collection(db, 'holds'), where('aktiv', '==', true)))
@@ -2719,30 +2722,53 @@ function UsersPage({ authUser }) {
     } finally { setRemovingId(null) }
   }
 
-  function findUser(e) {
+  function loadInvites() {
+    getDocs(collection(db, 'invitations'))
+      .then(snap => setInvites(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
+      .catch(() => {})
+  }
+
+  useEffect(() => { loadInvites() }, [])
+
+  async function sendInvite(e) {
     e.preventDefault()
-    const email = searchEmail.trim().toLowerCase()
+    const email = inviteEmail.trim().toLowerCase()
     if (!email) return
-    setSearchResult(allUsers.find(u => u.email?.toLowerCase() === email) ?? 'not-found')
-  }
-
-  async function grantAccess() {
-    if (!searchResult || searchResult === 'not-found') return
-    setGranting(true)
+    setInviting(true)
+    setInviteMsg(null)
     try {
-      const updates = grantType === 'superadmin'
-        ? { role: 'admin', permissions: null }
-        : { role: 'trainer', permissions: grantPerms }
-      await updateDoc(doc(db, 'users', searchResult.id), updates)
-      setAllUsers(us => us.map(u => u.id === searchResult.id ? { ...u, ...updates } : u))
-      setSearchEmail(''); setSearchResult(null); setGrantPerms([])
+      const token = await auth.currentUser.getIdToken()
+      const resp  = await fetch('../api/send-invite.php', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body:    JSON.stringify({
+          email,
+          role:        inviteType === 'superadmin' ? 'admin' : 'trainer',
+          permissions: inviteType === 'superadmin' ? null : invitePerms,
+          inviterName: userDoc.displayName || authUser.email,
+        }),
+      })
+      const data = await resp.json()
+      if (!resp.ok || data.error) throw new Error(data.error || 'Ukendt fejl')
+      setInviteMsg({ ok: true, emailSent: data.emailSent })
+      setInviteEmail(''); setInvitePerms([])
+      loadInvites()
     } catch (err) {
-      setRoleError('Kunne ikke tildele adgang: ' + err.message)
-    } finally { setGranting(false) }
+      setInviteMsg({ ok: false, error: err.message })
+    } finally { setInviting(false) }
   }
 
-  function toggleGrantPerm(id) {
-    setGrantPerms(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  async function cancelInvite(email) {
+    try {
+      await deleteDoc(doc(db, 'invitations', email.toLowerCase()))
+      setInvites(prev => prev.filter(i => i.email !== email.toLowerCase()))
+    } catch (err) {
+      alert('Kunne ikke slette invitation: ' + err.message)
+    }
+  }
+
+  function toggleInvitePerm(id) {
+    setInvitePerms(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
   }
 
   function accessSummary(u) {
@@ -2951,84 +2977,97 @@ function UsersPage({ authUser }) {
           )}
         </div>
 
-        {/* Grant panel */}
-        <div className="card card-pad">
-          <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Giv adgang</h3>
+        {/* Invitation panel */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-          <form onSubmit={findUser} style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
-            <label style={{ fontSize: 12, color: 'var(--text2)' }}>Søg bruger på email</label>
-            <input
-              className="form-control"
-              type="email"
-              placeholder="bruger@email.dk"
-              value={searchEmail}
-              onChange={e => { setSearchEmail(e.target.value); setSearchResult(null) }}
-            />
-            <button className="btn btn-ghost btn-sm" type="submit">Søg</button>
-          </form>
+          {/* Send invitation */}
+          <div className="card card-pad">
+            <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Inviter ny bruger</h3>
 
-          {searchResult === 'not-found' && (
-            <div className="alert-error" style={{ fontSize: 12, marginBottom: 12 }}>
-              Ingen bruger med den email. Personen skal først logge ind på backoffice.
-            </div>
-          )}
+            <form onSubmit={sendInvite} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <input
+                className="form-control"
+                type="email"
+                placeholder="bruger@email.dk"
+                value={inviteEmail}
+                onChange={e => { setInviteEmail(e.target.value); setInviteMsg(null) }}
+                required
+              />
 
-          {searchResult && searchResult !== 'not-found' && (
-            <div style={{ background: 'var(--bg)', borderRadius: 8, padding: 12, marginBottom: 12 }}>
-              <div style={{ fontWeight: 600, fontSize: 13 }}>{searchResult.displayName}</div>
-              <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 12 }}>{searchResult.email}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5, margin: '4px 0' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
+                  <input type="radio" checked={inviteType === 'superadmin'} onChange={() => setInviteType('superadmin')} />
+                  Superadmin (fuld adgang)
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
+                  <input type="radio" checked={inviteType === 'custom'} onChange={() => setInviteType('custom')} />
+                  Tilpasset — vælg sider
+                </label>
+              </div>
 
-              {(searchResult.role === 'admin' || searchResult.role === 'trainer') ? (
-                <span className="badge badge-green">Har allerede adgang</span>
-              ) : (
-                <>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
-                      <input type="radio" checked={grantType === 'superadmin'} onChange={() => setGrantType('superadmin')} />
-                      Superadmin (fuld adgang)
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
-                      <input type="radio" checked={grantType === 'custom'} onChange={() => setGrantType('custom')} />
-                      Tilpasset — vælg sider
-                    </label>
-                  </div>
-
-                  {grantType === 'custom' && (
-                    <div style={{ marginBottom: 12 }}>
-                      {PAGE_GROUP_ORDER.map(group => (
-                        <div key={group} style={{ marginBottom: 8 }}>
-                          <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text2)', letterSpacing: '.5px', marginBottom: 4 }}>{group}</div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                            {BACKOFFICE_PAGES.filter(p => p.group === group).map(p => (
-                              <label key={p.id} className={`hold-check-label ${grantPerms.includes(p.id) ? 'selected' : ''}`}>
-                                <input type="checkbox" checked={grantPerms.includes(p.id)} onChange={() => toggleGrantPerm(p.id)} />
-                                {p.label}
-                              </label>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
+              {inviteType === 'custom' && (
+                <div style={{ background: 'var(--bg)', borderRadius: 6, padding: '8px 10px', marginBottom: 4 }}>
+                  {PAGE_GROUP_ORDER.map(group => (
+                    <div key={group} style={{ marginBottom: 8 }}>
+                      <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text2)', letterSpacing: '.5px', marginBottom: 4 }}>{group}</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        {BACKOFFICE_PAGES.filter(p => p.group === group).map(p => (
+                          <label key={p.id} className={`hold-check-label ${invitePerms.includes(p.id) ? 'selected' : ''}`}>
+                            <input type="checkbox" checked={invitePerms.includes(p.id)} onChange={() => toggleInvitePerm(p.id)} />
+                            {p.label}
+                          </label>
+                        ))}
+                      </div>
                     </div>
-                  )}
-
-                  <button
-                    className="btn btn-primary btn-sm"
-                    style={{ width: '100%' }}
-                    disabled={granting || (grantType === 'custom' && grantPerms.length === 0)}
-                    onClick={grantAccess}
-                  >
-                    {granting ? 'Tildeler…' : 'Giv adgang'}
-                  </button>
-                </>
+                  ))}
+                </div>
               )}
+
+              {inviteMsg?.ok && (
+                <div className="alert-info" style={{ fontSize: 12 }}>
+                  Invitation oprettet.{inviteMsg.emailSent ? ' En email er sendt til modtageren.' : ' Email-afsendelse fejlede — del linket manuelt.'}
+                </div>
+              )}
+              {inviteMsg && !inviteMsg.ok && (
+                <div className="alert-error" style={{ fontSize: 12 }}>{inviteMsg.error}</div>
+              )}
+
+              <button
+                className="btn btn-primary btn-sm"
+                type="submit"
+                disabled={inviting || (inviteType === 'custom' && invitePerms.length === 0)}
+              >
+                {inviting ? 'Sender…' : 'Send invitation'}
+              </button>
+            </form>
+          </div>
+
+          {/* Pending invitations */}
+          {invites.length > 0 && (
+            <div className="card">
+              <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', fontSize: 12, fontWeight: 600, color: 'var(--text2)' }}>
+                Afventende invitationer ({invites.length})
+              </div>
+              {invites.map(inv => (
+                <div key={inv.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderBottom: '1px solid var(--border)' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{inv.email}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+                      {inv.role === 'admin' ? 'Superadmin' : inv.permissions?.length > 0 ? `${inv.permissions.length} sider` : 'Redaktør'}
+                    </div>
+                  </div>
+                  <button
+                    className="btn btn-danger btn-sm"
+                    style={{ fontSize: 11, padding: '3px 8px' }}
+                    onClick={() => cancelInvite(inv.email)}
+                  >
+                    Slet
+                  </button>
+                </div>
+              ))}
             </div>
           )}
 
-          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginTop: 4 }}>
-            <p style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.7, margin: 0 }}>
-              En person skal logge ind på backoffice mindst én gang, inden de kan tildeles adgang.
-            </p>
-          </div>
         </div>
       </div>
     </>
@@ -4621,35 +4660,67 @@ export default function AdminApp() {
 
   useEffect(() => {
     return onAuthStateChanged(auth, async fbUser => {
-      if (!fbUser) {
-        setAuthUser(null)
-        setUserDoc(null)
-        return
-      }
+      if (!fbUser) { setAuthUser(null); setUserDoc(null); return }
       setAuthUser(fbUser)
+
       const ref  = doc(db, 'users', fbUser.uid)
       const snap = await getDoc(ref)
-      if (snap.exists()) {
+
+      // 1. Eksisterende bruger med gyldig backoffice-rolle
+      if (snap.exists() && (snap.data().role === 'admin' || snap.data().role === 'trainer')) {
         setUserDoc({ id: snap.id, ...snap.data() })
-      } else {
-        const allSnap = await getDocs(query(collection(db, 'users'), limit(1)))
-        const isFirst = allSnap.empty
-        const newDoc = {
-          email:       fbUser.email,
-          displayName: fbUser.displayName || fbUser.email.split('@')[0],
-          role:        isFirst ? 'admin' : null,
-          holds:       [],
-          createdAt:   serverTimestamp(),
-        }
-        await setDoc(ref, newDoc)
-        setUserDoc({ id: fbUser.uid, ...newDoc })
+        return
       }
+
+      // 2. Første bruger nogensinde → bootstrap-admin
+      if (!snap.exists()) {
+        const adminSnap = await getDocs(query(collection(db, 'users'), where('role', '==', 'admin'), limit(1)))
+        if (adminSnap.empty) {
+          const newDoc = {
+            email:       fbUser.email,
+            displayName: fbUser.displayName || fbUser.email.split('@')[0],
+            role:        'admin',
+            permissions: null,
+            holds:       [],
+            createdAt:   serverTimestamp(),
+          }
+          await setDoc(ref, newDoc)
+          setUserDoc({ id: fbUser.uid, ...newDoc })
+          return
+        }
+      }
+
+      // 3. Tjek for afventende invitation (document-ID = lowercase email)
+      const invEmail = fbUser.email?.toLowerCase()
+      if (invEmail) {
+        try {
+          const invSnap = await getDoc(doc(db, 'invitations', invEmail))
+          if (invSnap.exists()) {
+            const inv    = invSnap.data()
+            const newDoc = {
+              email:       fbUser.email,
+              displayName: fbUser.displayName || fbUser.email.split('@')[0],
+              role:        inv.role,
+              permissions: inv.permissions ?? null,
+              holds:       [],
+              createdAt:   serverTimestamp(),
+            }
+            await setDoc(ref, newDoc)
+            deleteDoc(doc(db, 'invitations', invEmail)).catch(() => {})
+            setUserDoc({ id: fbUser.uid, ...newDoc })
+            return
+          }
+        } catch { /* ingen invitation eller permission denied */ }
+      }
+
+      // 4. Ingen invitation → adgang nægtet
+      setUserDoc({ id: fbUser.uid, email: fbUser.email, role: null })
     })
   }, [])
 
   if (authUser === undefined) return <LoadingScreen />
   if (!authUser)              return <LoginPage />
-  if (!userDoc?.role)         return <UnauthorizedPage user={authUser} />
+  if (userDoc?.role !== 'admin' && userDoc?.role !== 'trainer') return <InvitationRequiredPage user={authUser} />
 
   function renderPage() {
     // Administration is always superadmin-only
