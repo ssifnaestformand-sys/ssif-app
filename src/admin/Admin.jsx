@@ -299,43 +299,46 @@ function UnauthorizedPage({ user }) {
   )
 }
 
+// ─── Backoffice page registry ─────────────────────────────────────────────────
+// Single source of truth for all grantable pages. Used by Sidebar + UsersPage.
+
+const BACKOFFICE_PAGES = [
+  { group: 'App',           id: 'dashboard',     label: 'Dashboard',      icon: 'home'     },
+  { group: 'App',           id: 'news',          label: 'Nyheder',        icon: 'news'     },
+  { group: 'App',           id: 'events',        label: 'Begivenheder',   icon: 'calendar' },
+  { group: 'App',           id: 'banners',       label: 'Forsidebanners', icon: 'star'     },
+  { group: 'App',           id: 'teams',         label: 'Hold',           icon: 'users'    },
+  { group: 'App',           id: 'messages',      label: 'Beskeder',       icon: 'message'  },
+  { group: 'App',           id: 'appusers',      label: 'App-brugere',    icon: 'eye'      },
+  { group: 'App',           id: 'support',       label: 'Support',        icon: 'message'  },
+  { group: 'Kommunikation', id: 'kommunikation', label: 'Kommunikation',  icon: 'sms'      },
+  { group: 'Infoskærme',    id: 'infoscreens',   label: 'Infoskærme',     icon: 'monitor'  },
+]
+
+const PAGE_GROUP_ORDER = ['App', 'Kommunikation', 'Infoskærme']
+
+// Admins get everything. Trainers with no permissions array get all pages (legacy).
+// Trainers with an explicit permissions array get only listed pages.
+function hasPageAccess(userDoc, pageId) {
+  if (userDoc?.role === 'admin') return true
+  const perms = userDoc?.permissions
+  if (perms == null) return userDoc?.role === 'trainer'
+  return perms.includes(pageId)
+}
+
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 
 function Sidebar({ page, setPage, userDoc, user, onLogout }) {
   const isAdmin = userDoc?.role === 'admin'
 
   const groups = [
-    {
-      label: 'App',
-      items: [
-        { id: 'dashboard', label: 'Dashboard',      icon: 'home'     },
-        { id: 'news',      label: 'Nyheder',        icon: 'news'     },
-        { id: 'events',    label: 'Begivenheder',   icon: 'calendar' },
-        { id: 'banners',   label: 'Forsidebanners', icon: 'star'     },
-        { id: 'teams',     label: 'Hold',           icon: 'users'    },
-        { id: 'messages',  label: 'Beskeder',       icon: 'message'  },
-        { id: 'appusers',  label: 'App-brugere',    icon: 'eye'      },
-        { id: 'support',   label: 'Support',        icon: 'message'  },
-      ],
-    },
-    {
-      label: 'Kommunikation',
-      items: [
-        { id: 'kommunikation', label: 'Kommunikation', icon: 'sms' },
-      ],
-    },
-    {
-      label: 'Infoskærme',
-      items: [
-        { id: 'infoscreens', label: 'Infoskærme', icon: 'monitor' },
-      ],
-    },
-    ...(isAdmin ? [{
-      label: 'Administration',
-      items: [
-        { id: 'users', label: 'Adgang', icon: 'shield' },
-      ],
-    }] : []),
+    ...PAGE_GROUP_ORDER
+      .map(label => ({
+        label,
+        items: BACKOFFICE_PAGES.filter(p => p.group === label && hasPageAccess(userDoc, p.id)),
+      }))
+      .filter(g => g.items.length > 0),
+    ...(isAdmin ? [{ label: 'Administration', items: [{ id: 'users', label: 'Adgang', icon: 'shield' }] }] : []),
   ]
 
   return (
@@ -2677,17 +2680,19 @@ function AppUsersPage() {
 // ─── Users ────────────────────────────────────────────────────────────────────
 
 function UsersPage({ authUser }) {
-  const [allUsers, setAllUsers]         = useState([])
-  const [loading, setLoading]           = useState(true)
+  const [allUsers, setAllUsers]           = useState([])
+  const [loading, setLoading]             = useState(true)
   const [availableHolds, setAvailableHolds] = useState([])
-  const [expandedId, setExpandedId]     = useState(null)
-  const [saving, setSaving]             = useState(null)
-  const [roleError, setRoleError]       = useState('')
+  const [expanded, setExpanded]           = useState(null) // { uid, mode: 'perms'|'holds' }
+  const [removingId, setRemovingId]       = useState(null)
+  const [roleError, setRoleError]         = useState('')
 
-  const [searchEmail, setSearchEmail]   = useState('')
-  const [grantRole, setGrantRole]       = useState('trainer')
-  const [searchResult, setSearchResult] = useState(null)
-  const [granting, setGranting]         = useState(false)
+  // Grant-panel state
+  const [searchEmail, setSearchEmail]     = useState('')
+  const [searchResult, setSearchResult]   = useState(null) // null | 'not-found' | userObj
+  const [grantType, setGrantType]         = useState('custom') // 'superadmin' | 'custom'
+  const [grantPerms, setGrantPerms]       = useState([])
+  const [granting, setGranting]           = useState(false)
 
   useEffect(() => {
     getDocs(query(collection(db, 'holds'), where('aktiv', '==', true)))
@@ -2704,107 +2709,169 @@ function UsersPage({ authUser }) {
 
   const accessUsers = allUsers.filter(u => u.role === 'admin' || u.role === 'trainer')
 
-  async function saveRole(uid, role) {
-    setRoleError('')
-    setSaving(uid + '-role')
-    try {
-      await updateDoc(doc(db, 'users', uid), { role })
-      setAllUsers(us => us.map(u => u.id === uid ? { ...u, role } : u))
-    } catch (err) {
-      setRoleError('Kunne ikke gemme rollen: ' + (err.code === 'permission-denied'
-        ? 'Firestore-regler tillader ikke at skrive til andre brugeres dokumenter.'
-        : err.message))
-    } finally { setSaving(null) }
-  }
-
   async function removeAccess(uid) {
-    setSaving(uid + '-role')
+    setRemovingId(uid)
     try {
-      await updateDoc(doc(db, 'users', uid), { role: 'Medlem' })
-      setAllUsers(us => us.map(u => u.id === uid ? { ...u, role: 'Medlem' } : u))
+      await updateDoc(doc(db, 'users', uid), { role: 'Medlem', permissions: null })
+      setAllUsers(us => us.map(u => u.id === uid ? { ...u, role: 'Medlem', permissions: null } : u))
     } catch (err) {
       setRoleError('Kunne ikke fjerne adgang: ' + err.message)
-    } finally { setSaving(null) }
+    } finally { setRemovingId(null) }
   }
 
   function findUser(e) {
     e.preventDefault()
     const email = searchEmail.trim().toLowerCase()
     if (!email) return
-    const found = allUsers.find(u => u.email?.toLowerCase() === email)
-    setSearchResult(found ?? 'not-found')
+    setSearchResult(allUsers.find(u => u.email?.toLowerCase() === email) ?? 'not-found')
   }
 
   async function grantAccess() {
     if (!searchResult || searchResult === 'not-found') return
     setGranting(true)
     try {
-      await updateDoc(doc(db, 'users', searchResult.id), { role: grantRole })
-      setAllUsers(us => us.map(u => u.id === searchResult.id ? { ...u, role: grantRole } : u))
-      setSearchEmail('')
-      setSearchResult(null)
+      const updates = grantType === 'superadmin'
+        ? { role: 'admin', permissions: null }
+        : { role: 'trainer', permissions: grantPerms }
+      await updateDoc(doc(db, 'users', searchResult.id), updates)
+      setAllUsers(us => us.map(u => u.id === searchResult.id ? { ...u, ...updates } : u))
+      setSearchEmail(''); setSearchResult(null); setGrantPerms([])
     } catch (err) {
       setRoleError('Kunne ikke tildele adgang: ' + err.message)
     } finally { setGranting(false) }
   }
 
-  function HoldsEditor({ user }) {
-    const [selected, setSelected] = useState((user.holds ?? []).map(String))
-    function toggle(id) {
-      const s = String(id)
-      setSelected(prev => prev.includes(s) ? prev.filter(h => h !== s) : [...prev, s])
+  function toggleGrantPerm(id) {
+    setGrantPerms(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  }
+
+  function accessSummary(u) {
+    if (u.role === 'admin') return <span className="badge badge-green">Superadmin</span>
+    const perms = u.permissions
+    if (perms == null) return <span className="badge badge-blue">Alle sider</span>
+    if (perms.length === 0) return <span style={{ fontSize: 12, color: 'var(--text3)' }}>Ingen sider</span>
+    return (
+      <span style={{ fontSize: 12, color: 'var(--text2)' }}>
+        {BACKOFFICE_PAGES.filter(p => perms.includes(p.id)).map(p => p.label).join(' · ')}
+      </span>
+    )
+  }
+
+  // PermissionsEditor: edit both page access and (for trainers) holds
+  function PermissionsEditor({ user }) {
+    const [type, setType]       = useState(user.role === 'admin' ? 'superadmin' : 'custom')
+    const [perms, setPerms]     = useState(user.permissions ?? BACKOFFICE_PAGES.map(p => p.id))
+    const [holdsSel, setHoldsSel] = useState((user.holds ?? []).map(String))
+    const [busy, setBusy]       = useState(false)
+
+    function togglePerm(id) {
+      setPerms(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
     }
-    const byType = availableHolds.reduce((acc, h) => {
+    function toggleHold(id) {
+      const s = String(id)
+      setHoldsSel(prev => prev.includes(s) ? prev.filter(h => h !== s) : [...prev, s])
+    }
+
+    const holdsByType = availableHolds.reduce((acc, h) => {
       const t = h.aktivitet_titel || 'Hold'
-      if (!acc[t]) acc[t] = []
-      acc[t].push(h)
+      ;(acc[t] = acc[t] || []).push(h)
       return acc
     }, {})
+
     async function save() {
-      setSaving(user.id + '-holds')
+      setBusy(true)
       try {
-        await updateDoc(doc(db, 'users', user.id), { holds: selected })
-        setAllUsers(us => us.map(u => u.id === user.id ? { ...u, holds: selected } : u))
-        setExpandedId(null)
+        const updates = type === 'superadmin'
+          ? { role: 'admin', permissions: null, holds: holdsSel }
+          : { role: 'trainer', permissions: perms, holds: holdsSel }
+        await updateDoc(doc(db, 'users', user.id), updates)
+        setAllUsers(us => us.map(u => u.id === user.id ? { ...u, ...updates } : u))
+        setExpanded(null)
       } catch (err) {
-        alert('Kunne ikke gemme hold: ' + err.message)
-      } finally { setSaving(null) }
+        setRoleError('Kunne ikke gemme: ' + err.message)
+      } finally { setBusy(false) }
     }
+
     return (
-      <td colSpan={4} style={{ padding: '14px 16px', background: 'var(--bg)' }}>
-        <div style={{ marginBottom: 10, fontWeight: 600, fontSize: 13 }}>Hold for {user.displayName}</div>
-        {availableHolds.length === 0 ? (
-          <p style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 10 }}>
-            Ingen aktive hold — synkronisér hold under Hold-siden.
-          </p>
-        ) : (
-          Object.entries(byType).map(([type, typeHolds]) => (
-            <div key={type} style={{ marginBottom: 10 }}>
-              <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
-                           color: 'var(--text2)', marginBottom: 5 }}>{type}</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 4 }}>
-                {typeHolds.map(h => {
-                  const id = String(h.conventus_id)
-                  return (
-                    <label key={id} className={`hold-check-label ${selected.includes(id) ? 'selected' : ''}`}>
-                      <input type="checkbox" checked={selected.includes(id)} onChange={() => toggle(h.conventus_id)} />
-                      {h.titel}
+      <td colSpan={3} style={{ padding: '16px 20px', background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 14 }}>
+          Rediger adgang for {user.displayName}
+        </div>
+
+        {/* Access level */}
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text2)', letterSpacing: '.5px', marginBottom: 8 }}>Adgangsniveau</div>
+          <div style={{ display: 'flex', gap: 20 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
+              <input type="radio" checked={type === 'superadmin'} onChange={() => setType('superadmin')} />
+              Superadmin (fuld adgang)
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
+              <input type="radio" checked={type === 'custom'} onChange={() => setType('custom')} />
+              Tilpasset — vælg sider
+            </label>
+          </div>
+        </div>
+
+        {/* Page checkboxes (only for custom) */}
+        {type === 'custom' && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, auto)', gap: '0 40px', marginBottom: 16 }}>
+            {PAGE_GROUP_ORDER.map(group => (
+              <div key={group}>
+                <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text2)', letterSpacing: '.5px', marginBottom: 6 }}>{group}</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  {BACKOFFICE_PAGES.filter(p => p.group === group).map(p => (
+                    <label key={p.id} className={`hold-check-label ${perms.includes(p.id) ? 'selected' : ''}`}>
+                      <input type="checkbox" checked={perms.includes(p.id)} onChange={() => togglePerm(p.id)} />
+                      {p.label}
                     </label>
-                  )
-                })}
+                  ))}
+                </div>
               </div>
-            </div>
-          ))
+            ))}
+          </div>
         )}
-        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-          <button className="btn btn-primary btn-sm" disabled={saving === user.id + '-holds'} onClick={save}>
-            {saving === user.id + '-holds' ? 'Gemmer…' : 'Gem hold'}
+
+        {/* Holds (non-admin only) */}
+        {type !== 'superadmin' && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text2)', letterSpacing: '.5px', marginBottom: 8 }}>Tildelte hold</div>
+            {availableHolds.length === 0 ? (
+              <p style={{ fontSize: 12, color: 'var(--text3)', margin: 0 }}>Ingen aktive hold — synkronisér under Hold-siden.</p>
+            ) : (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0 32px' }}>
+                {Object.entries(holdsByType).map(([type, typeHolds]) => (
+                  <div key={type} style={{ minWidth: 160, marginBottom: 8 }}>
+                    <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text2)', letterSpacing: '.5px', marginBottom: 4 }}>{type}</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      {typeHolds.map(h => {
+                        const hid = String(h.conventus_id)
+                        return (
+                          <label key={hid} className={`hold-check-label ${holdsSel.includes(hid) ? 'selected' : ''}`}>
+                            <input type="checkbox" checked={holdsSel.includes(hid)} onChange={() => toggleHold(h.conventus_id)} />
+                            {h.titel}
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-primary btn-sm" disabled={busy} onClick={save}>
+            {busy ? 'Gemmer…' : 'Gem adgang'}
           </button>
-          <button className="btn btn-ghost btn-sm" onClick={() => setExpandedId(null)}>Annuller</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setExpanded(null)}>Annuller</button>
         </div>
       </td>
     )
   }
+
+  const isExpanded = (uid) => expanded?.uid === uid
 
   return (
     <>
@@ -2819,7 +2886,7 @@ function UsersPage({ authUser }) {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 20, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 20, alignItems: 'start' }}>
         <div className="card">
           <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', fontWeight: 600, fontSize: 13 }}>
             Brugere med adgang
@@ -2834,72 +2901,46 @@ function UsersPage({ authUser }) {
                 <thead>
                   <tr>
                     <th>Bruger</th>
-                    <th>Rolle</th>
-                    <th>Tildelte hold</th>
+                    <th>Adgang til</th>
                     <th style={{ width: 130 }}></th>
                   </tr>
                 </thead>
                 <tbody>
                   {accessUsers.map(u => (
                     <Fragment key={u.id}>
-                      <tr style={{ background: expandedId === u.id ? 'var(--bg)' : undefined }}>
+                      <tr style={{ background: isExpanded(u.id) ? 'var(--bg)' : undefined }}>
                         <td>
                           <div style={{ fontWeight: 600, fontSize: 13 }}>{u.displayName}</div>
                           <div style={{ fontSize: 12, color: 'var(--text2)' }}>{u.email}</div>
                         </td>
-                        <td>
-                          <select
-                            className="role-select"
-                            value={u.role || ''}
-                            disabled={u.id === authUser.uid || saving === u.id + '-role'}
-                            onChange={e => saveRole(u.id, e.target.value)}
-                          >
-                            <option value="trainer">Redaktør</option>
-                            <option value="admin">Superadmin</option>
-                          </select>
-                          {u.id === authUser.uid && (
-                            <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 6 }}>(dig selv)</span>
-                          )}
-                        </td>
-                        <td>
-                          {u.role === 'admin' ? (
-                            <span className="badge badge-green">Alle hold</span>
-                          ) : (u.holds ?? []).length > 0 ? (
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-                              {(u.holds ?? []).map(h => {
-                                const found = availableHolds.find(ah => String(ah.conventus_id) === String(h))
-                                return <HoldPill key={h} holdId={h} name={found?.titel} />
-                              })}
-                            </div>
-                          ) : (
-                            <span style={{ fontSize: 12, color: 'var(--text3)' }}>Ingen tildelt</span>
-                          )}
-                        </td>
+                        <td>{accessSummary(u)}</td>
                         <td>
                           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                            {u.role === 'trainer' && (
-                              <button
-                                className="btn btn-ghost btn-sm"
-                                onClick={() => setExpandedId(expandedId === u.id ? null : u.id)}
-                              >
-                                {expandedId === u.id ? 'Luk' : 'Hold'}
-                              </button>
-                            )}
-                            {u.id !== authUser.uid && (
-                              <button
-                                className="btn btn-danger btn-sm"
-                                disabled={saving === u.id + '-role'}
-                                onClick={() => removeAccess(u.id)}
-                              >
-                                Fjern
-                              </button>
+                            {u.id !== authUser.uid ? (
+                              <>
+                                <button
+                                  className="btn btn-ghost btn-sm"
+                                  onClick={() => setExpanded(isExpanded(u.id) ? null : { uid: u.id })}
+                                >
+                                  {isExpanded(u.id) ? 'Luk' : 'Ændr'}
+                                </button>
+                                <button
+                                  className="btn btn-danger btn-sm"
+                                  disabled={removingId === u.id}
+                                  onClick={() => removeAccess(u.id)}
+                                >
+                                  {removingId === u.id ? '…' : 'Fjern'}
+                                </button>
+                              </>
+                            ) : (
+                              <span style={{ fontSize: 11, color: 'var(--text3)' }}>(dig selv)</span>
                             )}
                           </div>
                         </td>
                       </tr>
-                      {expandedId === u.id && (
+                      {isExpanded(u.id) && (
                         <tr key={u.id + '-exp'}>
-                          <HoldsEditor user={u} />
+                          <PermissionsEditor user={u} />
                         </tr>
                       )}
                     </Fragment>
@@ -2910,8 +2951,10 @@ function UsersPage({ authUser }) {
           )}
         </div>
 
+        {/* Grant panel */}
         <div className="card card-pad">
           <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Giv adgang</h3>
+
           <form onSubmit={findUser} style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
             <label style={{ fontSize: 12, color: 'var(--text2)' }}>Søg bruger på email</label>
             <input
@@ -2933,24 +2976,45 @@ function UsersPage({ authUser }) {
           {searchResult && searchResult !== 'not-found' && (
             <div style={{ background: 'var(--bg)', borderRadius: 8, padding: 12, marginBottom: 12 }}>
               <div style={{ fontWeight: 600, fontSize: 13 }}>{searchResult.displayName}</div>
-              <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 10 }}>{searchResult.email}</div>
+              <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 12 }}>{searchResult.email}</div>
+
               {(searchResult.role === 'admin' || searchResult.role === 'trainer') ? (
                 <span className="badge badge-green">Har allerede adgang</span>
               ) : (
                 <>
-                  <select
-                    className="role-select"
-                    value={grantRole}
-                    onChange={e => setGrantRole(e.target.value)}
-                    style={{ marginBottom: 10, width: '100%' }}
-                  >
-                    <option value="trainer">Redaktør</option>
-                    <option value="admin">Superadmin</option>
-                  </select>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
+                      <input type="radio" checked={grantType === 'superadmin'} onChange={() => setGrantType('superadmin')} />
+                      Superadmin (fuld adgang)
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
+                      <input type="radio" checked={grantType === 'custom'} onChange={() => setGrantType('custom')} />
+                      Tilpasset — vælg sider
+                    </label>
+                  </div>
+
+                  {grantType === 'custom' && (
+                    <div style={{ marginBottom: 12 }}>
+                      {PAGE_GROUP_ORDER.map(group => (
+                        <div key={group} style={{ marginBottom: 8 }}>
+                          <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text2)', letterSpacing: '.5px', marginBottom: 4 }}>{group}</div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                            {BACKOFFICE_PAGES.filter(p => p.group === group).map(p => (
+                              <label key={p.id} className={`hold-check-label ${grantPerms.includes(p.id) ? 'selected' : ''}`}>
+                                <input type="checkbox" checked={grantPerms.includes(p.id)} onChange={() => toggleGrantPerm(p.id)} />
+                                {p.label}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   <button
                     className="btn btn-primary btn-sm"
                     style={{ width: '100%' }}
-                    disabled={granting}
+                    disabled={granting || (grantType === 'custom' && grantPerms.length === 0)}
                     onClick={grantAccess}
                   >
                     {granting ? 'Tildeler…' : 'Giv adgang'}
@@ -2961,12 +3025,7 @@ function UsersPage({ authUser }) {
           )}
 
           <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginTop: 4 }}>
-            <p style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.7, margin: 0 }}>
-              <strong>Roller:</strong><br />
-              <strong>Superadmin</strong> — fuld adgang inkl. Administration.<br />
-              <strong>Redaktør</strong> — App, Kommunikation og Infoskærme, men ikke Administration.
-            </p>
-            <p style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.7, marginTop: 10, marginBottom: 0 }}>
+            <p style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.7, margin: 0 }}>
               En person skal logge ind på backoffice mindst én gang, inden de kan tildeles adgang.
             </p>
           </div>
@@ -4593,26 +4652,28 @@ export default function AdminApp() {
   if (!userDoc?.role)         return <UnauthorizedPage user={authUser} />
 
   function renderPage() {
+    // Administration is always superadmin-only
+    if (page === 'users') {
+      return userDoc.role === 'admin'
+        ? <UsersPage authUser={authUser} />
+        : <EmptyState icon="shield" text="Kun Superadmin har adgang til Administration" />
+    }
+    // All other pages respect granular permissions
+    if (!hasPageAccess(userDoc, page)) {
+      return <EmptyState icon="shield" text="Du har ikke adgang til denne side" />
+    }
     switch (page) {
-      case 'dashboard': return <DashboardPage userDoc={userDoc} />
-      case 'messages':  return <MessagesPage  userDoc={userDoc} authUser={authUser} />
-      case 'news':      return <NewsPage       userDoc={userDoc} authUser={authUser} />
-      case 'teams':     return <TeamsPage      userDoc={userDoc} authUser={authUser} />
-      case 'events':    return <EventsPage     userDoc={userDoc} authUser={authUser} />
-      case 'banners':   return <BannersPage    userDoc={userDoc} authUser={authUser} />
-      case 'kommunikation':
-        return <KommunikationPage authUser={authUser} userDoc={userDoc} />
-      case 'support':
-        return <SupportPage authUser={authUser} />
-      case 'appusers':
-        return <AppUsersPage />
-      case 'infoscreens':
-        return <InfoScreensPage authUser={authUser} />
-      case 'users':
-        return userDoc.role === 'admin'
-          ? <UsersPage authUser={authUser} />
-          : <EmptyState icon="shield" text="Kun Superadmin har adgang til Administration" />
-      default:          return null
+      case 'dashboard':    return <DashboardPage    userDoc={userDoc} />
+      case 'messages':     return <MessagesPage      userDoc={userDoc} authUser={authUser} />
+      case 'news':         return <NewsPage          userDoc={userDoc} authUser={authUser} />
+      case 'teams':        return <TeamsPage         userDoc={userDoc} authUser={authUser} />
+      case 'events':       return <EventsPage        userDoc={userDoc} authUser={authUser} />
+      case 'banners':      return <BannersPage       userDoc={userDoc} authUser={authUser} />
+      case 'kommunikation':return <KommunikationPage authUser={authUser} userDoc={userDoc} />
+      case 'support':      return <SupportPage       authUser={authUser} />
+      case 'appusers':     return <AppUsersPage />
+      case 'infoscreens':  return <InfoScreensPage   authUser={authUser} />
+      default:             return null
     }
   }
 
