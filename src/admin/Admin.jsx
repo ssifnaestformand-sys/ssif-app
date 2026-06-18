@@ -302,21 +302,42 @@ function UnauthorizedPage({ user }) {
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 
 function Sidebar({ page, setPage, userDoc, user, onLogout }) {
-  const nav = [
-    { id: 'dashboard', label: 'Dashboard',  icon: 'home'    },
-    { id: 'messages',  label: 'Beskeder',   icon: 'message' },
-    { id: 'news',      label: 'Nyheder',    icon: 'news'    },
-    { id: 'teams',     label: 'Hold',       icon: 'users'   },
-    { id: 'events',  label: 'Begivenheder', icon: 'calendar' },
-    { id: 'banners', label: 'Forsidebanners', icon: 'star'   },
-    ...(userDoc?.role === 'admin' ? [
-      { id: 'infoscreens',  label: 'Infoskærme',    icon: 'monitor' },
-      { id: 'kommunikation', label: 'Kommunikation', icon: 'sms'     },
-      { id: 'support',      label: 'Support',       icon: 'message' },
-      { id: 'appusers',     label: 'App-brugere',   icon: 'eye'     },
-      { id: 'users',        label: 'Adgang',        icon: 'shield'  },
-    ] : []),
+  const isAdmin = userDoc?.role === 'admin'
+
+  const groups = [
+    {
+      label: 'App',
+      items: [
+        { id: 'dashboard', label: 'Dashboard',      icon: 'home'     },
+        { id: 'news',      label: 'Nyheder',        icon: 'news'     },
+        { id: 'events',    label: 'Begivenheder',   icon: 'calendar' },
+        { id: 'banners',   label: 'Forsidebanners', icon: 'star'     },
+        { id: 'teams',     label: 'Hold',           icon: 'users'    },
+        { id: 'messages',  label: 'Beskeder',       icon: 'message'  },
+        { id: 'appusers',  label: 'App-brugere',    icon: 'eye'      },
+        { id: 'support',   label: 'Support',        icon: 'message'  },
+      ],
+    },
+    {
+      label: 'Kommunikation',
+      items: [
+        { id: 'kommunikation', label: 'Kommunikation', icon: 'sms' },
+      ],
+    },
+    {
+      label: 'Infoskærme',
+      items: [
+        { id: 'infoscreens', label: 'Infoskærme', icon: 'monitor' },
+      ],
+    },
+    ...(isAdmin ? [{
+      label: 'Administration',
+      items: [
+        { id: 'users', label: 'Adgang', icon: 'shield' },
+      ],
+    }] : []),
   ]
+
   return (
     <aside className="sidebar">
       <div className="sidebar-logo">
@@ -324,16 +345,20 @@ function Sidebar({ page, setPage, userDoc, user, onLogout }) {
         <div className="sidebar-logo-sub">Backoffice · Sejs-Svejbæk IF</div>
       </div>
       <nav className="sidebar-nav">
-        <div className="nav-section">Navigation</div>
-        {nav.map(item => (
-          <button
-            key={item.id}
-            className={`nav-item ${page === item.id ? 'active' : ''}`}
-            onClick={() => setPage(item.id)}
-          >
-            <Icon name={item.icon} size={16} color="currentColor" />
-            {item.label}
-          </button>
+        {groups.map(group => (
+          <div key={group.label} className="nav-group">
+            <div className="nav-section">{group.label}</div>
+            {group.items.map(item => (
+              <button
+                key={item.id}
+                className={`nav-item ${page === item.id ? 'active' : ''}`}
+                onClick={() => setPage(item.id)}
+              >
+                <Icon name={item.icon} size={16} color="currentColor" />
+                {item.label}
+              </button>
+            ))}
+          </div>
         ))}
       </nav>
       <div className="sidebar-footer">
@@ -344,7 +369,7 @@ function Sidebar({ page, setPage, userDoc, user, onLogout }) {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="sidebar-user-name">{userDoc?.displayName || user.email}</div>
             <div className="sidebar-user-role">
-              {userDoc?.role === 'admin' ? 'Administrator' : 'Træner'}
+              {isAdmin ? 'Superadmin' : 'Redaktør'}
             </div>
           </div>
         </div>
@@ -2652,17 +2677,19 @@ function AppUsersPage() {
 // ─── Users ────────────────────────────────────────────────────────────────────
 
 function UsersPage({ authUser }) {
-  const [users, setUsers]               = useState([])
+  const [allUsers, setAllUsers]         = useState([])
   const [loading, setLoading]           = useState(true)
   const [availableHolds, setAvailableHolds] = useState([])
-  const [inviteEmail, setInviteEmail]   = useState('')
-  const [inviting, setInviting]         = useState(false)
-  const [inviteSent, setInviteSent]     = useState(false)
   const [expandedId, setExpandedId]     = useState(null)
   const [saving, setSaving]             = useState(null)
+  const [roleError, setRoleError]       = useState('')
+
+  const [searchEmail, setSearchEmail]   = useState('')
+  const [grantRole, setGrantRole]       = useState('trainer')
+  const [searchResult, setSearchResult] = useState(null)
+  const [granting, setGranting]         = useState(false)
 
   useEffect(() => {
-    // Hent aktive hold fra Firestore til brug i hold-tildeling
     getDocs(query(collection(db, 'holds'), where('aktiv', '==', true)))
       .then(snap => setAvailableHolds(snap.docs.map(d => ({ _id: d.id, ...d.data() }))))
       .catch(() => {})
@@ -2670,60 +2697,58 @@ function UsersPage({ authUser }) {
 
   useEffect(() => {
     getDocs(collection(db, 'users')).then(snap => {
-      setUsers(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+      setAllUsers(snap.docs.map(d => ({ id: d.id, ...d.data() })))
       setLoading(false)
     })
   }, [])
 
-  const [roleError, setRoleError] = useState('')
+  const accessUsers = allUsers.filter(u => u.role === 'admin' || u.role === 'trainer')
 
   async function saveRole(uid, role) {
     setRoleError('')
     setSaving(uid + '-role')
     try {
       await updateDoc(doc(db, 'users', uid), { role })
-      setUsers(us => us.map(u => u.id === uid ? { ...u, role } : u))
+      setAllUsers(us => us.map(u => u.id === uid ? { ...u, role } : u))
     } catch (err) {
       setRoleError('Kunne ikke gemme rollen: ' + (err.code === 'permission-denied'
-        ? 'Firestore-regler tillader ikke at skrive til andre brugeres dokumenter. Tjek sikkerhedsreglerne i Firebase-konsollen.'
+        ? 'Firestore-regler tillader ikke at skrive til andre brugeres dokumenter.'
         : err.message))
-    } finally {
-      setSaving(null)
-    }
+    } finally { setSaving(null) }
   }
 
-  async function saveHolds(uid, holds) {
-    setSaving(uid + '-holds')
+  async function removeAccess(uid) {
+    setSaving(uid + '-role')
     try {
-      await updateDoc(doc(db, 'users', uid), { holds })
-      setUsers(us => us.map(u => u.id === uid ? { ...u, holds } : u))
-      setExpandedId(null)
+      await updateDoc(doc(db, 'users', uid), { role: 'Medlem' })
+      setAllUsers(us => us.map(u => u.id === uid ? { ...u, role: 'Medlem' } : u))
     } catch (err) {
-      alert('Kunne ikke gemme hold: ' + err.message)
-    } finally {
-      setSaving(null)
-    }
+      setRoleError('Kunne ikke fjerne adgang: ' + err.message)
+    } finally { setSaving(null) }
   }
 
-  async function sendInvite(e) {
+  function findUser(e) {
     e.preventDefault()
-    if (!inviteEmail.trim()) return
-    setInviting(true)
+    const email = searchEmail.trim().toLowerCase()
+    if (!email) return
+    const found = allUsers.find(u => u.email?.toLowerCase() === email)
+    setSearchResult(found ?? 'not-found')
+  }
+
+  async function grantAccess() {
+    if (!searchResult || searchResult === 'not-found') return
+    setGranting(true)
     try {
-      await sendSignInLinkToEmail(auth, inviteEmail.trim(), {
-        url: window.location.href,
-        handleCodeInApp: true,
-      })
-      setInviteSent(true)
-      setInviteEmail('')
-      setTimeout(() => setInviteSent(false), 4000)
-    } finally {
-      setInviting(false)
-    }
+      await updateDoc(doc(db, 'users', searchResult.id), { role: grantRole })
+      setAllUsers(us => us.map(u => u.id === searchResult.id ? { ...u, role: grantRole } : u))
+      setSearchEmail('')
+      setSearchResult(null)
+    } catch (err) {
+      setRoleError('Kunne ikke tildele adgang: ' + err.message)
+    } finally { setGranting(false) }
   }
 
   function HoldsEditor({ user }) {
-    // selected = array af conventus_id-strings
     const [selected, setSelected] = useState((user.holds ?? []).map(String))
     function toggle(id) {
       const s = String(id)
@@ -2735,8 +2760,18 @@ function UsersPage({ authUser }) {
       acc[t].push(h)
       return acc
     }, {})
+    async function save() {
+      setSaving(user.id + '-holds')
+      try {
+        await updateDoc(doc(db, 'users', user.id), { holds: selected })
+        setAllUsers(us => us.map(u => u.id === user.id ? { ...u, holds: selected } : u))
+        setExpandedId(null)
+      } catch (err) {
+        alert('Kunne ikke gemme hold: ' + err.message)
+      } finally { setSaving(null) }
+    }
     return (
-      <td colSpan={5} style={{ padding: '14px 16px', background: 'var(--bg)' }}>
+      <td colSpan={4} style={{ padding: '14px 16px', background: 'var(--bg)' }}>
         <div style={{ marginBottom: 10, fontWeight: 600, fontSize: 13 }}>Hold for {user.displayName}</div>
         {availableHolds.length === 0 ? (
           <p style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 10 }}>
@@ -2762,8 +2797,7 @@ function UsersPage({ authUser }) {
           ))
         )}
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-          <button className="btn btn-primary btn-sm" disabled={saving === user.id + '-holds'}
-                  onClick={() => saveHolds(user.id, selected)}>
+          <button className="btn btn-primary btn-sm" disabled={saving === user.id + '-holds'} onClick={save}>
             {saving === user.id + '-holds' ? 'Gemmer…' : 'Gem hold'}
           </button>
           <button className="btn btn-ghost btn-sm" onClick={() => setExpandedId(null)}>Annuller</button>
@@ -2775,22 +2809,25 @@ function UsersPage({ authUser }) {
   return (
     <>
       <div className="page-header">
-        <h1 className="page-title">Brugere</h1>
+        <h1 className="page-title">Backoffice-adgang</h1>
       </div>
 
       {roleError && (
         <div className="alert-error" style={{ marginBottom: 16 }}>
-          <strong>Fejl ved rolle-ændring:</strong> {roleError}
+          <strong>Fejl:</strong> {roleError}
           <button onClick={() => setRoleError('')} style={{ float: 'right', background: 'none', border: 'none', cursor: 'pointer', opacity: .6 }}>✕</button>
         </div>
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 20, alignItems: 'start' }}>
         <div className="card">
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', fontWeight: 600, fontSize: 13 }}>
+            Brugere med adgang
+          </div>
           {loading ? (
-            <div className="loading-dots"><span/><span/><span/></div>
-          ) : users.length === 0 ? (
-            <EmptyState icon="person" text="Ingen brugere endnu" />
+            <div className="loading-dots" style={{ padding: 20 }}><span/><span/><span/></div>
+          ) : accessUsers.length === 0 ? (
+            <EmptyState icon="shield" text="Ingen brugere har backoffice-adgang endnu" />
           ) : (
             <div className="table-wrap">
               <table>
@@ -2799,13 +2836,13 @@ function UsersPage({ authUser }) {
                     <th>Bruger</th>
                     <th>Rolle</th>
                     <th>Tildelte hold</th>
-                    <th style={{ width: 80 }}></th>
+                    <th style={{ width: 130 }}></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {users.map(u => (
-                    <>
-                      <tr key={u.id} style={{ background: expandedId === u.id ? 'var(--bg)' : undefined }}>
+                  {accessUsers.map(u => (
+                    <Fragment key={u.id}>
+                      <tr style={{ background: expandedId === u.id ? 'var(--bg)' : undefined }}>
                         <td>
                           <div style={{ fontWeight: 600, fontSize: 13 }}>{u.displayName}</div>
                           <div style={{ fontSize: 12, color: 'var(--text2)' }}>{u.email}</div>
@@ -2817,9 +2854,8 @@ function UsersPage({ authUser }) {
                             disabled={u.id === authUser.uid || saving === u.id + '-role'}
                             onChange={e => saveRole(u.id, e.target.value)}
                           >
-                            <option value="">– ingen –</option>
-                            <option value="trainer">Træner</option>
-                            <option value="admin">Admin</option>
+                            <option value="trainer">Redaktør</option>
+                            <option value="admin">Superadmin</option>
                           </select>
                           {u.id === authUser.uid && (
                             <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 6 }}>(dig selv)</span>
@@ -2840,14 +2876,25 @@ function UsersPage({ authUser }) {
                           )}
                         </td>
                         <td>
-                          {u.role === 'trainer' && (
-                            <button
-                              className="btn btn-ghost btn-sm"
-                              onClick={() => setExpandedId(expandedId === u.id ? null : u.id)}
-                            >
-                              {expandedId === u.id ? 'Luk' : 'Hold'}
-                            </button>
-                          )}
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            {u.role === 'trainer' && (
+                              <button
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => setExpandedId(expandedId === u.id ? null : u.id)}
+                              >
+                                {expandedId === u.id ? 'Luk' : 'Hold'}
+                              </button>
+                            )}
+                            {u.id !== authUser.uid && (
+                              <button
+                                className="btn btn-danger btn-sm"
+                                disabled={saving === u.id + '-role'}
+                                onClick={() => removeAccess(u.id)}
+                              >
+                                Fjern
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                       {expandedId === u.id && (
@@ -2855,7 +2902,7 @@ function UsersPage({ authUser }) {
                           <HoldsEditor user={u} />
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
@@ -2864,13 +2911,65 @@ function UsersPage({ authUser }) {
         </div>
 
         <div className="card card-pad">
-          <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>Sådan tilføjes en ny bruger</h3>
-          <ol style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.8, paddingLeft: 18, margin: 0 }}>
-            <li>Bed brugeren logge ind på backoffice med Google, Facebook eller email/adgangskode</li>
-            <li>De vil se "Ingen adgang" — det er korrekt</li>
-            <li>Deres konto vises nu i listen til venstre</li>
-            <li>Tildel dem rollen <strong>Træner</strong> eller <strong>Admin</strong></li>
-          </ol>
+          <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Giv adgang</h3>
+          <form onSubmit={findUser} style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+            <label style={{ fontSize: 12, color: 'var(--text2)' }}>Søg bruger på email</label>
+            <input
+              className="form-control"
+              type="email"
+              placeholder="bruger@email.dk"
+              value={searchEmail}
+              onChange={e => { setSearchEmail(e.target.value); setSearchResult(null) }}
+            />
+            <button className="btn btn-ghost btn-sm" type="submit">Søg</button>
+          </form>
+
+          {searchResult === 'not-found' && (
+            <div className="alert-error" style={{ fontSize: 12, marginBottom: 12 }}>
+              Ingen bruger med den email. Personen skal først logge ind på backoffice.
+            </div>
+          )}
+
+          {searchResult && searchResult !== 'not-found' && (
+            <div style={{ background: 'var(--bg)', borderRadius: 8, padding: 12, marginBottom: 12 }}>
+              <div style={{ fontWeight: 600, fontSize: 13 }}>{searchResult.displayName}</div>
+              <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 10 }}>{searchResult.email}</div>
+              {(searchResult.role === 'admin' || searchResult.role === 'trainer') ? (
+                <span className="badge badge-green">Har allerede adgang</span>
+              ) : (
+                <>
+                  <select
+                    className="role-select"
+                    value={grantRole}
+                    onChange={e => setGrantRole(e.target.value)}
+                    style={{ marginBottom: 10, width: '100%' }}
+                  >
+                    <option value="trainer">Redaktør</option>
+                    <option value="admin">Superadmin</option>
+                  </select>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    style={{ width: '100%' }}
+                    disabled={granting}
+                    onClick={grantAccess}
+                  >
+                    {granting ? 'Tildeler…' : 'Giv adgang'}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginTop: 4 }}>
+            <p style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.7, margin: 0 }}>
+              <strong>Roller:</strong><br />
+              <strong>Superadmin</strong> — fuld adgang inkl. Administration.<br />
+              <strong>Redaktør</strong> — App, Kommunikation og Infoskærme, men ikke Administration.
+            </p>
+            <p style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.7, marginTop: 10, marginBottom: 0 }}>
+              En person skal logge ind på backoffice mindst én gang, inden de kan tildeles adgang.
+            </p>
+          </div>
         </div>
       </div>
     </>
@@ -4502,25 +4601,17 @@ export default function AdminApp() {
       case 'events':    return <EventsPage     userDoc={userDoc} authUser={authUser} />
       case 'banners':   return <BannersPage    userDoc={userDoc} authUser={authUser} />
       case 'kommunikation':
-        return userDoc.role === 'admin'
-          ? <KommunikationPage authUser={authUser} userDoc={userDoc} />
-          : <EmptyState icon="shield" text="Kun administratorer har adgang" />
+        return <KommunikationPage authUser={authUser} userDoc={userDoc} />
       case 'support':
-        return userDoc.role === 'admin'
-          ? <SupportPage authUser={authUser} />
-          : <EmptyState icon="shield" text="Kun administratorer har adgang" />
+        return <SupportPage authUser={authUser} />
       case 'appusers':
-        return userDoc.role === 'admin'
-          ? <AppUsersPage />
-          : <EmptyState icon="shield" text="Kun administratorer har adgang" />
+        return <AppUsersPage />
       case 'infoscreens':
-        return userDoc.role === 'admin'
-          ? <InfoScreensPage authUser={authUser} />
-          : <EmptyState icon="shield" text="Kun administratorer har adgang" />
+        return <InfoScreensPage authUser={authUser} />
       case 'users':
         return userDoc.role === 'admin'
           ? <UsersPage authUser={authUser} />
-          : <EmptyState icon="shield" text="Kun administratorer har adgang til brugerstyring" />
+          : <EmptyState icon="shield" text="Kun Superadmin har adgang til Administration" />
       default:          return null
     }
   }
@@ -4534,7 +4625,7 @@ export default function AdminApp() {
           <div className="topbar-right">
             <span>{userDoc?.email || authUser.email}</span>
             <span className={`badge ${userDoc.role === 'admin' ? 'badge-green' : 'badge-blue'}`}>
-              {userDoc.role === 'admin' ? 'Administrator' : 'Træner'}
+              {userDoc.role === 'admin' ? 'Superadmin' : 'Redaktør'}
             </span>
           </div>
         </header>
