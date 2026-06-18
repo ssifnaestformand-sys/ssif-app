@@ -2681,7 +2681,7 @@ function AppUsersPage() {
 
 // ─── Users ────────────────────────────────────────────────────────────────────
 
-function UsersPage({ authUser }) {
+function UsersPage({ authUser, userDoc }) {
   const [allUsers, setAllUsers]           = useState([])
   const [loading, setLoading]             = useState(true)
   const [availableHolds, setAvailableHolds] = useState([])
@@ -4726,7 +4726,7 @@ export default function AdminApp() {
     // Administration is always superadmin-only
     if (page === 'users') {
       return userDoc.role === 'admin'
-        ? <UsersPage authUser={authUser} />
+        ? <UsersPage authUser={authUser} userDoc={userDoc} />
         : <EmptyState icon="shield" text="Kun Superadmin har adgang til Administration" />
     }
     // All other pages respect granular permissions
