@@ -3125,20 +3125,20 @@ function KommunikationPage({ authUser, userDoc }) {
   // ── Selection helpers ─────────────────────────────────────────────────────────
   const holdSearchQ      = holdSearch.toLowerCase()
   const afdHoldMap       = {}
-  afdelinger.forEach(a => { afdHoldMap[a.id] = [] })
+  afdelinger.forEach(a => { afdHoldMap[String(a.id)] = [] })
   holds.forEach(h => { const aid = String(h.afdeling_id ?? ''); if (!afdHoldMap[aid]) afdHoldMap[aid] = []; afdHoldMap[aid].push(h) })
-  const afdMatchesSearch  = a => !holdSearchQ || (a.navn||'').toLowerCase().includes(holdSearchQ) || (afdHoldMap[a.id]||[]).some(h => (h.titel||'').toLowerCase().includes(holdSearchQ))
+  const afdMatchesSearch  = a => !holdSearchQ || (a.navn||'').toLowerCase().includes(holdSearchQ) || (afdHoldMap[String(a.id)]||[]).some(h => (h.titel||'').toLowerCase().includes(holdSearchQ))
   const holdMatchesSearch = h => !holdSearchQ || (h.titel||'').toLowerCase().includes(holdSearchQ)
-  const orphanHolds       = holds.filter(h => !afdelinger.find(a => a.id === String(h.afdeling_id ?? '')))
+  const orphanHolds       = holds.filter(h => !afdelinger.find(a => String(a.id) === String(h.afdeling_id ?? '')))
 
   function isHoldChecked(cid)   { return selectedHolds.has(cid) }
   function isHoldPartial(cid)   { const v = selectedHolds.get(cid); return v instanceof Set }
   function isAfdChecked(afd)    {
-    const hs = (afdHoldMap[afd.id] || []).filter(holdMatchesSearch)
+    const hs = (afdHoldMap[String(afd.id)] || []).filter(holdMatchesSearch)
     return hs.length > 0 && hs.every(h => selectedHolds.has(String(h.conventus_id)))
   }
   function isAfdPartial(afd)    {
-    const hs = (afdHoldMap[afd.id] || []).filter(holdMatchesSearch)
+    const hs = (afdHoldMap[String(afd.id)] || []).filter(holdMatchesSearch)
     return !isAfdChecked(afd) && hs.some(h => selectedHolds.has(String(h.conventus_id)))
   }
 
@@ -3152,7 +3152,7 @@ function KommunikationPage({ authUser, userDoc }) {
   }
 
   function toggleAfd(afd) {
-    const hs      = (afdHoldMap[afd.id] || []).filter(holdMatchesSearch)
+    const hs      = (afdHoldMap[String(afd.id)] || []).filter(holdMatchesSearch)
     const checked = isAfdChecked(afd)
     setSelectedHolds(prev => {
       const next = new Map(prev)
@@ -3528,7 +3528,7 @@ function KommunikationPage({ authUser, userDoc }) {
                 {/* Accordion */}
                 <div style={{ borderRadius: 10, border: '1px solid var(--sep)', overflow: 'hidden', maxHeight: 420, overflowY: 'auto' }}>
                   {afdelinger.filter(afdMatchesSearch).map((afd, idx) => {
-                    const afdHolds   = (afdHoldMap[afd.id] || []).filter(holdMatchesSearch)
+                    const afdHolds   = (afdHoldMap[String(afd.id)] || []).filter(holdMatchesSearch)
                     const isExpanded = expandedAfds.has(afd.id) || !!holdSearchQ
                     const afdChk     = isAfdChecked(afd)
                     const afdPart    = isAfdPartial(afd)
@@ -3552,7 +3552,7 @@ function KommunikationPage({ authUser, userDoc }) {
                             </div>
                             <div style={{ flex: 1 }}>
                               <div style={{ fontSize: 13, fontWeight: 600, color: afdChk ? 'var(--green)' : 'var(--text)' }}>{afd.navn}</div>
-                              <div style={{ fontSize: 11, color: 'var(--text3)' }}>{(afdHoldMap[afd.id]||[]).length} hold</div>
+                              <div style={{ fontSize: 11, color: 'var(--text3)' }}>{(afdHoldMap[String(afd.id)]||[]).length} hold</div>
                             </div>
                             <span style={{ fontSize: 11, color: 'var(--text3)', flexShrink: 0 }}>{isExpanded ? '▲' : '▼'}</span>
                           </button>
