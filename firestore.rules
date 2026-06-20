@@ -60,9 +60,9 @@ service cloud.firestore {
     }
 
     // ── Medlemmer (synkroniseret fra Conventus) ───────────────────────────────
-    // Kun rigtige brugere. Indeholder telefonnumre og e-mails.
+    // Indeholder telefonnumre og e-mails — kun trænere og admins må læse.
     match /members/{memberId} {
-      allow read:  if isRealUser();
+      allow read:  if isTrainerOrAdmin();
       allow write: if isAdmin();
     }
 

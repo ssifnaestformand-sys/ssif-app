@@ -3236,7 +3236,6 @@ function KommunikationPage({ authUser, userDoc }) {
   }
 
   function getSpecificEmails() {
-    // Email channel only: resolve individual emails from cached members
     const emails = new Set()
     for (const [holdCid, sel] of selectedHolds) {
       if (!(sel instanceof Set)) continue
@@ -3248,6 +3247,19 @@ function KommunikationPage({ authUser, userDoc }) {
       }
     }
     return [...emails]
+  }
+
+  function getSpecificPhones() {
+    const phones = new Set()
+    for (const [holdCid, sel] of selectedHolds) {
+      if (!(sel instanceof Set)) continue
+      const mems = holdMembers[holdCid] || []
+      for (const memberId of sel) {
+        const m = mems.find(x => x.id === memberId)
+        if (m?.mobil) phones.add(m.mobil)
+      }
+    }
+    return [...phones]
   }
 
   const canSend = text.trim()
@@ -3267,11 +3279,13 @@ function KommunikationPage({ authUser, userDoc }) {
 
   function buildBody(action) {
     const specificEmails = channel === 'email' ? getSpecificEmails() : []
+    const specificPhones = channel === 'sms'   ? getSpecificPhones() : []
     return JSON.stringify({
       action,
       scope:           scope === 'holds' ? 'gruppe' : scope,
       hold_ids:        getHoldIds(),
       specific_emails: specificEmails.length > 0 ? specificEmails : undefined,
+      specific_phones: specificPhones.length > 0 ? specificPhones : undefined,
       scope_label:     buildScopeLabel(),
       sender:          sender.trim() || 'SSIF',
       subject:         subject.trim(),
@@ -3559,12 +3573,10 @@ function KommunikationPage({ authUser, userDoc }) {
                                 <span style={{ flex: 1, fontSize: 13, color: chk ? 'var(--green)' : 'var(--text)', fontWeight: chk ? 600 : 400 }}>{h.titel}</span>
                                 {partial && <span style={{ fontSize: 10, color: 'var(--green)', background: '#dcfce7', padding: '1px 5px', borderRadius: 3, flexShrink: 0 }}>{partialCnt} valgt</span>}
                                 {chk && !partial && <span style={{ fontSize: 10, color: 'var(--green)', flexShrink: 0 }}>Alle</span>}
-                                {channel === 'email' && (
-                                  <button onClick={() => openPicker(cid)}
-                                    style={{ fontSize: 11, color: pickerOpen ? 'var(--green)' : 'var(--text3)', background: pickerOpen ? '#dcfce7' : 'transparent', border: `1px solid ${pickerOpen ? 'var(--green)' : 'var(--sep)'}`, borderRadius: 4, padding: '2px 7px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}>
-                                    Modtagere {pickerOpen ? '▲' : '▼'}
-                                  </button>
-                                )}
+                                <button onClick={() => openPicker(cid)}
+                                  style={{ fontSize: 11, color: pickerOpen ? 'var(--green)' : 'var(--text3)', background: pickerOpen ? '#dcfce7' : 'transparent', border: `1px solid ${pickerOpen ? 'var(--green)' : 'var(--sep)'}`, borderRadius: 4, padding: '2px 7px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                                  Modtagere {pickerOpen ? '▲' : '▼'}
+                                </button>
                               </div>
 
                               {/* Member picker */}
@@ -3605,7 +3617,10 @@ function KommunikationPage({ authUser, userDoc }) {
                                               style={{ accentColor: 'var(--green)', width: 13, height: 13, flexShrink: 0 }}
                                             />
                                             <span style={{ flex: 1, fontWeight: 500 }}>{m.name}</span>
-                                            {m.email && <span style={{ fontSize: 11, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180, whiteSpace: 'nowrap' }}>{m.email}</span>}
+                                            {channel === 'sms'
+                                              ? (m.mobil && <span style={{ fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap' }}>{m.mobil}</span>)
+                                              : (m.email && <span style={{ fontSize: 11, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180, whiteSpace: 'nowrap' }}>{m.email}</span>)
+                                            }
                                           </label>
                                         ))}
                                       </div>
@@ -3643,12 +3658,10 @@ function KommunikationPage({ authUser, userDoc }) {
                                 style={{ accentColor: 'var(--green)', width: 14, height: 14, flexShrink: 0 }} />
                               <span style={{ flex: 1, fontSize: 13, color: chk ? 'var(--green)' : 'var(--text)', fontWeight: chk ? 600 : 400 }}>{h.titel}</span>
                               {partial && <span style={{ fontSize: 10, color: 'var(--green)', background: '#dcfce7', padding: '1px 5px', borderRadius: 3 }}>{selectedHolds.get(cid).size} valgt</span>}
-                              {channel === 'email' && (
-                                <button onClick={() => openPicker(cid)}
-                                  style={{ fontSize: 11, color: pickerOpen ? 'var(--green)' : 'var(--text3)', background: pickerOpen ? '#dcfce7' : 'transparent', border: `1px solid ${pickerOpen ? 'var(--green)' : 'var(--sep)'}`, borderRadius: 4, padding: '2px 7px', cursor: 'pointer' }}>
-                                  Modtagere {pickerOpen ? '▲' : '▼'}
-                                </button>
-                              )}
+                              <button onClick={() => openPicker(cid)}
+                                style={{ fontSize: 11, color: pickerOpen ? 'var(--green)' : 'var(--text3)', background: pickerOpen ? '#dcfce7' : 'transparent', border: `1px solid ${pickerOpen ? 'var(--green)' : 'var(--sep)'}`, borderRadius: 4, padding: '2px 7px', cursor: 'pointer' }}>
+                                Modtagere {pickerOpen ? '▲' : '▼'}
+                              </button>
                             </div>
                             {pickerOpen && (
                               <div style={{ background: 'white', borderTop: '1px solid var(--sep)', padding: '10px 12px 10px 36px' }}>
@@ -3669,7 +3682,10 @@ function KommunikationPage({ authUser, userDoc }) {
                                             <input type="checkbox" checked={isMemberChecked(cid, m.id)} onChange={() => toggleMemberInPicker(cid, m.id)}
                                               style={{ accentColor: 'var(--green)', width: 13, height: 13, flexShrink: 0 }} />
                                             <span style={{ flex: 1 }}>{m.name}</span>
-                                            {m.email && <span style={{ fontSize: 11, color: 'var(--text3)' }}>{m.email}</span>}
+                                            {channel === 'sms'
+                                              ? (m.mobil && <span style={{ fontSize: 11, color: 'var(--text3)' }}>{m.mobil}</span>)
+                                              : (m.email && <span style={{ fontSize: 11, color: 'var(--text3)' }}>{m.email}</span>)
+                                            }
                                           </label>
                                         ))}
                                       </div>

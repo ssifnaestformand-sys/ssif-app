@@ -84,6 +84,12 @@ if (mb_strlen($text) > 480)   { http_response_code(400); echo json_encode(['erro
 if (!in_array($action, ['preview', 'send'], true)) { http_response_code(400); echo json_encode(['error' => 'Ukendt action']); exit; }
 if (!in_array($scope, ['all', 'gruppe', 'manual'], true)) { http_response_code(400); echo json_encode(['error' => 'Ukendt scope']); exit; }
 
+// Specifikke numre fra member-picker (allerede normaliseret som E.164-strenge fra frontend)
+$specificPhones = array_values(array_unique(array_filter(
+    array_map(fn($p) => to_msisdn(ltrim(trim((string)$p), '+'), '45'), (array)($input['specific_phones'] ?? [])),
+    fn($p) => $p !== null
+)));
+
 $parts = sms_parts($text);
 
 // ── Manuel scope: parse numre direkte, ingen Conventus-kald ──────────────────
@@ -122,6 +128,11 @@ $targetGroupIds = array_values(array_unique(array_filter(array_map('intval', $ra
 $dbg     = ($action === 'preview');
 $result  = fetch_conventus_msisdns_debug($conventusKey, $targetGroupIds, $dbg);
 $msisdns = $result['msisdns'];
+
+// Flyt specifikt valgte numre fra picker ind (deduplikeret)
+if (!empty($specificPhones)) {
+    $msisdns = array_values(array_unique(array_merge($msisdns, $specificPhones)));
+}
 
 if (count($msisdns) > MAX_RECIPIENTS) {
     http_response_code(400);

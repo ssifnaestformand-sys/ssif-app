@@ -188,11 +188,32 @@ function parse_members_stream(string $raw, array $holdsMap): array {
     return $members;
 }
 
+function normalize_phone(string $number, string $dialCode = '45'): ?string {
+    $number   = preg_replace('/\D/', '', $number);
+    $dialCode = preg_replace('/\D/', '', $dialCode) ?: '45';
+    if (!$number) return null;
+    if (strpos($number, $dialCode) === 0 && strlen($number) > 8) {
+        $number = substr($number, strlen($dialCode));
+    }
+    $number = ltrim($number, '0');
+    if (!$number) return null;
+    $msisdn = $dialCode . $number;
+    return (strlen($msisdn) >= 7 && strlen($msisdn) <= 15) ? '+' . $msisdn : null;
+}
+
 function extract_member(SimpleXMLElement $k, int $id, array $holdsMap): ?array {
     $name  = trim((string)($k->navn ?? '')) ?: 'Ukendt';
     $email = strtolower(trim((string)($k->email ?? '')));
 
     if (!$email || !filter_var($email, FILTER_VALIDATE_EMAIL)) return null;
+
+    // Telefonnummer — respektér off_mobil-fravalg
+    $mobilRaw  = trim((string)($k->mobil          ?? ''));
+    $mobilCode = trim((string)($k->mobil_dialCode  ?? '')) ?: '45';
+    $offMobil  = strtolower(trim((string)($k->off_mobil ?? 'true')));
+    $mobil     = ($mobilRaw && $offMobil !== 'false')
+                 ? normalize_phone($mobilRaw, $mobilCode)
+                 : null;
 
     // Hold-IDs fra <relationer><leder|membre><gruppe>
     // <leder>-relationer bruges til at identificere trænere/ledere
@@ -224,6 +245,7 @@ function extract_member(SimpleXMLElement $k, int $id, array $holdsMap): ?array {
         'conventus_id' => $id,
         'name'         => $name,
         'allEmails'    => [$email],
+        'mobil'        => $mobil,
         'holds'        => $holds,
         'holdIds'      => array_map(fn($h) => (string)$h['conventus_id'], $holds),
         'lederHolds'   => $lederHolds,
