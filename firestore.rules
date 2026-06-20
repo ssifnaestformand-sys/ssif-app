@@ -52,6 +52,12 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ── Afdelinger ───────────────────────────────────────────────────────────
+    match /afdelinger/{afdId} {
+      allow read:  if isRealUser();
+      allow write: if isAdmin();
+    }
+
     // ── Hold ─────────────────────────────────────────────────────────────────
     // Kun rigtige brugere (ikke anonyme infoskærme) kan læse hold.
     match /holds/{holdId} {
