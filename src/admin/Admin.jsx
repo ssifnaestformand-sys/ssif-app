@@ -3081,12 +3081,14 @@ function KommunikationPage({ authUser, userDoc }) {
   const [sender,     setSender]     = useState('SSIF') // SMS afsender-ID
   const [subject,    setSubject]    = useState('')      // Email emne
   const [text,       setText]       = useState('')
-  const [scope,      setScope]      = useState('all')  // 'all' | 'gruppe' | 'manual'
-  const [manualInput,setManualInput]= useState('')      // SMS-kun: manuelle numre
-  const [gruppeType, setGruppeType] = useState('')     // 'afdeling' | 'hold'
-  const [scopeId,    setScopeId]    = useState('')
+  const [scope,         setScope]         = useState('all') // 'all' | 'holds' | 'manual'
+  const [manualInput,   setManualInput]   = useState('')
+  const [selectedHolds, setSelectedHolds] = useState(new Map()) // Map<cid_string, 'all'|Set<memberId>>
   const [holdSearch,    setHoldSearch]    = useState('')
   const [expandedAfds,  setExpandedAfds]  = useState(new Set())
+  const [pickerHoldId,  setPickerHoldId]  = useState(null)
+  const [holdMembers,   setHoldMembers]   = useState({}) // { [cid]: member[] }
+  const [loadingPicker, setLoadingPicker] = useState(null)
   const [afdelinger, setAfdelinger] = useState([])
   const [holds,      setHolds]      = useState([])
   const [preview,    setPreview]    = useState(null)
@@ -3117,40 +3119,165 @@ function KommunikationPage({ authUser, userDoc }) {
 
   function switchChannel(ch) {
     setChannel(ch); setPreview(null); setResult(null); setError('')
+    setPickerHoldId(null)
   }
 
-  // Recipient helpers — hold-IDs beregnes klientside
-  function scopeLabel() {
-    if (scope === 'all') return 'Alle aktive medlemmer'
-    if (scope === 'manual') return 'Manuelt nummer'
-    if (gruppeType === 'afdeling') { const a = afdelinger.find(x => x.id === scopeId); return a ? `Afd: ${a.navn}` : '' }
-    if (gruppeType === 'hold') { const h = holds.find(x => String(x.conventus_id) === scopeId); return h ? h.titel : '' }
-    return ''
+  // ── Selection helpers ─────────────────────────────────────────────────────────
+  const holdSearchQ      = holdSearch.toLowerCase()
+  const afdHoldMap       = {}
+  afdelinger.forEach(a => { afdHoldMap[a.id] = [] })
+  holds.forEach(h => { const aid = String(h.afdeling_id ?? ''); if (!afdHoldMap[aid]) afdHoldMap[aid] = []; afdHoldMap[aid].push(h) })
+  const afdMatchesSearch  = a => !holdSearchQ || (a.navn||'').toLowerCase().includes(holdSearchQ) || (afdHoldMap[a.id]||[]).some(h => (h.titel||'').toLowerCase().includes(holdSearchQ))
+  const holdMatchesSearch = h => !holdSearchQ || (h.titel||'').toLowerCase().includes(holdSearchQ)
+  const orphanHolds       = holds.filter(h => !afdelinger.find(a => a.id === String(h.afdeling_id ?? '')))
+
+  function isHoldChecked(cid)   { return selectedHolds.has(cid) }
+  function isHoldPartial(cid)   { const v = selectedHolds.get(cid); return v instanceof Set }
+  function isAfdChecked(afd)    {
+    const hs = (afdHoldMap[afd.id] || []).filter(holdMatchesSearch)
+    return hs.length > 0 && hs.every(h => selectedHolds.has(String(h.conventus_id)))
+  }
+  function isAfdPartial(afd)    {
+    const hs = (afdHoldMap[afd.id] || []).filter(holdMatchesSearch)
+    return !isAfdChecked(afd) && hs.some(h => selectedHolds.has(String(h.conventus_id)))
+  }
+
+  function toggleHold(cid) {
+    setSelectedHolds(prev => {
+      const next = new Map(prev)
+      next.has(cid) ? next.delete(cid) : next.set(cid, 'all')
+      return next
+    })
+    setPreview(null)
+  }
+
+  function toggleAfd(afd) {
+    const hs      = (afdHoldMap[afd.id] || []).filter(holdMatchesSearch)
+    const checked = isAfdChecked(afd)
+    setSelectedHolds(prev => {
+      const next = new Map(prev)
+      hs.forEach(h => {
+        const cid = String(h.conventus_id)
+        if (checked) next.delete(cid)
+        else if (!next.has(cid)) next.set(cid, 'all')
+      })
+      return next
+    })
+    setPreview(null)
+  }
+
+  function setHoldSelection(cid, sel) {
+    setSelectedHolds(prev => { const n = new Map(prev); n.set(cid, sel); return n })
+    setPreview(null)
+  }
+
+  function removeHoldSelection(cid) {
+    setSelectedHolds(prev => { const n = new Map(prev); n.delete(cid); return n })
+    setPreview(null)
+  }
+
+  async function openPicker(holdCid) {
+    setPickerHoldId(pickerHoldId === holdCid ? null : holdCid)
+    if (!holdMembers[holdCid] && pickerHoldId !== holdCid) {
+      setLoadingPicker(holdCid)
+      try {
+        const snap = await getDocs(
+          query(collection(db, 'members'), where('holdIds', 'array-contains', holdCid))
+        )
+        const mems = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'da'))
+        setHoldMembers(prev => ({ ...prev, [holdCid]: mems }))
+      } catch {
+        setHoldMembers(prev => ({ ...prev, [holdCid]: [] }))
+      } finally { setLoadingPicker(null) }
+    }
+  }
+
+  function toggleMemberInPicker(holdCid, memberId) {
+    const current = selectedHolds.get(holdCid) ?? 'all'
+    const allMemberIds = (holdMembers[holdCid] || []).map(m => m.id)
+    let newSel
+    if (current === 'all') {
+      // Switch from all → specific: deselect just this one
+      const next = new Set(allMemberIds)
+      next.delete(memberId)
+      newSel = next.size === 0 ? new Set() : next
+    } else {
+      const next = new Set(current)
+      next.has(memberId) ? next.delete(memberId) : next.add(memberId)
+      // If all members are checked → switch back to 'all'
+      newSel = allMemberIds.length > 0 && allMemberIds.every(id => next.has(id)) ? 'all' : next
+    }
+    setHoldSelection(holdCid, newSel)
+  }
+
+  function isMemberChecked(holdCid, memberId) {
+    const sel = selectedHolds.get(holdCid)
+    if (sel === 'all') return true
+    if (sel instanceof Set) return sel.has(memberId)
+    return false
+  }
+
+  // ── Scope / send helpers ──────────────────────────────────────────────────────
+  function buildScopeLabel() {
+    if (scope === 'all')    return 'Alle aktive'
+    if (scope === 'manual') return 'Manuel'
+    if (selectedHolds.size === 0) return 'Ingen valgt'
+    return [...selectedHolds.entries()].map(([cid, sel]) => {
+      const h = holds.find(x => String(x.conventus_id) === cid)
+      const name = h?.titel || cid
+      return sel instanceof Set ? `${name} (${sel.size})` : name
+    }).join(', ')
   }
 
   function getHoldIds() {
-    if (scope !== 'gruppe' || !scopeId) return []
-    if (gruppeType === 'hold') return [scopeId]
-    if (gruppeType === 'afdeling') return holds.filter(h => String(h.afdeling_id) === scopeId).map(h => String(h.conventus_id))
-    return []
+    // Only holds selected with 'all' — backend fetches all their members
+    return [...selectedHolds.entries()].filter(([, v]) => v === 'all').map(([cid]) => cid)
+  }
+
+  function getSpecificEmails() {
+    // Email channel only: resolve individual emails from cached members
+    const emails = new Set()
+    for (const [holdCid, sel] of selectedHolds) {
+      if (!(sel instanceof Set)) continue
+      const mems = holdMembers[holdCid] || []
+      for (const memberId of sel) {
+        const m = mems.find(x => x.id === memberId)
+        if (m?.email) emails.add(m.email.toLowerCase())
+        ;(m?.allEmails || []).forEach(e => emails.add(e.toLowerCase()))
+      }
+    }
+    return [...emails]
   }
 
   const canSend = text.trim()
-    && (scope === 'all' || (scope === 'gruppe' && scopeId) || (scope === 'manual' && manualInput.trim()))
+    && (scope === 'all'
+        || (scope === 'holds' && selectedHolds.size > 0)
+        || (scope === 'manual' && manualInput.trim()))
     && (channel === 'email' ? !!subject.trim() : true)
+
   // UCS-2 encoding ved emoji/ikke-GSM7-tegn — reducerer tegn pr. SMS fra 160 til 70
   const GSM7 = '@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜäöñüàÅ§¿abcdefghijklmnopqrstuvwxyz\t\x0b\x0c{}\\[~]|^€'
-  const ucs2     = text.length > 0 && [...text].some(c => !GSM7.includes(c))
-  const charCount = [...text].length   // code points, ikke UTF-16 units
+  const ucs2      = text.length > 0 && [...text].some(c => !GSM7.includes(c))
+  const charCount = [...text].length
   const smsLimit  = ucs2 ? 70 : 160
   const smsCont   = ucs2 ? 67 : 153
   const smsParts  = charCount <= smsLimit ? 1 : Math.ceil(charCount / smsCont)
   const endpoint  = channel === 'sms' ? `${BASE}api/send-sms.php` : `${BASE}api/send-bulk-email.php`
 
   function buildBody(action) {
-    return JSON.stringify({ action, scope, hold_ids: getHoldIds(), scope_label: scopeLabel(),
-                            sender: sender.trim() || 'SSIF', subject: subject.trim(),
-                            manual_input: manualInput, text })
+    const specificEmails = channel === 'email' ? getSpecificEmails() : []
+    return JSON.stringify({
+      action,
+      scope:           scope === 'holds' ? 'gruppe' : scope,
+      hold_ids:        getHoldIds(),
+      specific_emails: specificEmails.length > 0 ? specificEmails : undefined,
+      scope_label:     buildScopeLabel(),
+      sender:          sender.trim() || 'SSIF',
+      subject:         subject.trim(),
+      manual_input:    manualInput,
+      text,
+    })
   }
 
   async function fetchPreview() {
@@ -3168,10 +3295,10 @@ function KommunikationPage({ authUser, userDoc }) {
   }
 
   async function handleSendClick() {
-    if (!text.trim())                             { setError('Skriv en besked'); return }
-    if (channel === 'email' && !subject.trim())   { setError('Skriv et emne'); return }
-    if (scope === 'gruppe' && !scopeId)           { setError('Vælg en gruppe eller et hold'); return }
-    if (scope === 'manual' && !manualInput.trim()){ setError('Indtast mindst ét telefonnummer'); return }
+    if (!text.trim())                              { setError('Skriv en besked'); return }
+    if (channel === 'email' && !subject.trim())    { setError('Skriv et emne'); return }
+    if (scope === 'holds' && selectedHolds.size === 0) { setError('Vælg mindst ét hold'); return }
+    if (scope === 'manual' && !manualInput.trim()) { setError('Indtast mindst ét telefonnummer'); return }
     const p = preview ?? await fetchPreview()
     if (p) setConfirm(true)
   }
@@ -3186,29 +3313,19 @@ function KommunikationPage({ authUser, userDoc }) {
       const data = await res.json()
       if (data.error) { setError(data.error + (data.detail ? ` (${data.detail})` : '')); return }
       setResult(data)
-      setText(''); setSubject(''); setScopeId(''); setGruppeType(''); setManualInput(''); setPreview(null)
+      setText(''); setSubject(''); setSelectedHolds(new Map()); setPickerHoldId(null)
+      setManualInput(''); setPreview(null)
       loadLogs()
     } catch (err) { setError('Netværksfejl: ' + err.message) }
     finally { setSending(false) }
   }
 
   // Aktivitetslog stats
-  const smsLogs = logs.filter(l => l.channel === 'sms')
-  const now     = new Date()
-  const totalSmsKr  = smsLogs.reduce((s, l) => s + (l.actualCost != null ? l.actualCost : (l.estimatedCost ?? 0)), 0)
-  const monthSmsKr  = smsLogs.filter(l => { const d = l.sentAt?.toDate?.(); return d && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() })
+  const smsLogs    = logs.filter(l => l.channel === 'sms')
+  const now        = new Date()
+  const totalSmsKr = smsLogs.reduce((s, l) => s + (l.actualCost != null ? l.actualCost : (l.estimatedCost ?? 0)), 0)
+  const monthSmsKr = smsLogs.filter(l => { const d = l.sentAt?.toDate?.(); return d && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() })
                              .reduce((s, l) => s + (l.actualCost != null ? l.actualCost : (l.estimatedCost ?? 0)), 0)
-
-  // Hold-træ
-  const holdSearchQ = holdSearch.toLowerCase()
-  const afdHoldMap  = {}
-  afdelinger.forEach(a => { afdHoldMap[a.id] = [] })
-  holds.forEach(h => { const aid = String(h.afdeling_id ?? ''); if (!afdHoldMap[aid]) afdHoldMap[aid] = []; afdHoldMap[aid].push(h) })
-  const afdMatchesSearch = a => !holdSearchQ || (a.navn||'').toLowerCase().includes(holdSearchQ) || (afdHoldMap[a.id]||[]).some(h => (h.titel||'').toLowerCase().includes(holdSearchQ))
-  const holdMatchesSearch = h => !holdSearchQ || (h.titel||'').toLowerCase().includes(holdSearchQ)
-
-  // ── Recipient tree (shared state allerede beregnet ovenfor) ──────────────────
-  const orphanHolds = holds.filter(h => !afdelinger.find(a => a.id === String(h.afdeling_id ?? '')))
 
   // ── Confirm dialog tekst ───────────────────────────────────────────────────────
   const confirmBody = channel === 'sms'
@@ -3323,13 +3440,15 @@ function KommunikationPage({ authUser, userDoc }) {
           <div className="card card-pad">
             <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>Modtagere</p>
 
+            {/* Kanal-tabs */}
             <div style={{ display: 'flex', background: '#f1f3f5', borderRadius: 8, padding: 3, gap: 3, marginBottom: 14 }}>
               {[
                 { v: 'all',    l: 'Alle aktive' },
-                { v: 'gruppe', l: 'Gruppe / Hold' },
+                { v: 'holds',  l: 'Vælg hold'   },
                 ...(channel === 'sms' ? [{ v: 'manual', l: 'Manuelt nr.' }] : []),
               ].map(o => (
-                <button key={o.v} onClick={() => { setScope(o.v); setScopeId(''); setGruppeType(''); setPreview(null) }}
+                <button key={o.v}
+                  onClick={() => { setScope(o.v); setSelectedHolds(new Map()); setPickerHoldId(null); setPreview(null) }}
                   style={{ flex: 1, padding: '7px 0', fontSize: 13, fontWeight: scope === o.v ? 600 : 400,
                            background: scope === o.v ? 'white' : 'transparent', border: 'none', borderRadius: 6,
                            cursor: 'pointer', color: scope === o.v ? 'var(--text)' : 'var(--text2)',
@@ -3339,11 +3458,12 @@ function KommunikationPage({ authUser, userDoc }) {
               ))}
             </div>
 
+            {/* Manuel input (SMS) */}
             {scope === 'manual' && channel === 'sms' && (
               <>
                 <textarea className="form-control" rows={2}
                   style={{ fontFamily: 'monospace', fontSize: 13, resize: 'none' }}
-                  placeholder={'22391328, +4512345678, …  (komma, semikolon eller linjeskift)'}
+                  placeholder="22391328, +4512345678, …  (komma, semikolon eller linjeskift)"
                   value={manualInput}
                   onChange={e => { setManualInput(e.target.value); setPreview(null) }}
                   autoComplete="off"
@@ -3352,7 +3472,8 @@ function KommunikationPage({ authUser, userDoc }) {
               </>
             )}
 
-            {scope === 'gruppe' && (
+            {/* Hold-vælger */}
+            {scope === 'holds' && (
               <>
                 {/* Søgefelt */}
                 <div style={{ position: 'relative', marginBottom: 8 }}>
@@ -3364,72 +3485,211 @@ function KommunikationPage({ authUser, userDoc }) {
                     onChange={e => setHoldSearch(e.target.value)} autoComplete="off" />
                 </div>
 
-                {/* Valgt */}
-                {scopeId && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--green-soft)', borderRadius: 8, marginBottom: 8, border: '1.5px solid var(--green)' }}>
-                    <Icon name="check" size={14} color="var(--green)" sw={2.5} />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--green)' }}>{scopeLabel()}</div>
-                      <div style={{ fontSize: 11, color: 'var(--green)', opacity: .7 }}>
-                        {gruppeType === 'afdeling' ? `Hele afdelingen · ${(afdHoldMap[scopeId]||[]).length} hold` : 'Specifikt hold'}
-                      </div>
-                    </div>
-                    <button onClick={() => { setScopeId(''); setGruppeType(''); setPreview(null) }}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex' }}>
-                      <Icon name="x" size={14} color="var(--green)" />
-                    </button>
+                {/* Valgte hold-chips */}
+                {selectedHolds.size > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
+                    {[...selectedHolds.entries()].map(([cid, sel]) => {
+                      const h    = holds.find(x => String(x.conventus_id) === cid)
+                      const name = h?.titel || cid
+                      const label = sel instanceof Set ? `${name} (${sel.size} valgt)` : name
+                      return (
+                        <span key={cid} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#dcfce7', borderRadius: 5, padding: '2px 6px 2px 8px', fontSize: 11, fontWeight: 600, color: 'var(--green)' }}>
+                          {label}
+                          <button onClick={() => removeHoldSelection(cid)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 1px', display: 'flex', color: 'var(--green)', opacity: .7, lineHeight: 1 }}>
+                            ✕
+                          </button>
+                        </span>
+                      )
+                    })}
+                    {selectedHolds.size > 1 && (
+                      <button onClick={() => { setSelectedHolds(new Map()); setPreview(null) }}
+                        style={{ fontSize: 11, color: 'var(--text3)', background: 'none', border: '1px solid var(--sep)', borderRadius: 5, padding: '2px 8px', cursor: 'pointer' }}>
+                        Ryd alt
+                      </button>
+                    )}
                   </div>
                 )}
 
-                {/* Accordion-liste */}
-                <div style={{ borderRadius: 10, border: '1px solid var(--sep)', overflow: 'hidden', maxHeight: 340, overflowY: 'auto' }}>
+                {/* Accordion */}
+                <div style={{ borderRadius: 10, border: '1px solid var(--sep)', overflow: 'hidden', maxHeight: 420, overflowY: 'auto' }}>
                   {afdelinger.filter(afdMatchesSearch).map((afd, idx) => {
-                    const afdHolds  = (afdHoldMap[afd.id] || []).filter(holdMatchesSearch)
+                    const afdHolds   = (afdHoldMap[afd.id] || []).filter(holdMatchesSearch)
                     const isExpanded = expandedAfds.has(afd.id) || !!holdSearchQ
-                    const isSelAfd  = gruppeType === 'afdeling' && scopeId === afd.id
+                    const afdChk     = isAfdChecked(afd)
+                    const afdPart    = isAfdPartial(afd)
                     return (
                       <div key={afd.id} style={{ borderBottom: '1px solid var(--sep)' }}>
                         {/* Afdeling-header */}
-                        <div style={{ display: 'flex', alignItems: 'center', background: isSelAfd ? 'var(--green-soft)' : idx % 2 === 0 ? 'white' : '#fafafa' }}>
-                          {/* Vælg hele afdelingen */}
-                          <button onClick={() => { setScopeId(afd.id); setGruppeType('afdeling'); setPreview(null) }}
-                            style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer' }}>
-                            <div style={{ width: 30, height: 30, borderRadius: 7, background: isSelAfd ? 'var(--green)' : '#ebebeb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                              <Icon name="users" size={14} color={isSelAfd ? 'white' : 'var(--text3)'} />
+                        <div style={{ display: 'flex', alignItems: 'center', background: afdChk ? 'var(--green-soft)' : idx % 2 === 0 ? 'white' : '#fafafa' }}>
+                          <div style={{ padding: '10px 4px 10px 12px', display: 'flex', alignItems: 'center' }}>
+                            <input type="checkbox"
+                              checked={afdChk}
+                              ref={el => { if (el) el.indeterminate = !afdChk && afdPart }}
+                              onChange={() => toggleAfd(afd)}
+                              style={{ accentColor: 'var(--green)', width: 15, height: 15 }}
+                            />
+                          </div>
+                          <button
+                            onClick={() => setExpandedAfds(p => { const n = new Set(p); n.has(afd.id) ? n.delete(afd.id) : n.add(afd.id); return n })}
+                            style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', padding: '10px 14px 10px 6px', background: 'none', border: 'none', cursor: 'pointer' }}>
+                            <div style={{ width: 28, height: 28, borderRadius: 6, background: afdChk ? 'var(--green)' : '#ebebeb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                              <Icon name="users" size={13} color={afdChk ? 'white' : 'var(--text3)'} />
                             </div>
-                            <div>
-                              <div style={{ fontSize: 13, fontWeight: 600, color: isSelAfd ? 'var(--green)' : 'var(--text)' }}>{afd.navn}</div>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: afdChk ? 'var(--green)' : 'var(--text)' }}>{afd.navn}</div>
                               <div style={{ fontSize: 11, color: 'var(--text3)' }}>{(afdHoldMap[afd.id]||[]).length} hold</div>
                             </div>
-                            {isSelAfd && <Icon name="check" size={13} color="var(--green)" sw={2.5} />}
-                          </button>
-                          {/* Ekspander knap */}
-                          <button onClick={() => setExpandedAfds(p => { const n = new Set(p); n.has(afd.id) ? n.delete(afd.id) : n.add(afd.id); return n })}
-                            style={{ padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 11, borderLeft: '1px solid var(--sep)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <span style={{ fontSize: 11 }}>{isExpanded ? '▲' : '▼'}</span>
+                            <span style={{ fontSize: 11, color: 'var(--text3)', flexShrink: 0 }}>{isExpanded ? '▲' : '▼'}</span>
                           </button>
                         </div>
 
-                        {/* Holds i dropdown */}
+                        {/* Hold-rækker */}
                         {isExpanded && afdHolds.map(h => {
-                          const hid   = String(h.conventus_id)
-                          const isSel = gruppeType === 'hold' && scopeId === hid
+                          const cid        = String(h.conventus_id)
+                          const chk        = isHoldChecked(cid)
+                          const partial    = isHoldPartial(cid)
+                          const partialCnt = partial ? selectedHolds.get(cid).size : 0
+                          const pickerOpen = pickerHoldId === cid
                           return (
-                            <button key={h.id} onClick={() => { setScopeId(hid); setGruppeType('hold'); setPreview(null) }}
-                              style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '8px 14px 8px 52px', background: isSel ? '#f0fdf4' : '#f7f8f9', border: 'none', borderTop: '1px solid var(--sep)', cursor: 'pointer' }}>
-                              <div style={{ width: 24, height: 24, borderRadius: 5, background: isSel ? '#dcfce7' : '#e8eaed', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 11, fontWeight: 700, color: isSel ? 'var(--green)' : 'var(--text3)' }}>
-                                {(h.titel||'?')[0]}
+                            <div key={h.id}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px 7px 36px', background: chk ? '#f0fdf4' : '#f7f8f9', borderTop: '1px solid var(--sep)' }}>
+                                <input type="checkbox" checked={chk} onChange={() => toggleHold(cid)}
+                                  style={{ accentColor: 'var(--green)', width: 14, height: 14, flexShrink: 0 }} />
+                                <span style={{ flex: 1, fontSize: 13, color: chk ? 'var(--green)' : 'var(--text)', fontWeight: chk ? 600 : 400 }}>{h.titel}</span>
+                                {partial && <span style={{ fontSize: 10, color: 'var(--green)', background: '#dcfce7', padding: '1px 5px', borderRadius: 3, flexShrink: 0 }}>{partialCnt} valgt</span>}
+                                {chk && !partial && <span style={{ fontSize: 10, color: 'var(--green)', flexShrink: 0 }}>Alle</span>}
+                                {channel === 'email' && (
+                                  <button onClick={() => openPicker(cid)}
+                                    style={{ fontSize: 11, color: pickerOpen ? 'var(--green)' : 'var(--text3)', background: pickerOpen ? '#dcfce7' : 'transparent', border: `1px solid ${pickerOpen ? 'var(--green)' : 'var(--sep)'}`, borderRadius: 4, padding: '2px 7px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                                    Modtagere {pickerOpen ? '▲' : '▼'}
+                                  </button>
+                                )}
                               </div>
-                              <span style={{ fontSize: 13, flex: 1, color: isSel ? 'var(--green)' : 'var(--text)', fontWeight: isSel ? 600 : 400 }}>{h.titel}</span>
-                              {isSel && <Icon name="check" size={13} color="var(--green)" sw={2.5} />}
-                            </button>
+
+                              {/* Member picker */}
+                              {pickerOpen && (
+                                <div style={{ background: 'white', borderTop: '1px solid var(--sep)', padding: '10px 12px 10px 52px' }}>
+                                  {loadingPicker === cid ? (
+                                    <div className="loading-dots"><span/><span/><span/></div>
+                                  ) : !holdMembers[cid] || holdMembers[cid].length === 0 ? (
+                                    <p style={{ fontSize: 12, color: 'var(--text3)', margin: 0 }}>
+                                      {holdMembers[cid] ? 'Ingen medlemmer fundet i dette hold.' : 'Henter…'}
+                                    </p>
+                                  ) : (
+                                    <>
+                                      {/* "Alle" toggle */}
+                                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, cursor: 'pointer', paddingBottom: 8, borderBottom: '1px solid var(--sep)' }}>
+                                        <input type="checkbox"
+                                          checked={selectedHolds.get(cid) === 'all' || !selectedHolds.has(cid)}
+                                          onChange={() => {
+                                            if (selectedHolds.get(cid) === 'all' || !selectedHolds.has(cid)) {
+                                              // Switch to specific: start with all selected
+                                              setHoldSelection(cid, new Set(holdMembers[cid].map(m => m.id)))
+                                            } else {
+                                              setHoldSelection(cid, 'all')
+                                            }
+                                          }}
+                                          style={{ accentColor: 'var(--green)', width: 14, height: 14 }}
+                                        />
+                                        <span style={{ fontSize: 12, fontWeight: 700 }}>Alle i holdet ({holdMembers[cid].length})</span>
+                                      </label>
+
+                                      {/* Individual members */}
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 220, overflowY: 'auto' }}>
+                                        {holdMembers[cid].map(m => (
+                                          <label key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12 }}>
+                                            <input type="checkbox"
+                                              checked={isMemberChecked(cid, m.id)}
+                                              onChange={() => toggleMemberInPicker(cid, m.id)}
+                                              style={{ accentColor: 'var(--green)', width: 13, height: 13, flexShrink: 0 }}
+                                            />
+                                            <span style={{ flex: 1, fontWeight: 500 }}>{m.name}</span>
+                                            {m.email && <span style={{ fontSize: 11, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180, whiteSpace: 'nowrap' }}>{m.email}</span>}
+                                          </label>
+                                        ))}
+                                      </div>
+
+                                      {/* Quick actions */}
+                                      <div style={{ display: 'flex', gap: 8, marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--sep)' }}>
+                                        <button onClick={() => setHoldSelection(cid, 'all')} style={{ fontSize: 11, color: 'var(--green)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Vælg alle</button>
+                                        <button onClick={() => setHoldSelection(cid, new Set())} style={{ fontSize: 11, color: 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Fravælg alle</button>
+                                        <button onClick={() => setPickerHoldId(null)} style={{ fontSize: 11, color: 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginLeft: 'auto' }}>Luk ▲</button>
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           )
                         })}
                       </div>
                     )
                   })}
+
+                  {/* Orphan holds (no afdeling) */}
+                  {orphanHolds.filter(holdMatchesSearch).length > 0 && (
+                    <div style={{ borderBottom: '1px solid var(--sep)' }}>
+                      <div style={{ padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--text3)', background: '#fafafa' }}>Andre hold</div>
+                      {orphanHolds.filter(holdMatchesSearch).map(h => {
+                        const cid     = String(h.conventus_id)
+                        const chk     = isHoldChecked(cid)
+                        const partial = isHoldPartial(cid)
+                        const pickerOpen = pickerHoldId === cid
+                        return (
+                          <div key={h.id}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', background: chk ? '#f0fdf4' : 'white', borderTop: '1px solid var(--sep)' }}>
+                              <input type="checkbox" checked={chk} onChange={() => toggleHold(cid)}
+                                style={{ accentColor: 'var(--green)', width: 14, height: 14, flexShrink: 0 }} />
+                              <span style={{ flex: 1, fontSize: 13, color: chk ? 'var(--green)' : 'var(--text)', fontWeight: chk ? 600 : 400 }}>{h.titel}</span>
+                              {partial && <span style={{ fontSize: 10, color: 'var(--green)', background: '#dcfce7', padding: '1px 5px', borderRadius: 3 }}>{selectedHolds.get(cid).size} valgt</span>}
+                              {channel === 'email' && (
+                                <button onClick={() => openPicker(cid)}
+                                  style={{ fontSize: 11, color: pickerOpen ? 'var(--green)' : 'var(--text3)', background: pickerOpen ? '#dcfce7' : 'transparent', border: `1px solid ${pickerOpen ? 'var(--green)' : 'var(--sep)'}`, borderRadius: 4, padding: '2px 7px', cursor: 'pointer' }}>
+                                  Modtagere {pickerOpen ? '▲' : '▼'}
+                                </button>
+                              )}
+                            </div>
+                            {pickerOpen && (
+                              <div style={{ background: 'white', borderTop: '1px solid var(--sep)', padding: '10px 12px 10px 36px' }}>
+                                {loadingPicker === cid ? <div className="loading-dots"><span/><span/><span/></div>
+                                  : !holdMembers[cid] || holdMembers[cid].length === 0
+                                  ? <p style={{ fontSize: 12, color: 'var(--text3)', margin: 0 }}>Ingen medlemmer fundet.</p>
+                                  : (
+                                    <>
+                                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, cursor: 'pointer', paddingBottom: 8, borderBottom: '1px solid var(--sep)', fontSize: 12, fontWeight: 700 }}>
+                                        <input type="checkbox" checked={selectedHolds.get(cid) === 'all' || !selectedHolds.has(cid)}
+                                          onChange={() => setHoldSelection(cid, selectedHolds.get(cid) === 'all' ? new Set(holdMembers[cid].map(m => m.id)) : 'all')}
+                                          style={{ accentColor: 'var(--green)', width: 14, height: 14 }} />
+                                        Alle ({holdMembers[cid].length})
+                                      </label>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 200, overflowY: 'auto' }}>
+                                        {holdMembers[cid].map(m => (
+                                          <label key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12 }}>
+                                            <input type="checkbox" checked={isMemberChecked(cid, m.id)} onChange={() => toggleMemberInPicker(cid, m.id)}
+                                              style={{ accentColor: 'var(--green)', width: 13, height: 13, flexShrink: 0 }} />
+                                            <span style={{ flex: 1 }}>{m.name}</span>
+                                            {m.email && <span style={{ fontSize: 11, color: 'var(--text3)' }}>{m.email}</span>}
+                                          </label>
+                                        ))}
+                                      </div>
+                                      <div style={{ display: 'flex', gap: 8, marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--sep)' }}>
+                                        <button onClick={() => setHoldSelection(cid, 'all')} style={{ fontSize: 11, color: 'var(--green)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Vælg alle</button>
+                                        <button onClick={() => setHoldSelection(cid, new Set())} style={{ fontSize: 11, color: 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Fravælg alle</button>
+                                        <button onClick={() => setPickerHoldId(null)} style={{ fontSize: 11, color: 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginLeft: 'auto' }}>Luk ▲</button>
+                                      </div>
+                                    </>
+                                  )}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+
                   {holds.length === 0 && <div style={{ padding: 20, textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>Indlæser…</div>}
-                  {holds.length > 0 && !afdelinger.filter(afdMatchesSearch).length && (
+                  {holds.length > 0 && afdelinger.filter(afdMatchesSearch).length === 0 && orphanHolds.filter(holdMatchesSearch).length === 0 && (
                     <div style={{ padding: 20, textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>Ingen resultater for "{holdSearch}"</div>
                   )}
                 </div>

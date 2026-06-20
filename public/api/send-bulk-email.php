@@ -68,6 +68,15 @@ if (!in_array($action, ['preview', 'send'], true)) { http_response_code(400); ec
 // ── Hent emails fra Firebase ───────────────────────────────────────────────────
 $emails = get_emails_from_firebase($projectId, $fsToken, $holdIds);
 
+// Individuelle modtagere valgt via hold-picker (email-kanalen)
+$specificEmails = array_values(array_unique(array_filter(
+    array_map('strtolower', (array)($input['specific_emails'] ?? [])),
+    fn($e) => filter_var($e, FILTER_VALIDATE_EMAIL)
+)));
+if (!empty($specificEmails)) {
+    $emails = array_values(array_unique(array_merge($emails, $specificEmails)));
+}
+
 if ($action === 'preview') {
     echo json_encode(['ok' => true, 'count' => count($emails)]);
     exit;
