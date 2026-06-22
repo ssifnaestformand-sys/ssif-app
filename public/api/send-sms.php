@@ -356,8 +356,16 @@ function send_and_log(array $msisdns, string $text, int $parts, string $scope, s
     $gwData   = json_decode($gwResp ?: '{}', true);
     $gwOk     = isset($gwData['ids']) && !isset($gwData['code']);
     $gwIds    = $gwData['ids'] ?? [];
-    $actualCost = $gwData['usage']['total_cost'] ?? null;
-    $currency   = $gwData['usage']['currency']   ?? 'EUR';
+
+    // Vores egen pris er den eneste vi har sikkerhed for (SMS_PRICE_DKK pr. SMS-del).
+    // GatewayAPI's usage.total_cost/currency er upålidelig at omregne — kontoens
+    // faktiske valuta/enhed er ikke entydigt dokumenteret, og en forkert EUR→DKK-
+    // omregning har tidligere vist en pris ca. 30x for høj. Den rå værdi gemmes
+    // separat (gatewayRawCost/gatewayRawCurrency) til diagnostik, men bruges ALDRIG
+    // som den viste/loggede pris.
+    $costDkk = round(count($msisdns) * $parts * SMS_PRICE_DKK, 2);
+    $gwRawCost     = $gwData['usage']['total_cost'] ?? null;
+    $gwRawCurrency = $gwData['usage']['currency']   ?? null;
 
     // Firestore-log: ingen persondata
     $logDoc = [
@@ -372,12 +380,12 @@ function send_and_log(array $msisdns, string $text, int $parts, string $scope, s
         'text'          => ['stringValue'    => $text],
         'ok'            => ['booleanValue'   => $gwOk],
         'gatewayIds'    => ['arrayValue'     => ['values' => array_map(function($id) { return ['integerValue' => (string)$id]; }, $gwIds)]],
-        'estimatedCost' => ['doubleValue'    => round(count($msisdns) * $parts * SMS_PRICE_DKK, 2)],
+        'estimatedCost' => ['doubleValue'    => $costDkk],
+        'actualCost'    => ['doubleValue'    => $costDkk],
     ];
-    // Gem altid i DKK uanset GatewayAPI-kontoens valuta
-    if ($actualCost !== null) {
-        $actualCostDkk = strtoupper($currency) === 'EUR' ? $actualCost * 7.46 : $actualCost;
-        $logDoc['actualCost'] = ['doubleValue' => round((float)$actualCostDkk, 4)];
+    if ($gwRawCost !== null) {
+        $logDoc['gatewayRawCost']     = ['doubleValue' => (float)$gwRawCost];
+        $logDoc['gatewayRawCurrency'] = ['stringValue'  => (string)($gwRawCurrency ?? '')];
     }
 
     @file_get_contents(
@@ -397,12 +405,7 @@ function send_and_log(array $msisdns, string $text, int $parts, string $scope, s
         return;
     }
 
-    if ($actualCost !== null) {
-        $costDkk = strtoupper($currency) === 'EUR' ? $actualCost * 7.46 : $actualCost;
-        $costStr = round($costDkk, 2) . ' kr.';
-    } else {
-        $costStr = round(count($msisdns) * $parts * SMS_PRICE_DKK, 2) . ' kr. (estimat)';
-    }
+    $costStr = $costDkk . ' kr.';
     echo json_encode(['ok' => true, 'sent' => count($msisdns), 'cost' => $costStr]);
 }
 

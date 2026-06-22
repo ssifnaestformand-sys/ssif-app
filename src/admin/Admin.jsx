@@ -3197,14 +3197,12 @@ function KommunikationPage({ authUser, userDoc }) {
     const allMemberIds = (holdMembers[holdCid] || []).map(m => m.id)
     let newSel
     if (current === 'all') {
-      // Switch from all → specific: deselect just this one
-      const next = new Set(allMemberIds)
-      next.delete(memberId)
-      newSel = next.size === 0 ? new Set() : next
+      // Fra "alle" til specifikt valg: vælg KUN den klikkede (ikke alle minus én)
+      newSel = new Set([memberId])
     } else {
       const next = new Set(current)
       next.has(memberId) ? next.delete(memberId) : next.add(memberId)
-      // If all members are checked → switch back to 'all'
+      // Hvis alle medlemmer nu er markeret → skift tilbage til 'all'
       newSel = allMemberIds.length > 0 && allMemberIds.every(id => next.has(id)) ? 'all' : next
     }
     setHoldSelection(holdCid, newSel)
@@ -3595,8 +3593,8 @@ function KommunikationPage({ authUser, userDoc }) {
                                           checked={selectedHolds.get(cid) === 'all' || !selectedHolds.has(cid)}
                                           onChange={() => {
                                             if (selectedHolds.get(cid) === 'all' || !selectedHolds.has(cid)) {
-                                              // Switch to specific: start with all selected
-                                              setHoldSelection(cid, new Set(holdMembers[cid].map(m => m.id)))
+                                              // Fra "alle" til specifikt valg: start tom, så brugeren selv vælger
+                                              setHoldSelection(cid, new Set())
                                             } else {
                                               setHoldSelection(cid, 'all')
                                             }
@@ -3671,7 +3669,7 @@ function KommunikationPage({ authUser, userDoc }) {
                                     <>
                                       <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, cursor: 'pointer', paddingBottom: 8, borderBottom: '1px solid var(--sep)', fontSize: 12, fontWeight: 700 }}>
                                         <input type="checkbox" checked={selectedHolds.get(cid) === 'all' || !selectedHolds.has(cid)}
-                                          onChange={() => setHoldSelection(cid, selectedHolds.get(cid) === 'all' ? new Set(holdMembers[cid].map(m => m.id)) : 'all')}
+                                          onChange={() => setHoldSelection(cid, (selectedHolds.get(cid) === 'all' || !selectedHolds.has(cid)) ? new Set() : 'all')}
                                           style={{ accentColor: 'var(--green)', width: 14, height: 14 }} />
                                         Alle ({holdMembers[cid].length})
                                       </label>
