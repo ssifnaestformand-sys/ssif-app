@@ -125,9 +125,18 @@ $rawIds         = (array)($input['hold_ids'] ?? []);
 $targetGroupIds = array_values(array_unique(array_filter(array_map('intval', $rawIds))));
 
 // ── Hent telefonnumre fra Conventus ───────────────────────────────────────────
-$dbg     = ($action === 'preview');
-$result  = fetch_conventus_msisdns_debug($conventusKey, $targetGroupIds, $dbg);
-$msisdns = $result['msisdns'];
+// VIGTIGT: tom hold_ids betyder kun "alle" når scope faktisk ER 'all'.
+// Ved scope='gruppe' kan tom hold_ids forekomme hvis brugeren kun har valgt
+// specifikke medlemmer (ingen hold markeret "alle") — det må ALDRIG udløse
+// et ufiltreret Conventus-opslag, ellers sendes der til hele klubben.
+$dbg = ($action === 'preview');
+if ($scope === 'gruppe' && empty($targetGroupIds)) {
+    $msisdns = [];
+    $result  = ['msisdns' => [], 'total' => 0, 'api_ok' => true, 'sample_groups' => []];
+} else {
+    $result  = fetch_conventus_msisdns_debug($conventusKey, $targetGroupIds, $dbg);
+    $msisdns = $result['msisdns'];
+}
 
 // Flyt specifikt valgte numre fra picker ind (deduplikeret)
 if (!empty($specificPhones)) {

@@ -66,7 +66,11 @@ if (!$text)     { http_response_code(400); echo json_encode(['error' => 'Besked 
 if (!in_array($action, ['preview', 'send'], true)) { http_response_code(400); echo json_encode(['error' => 'Ukendt action']); exit; }
 
 // ── Hent emails fra Firebase ───────────────────────────────────────────────────
-$emails = get_emails_from_firebase($projectId, $fsToken, $holdIds);
+// VIGTIGT: tom holdIds betyder kun "alle" når scope faktisk ER 'all'.
+// Ved scope='gruppe' kan tom holdIds forekomme hvis brugeren kun har valgt
+// specifikke medlemmer (ingen hold markeret "alle") — det må ALDRIG udløse
+// et ufiltreret opslag, ellers sendes der til samtlige brugere.
+$emails = ($scope === 'gruppe' && empty($holdIds)) ? [] : get_emails_from_firebase($projectId, $fsToken, $holdIds);
 
 // Individuelle modtagere valgt via hold-picker (email-kanalen)
 $specificEmails = array_values(array_unique(array_filter(
