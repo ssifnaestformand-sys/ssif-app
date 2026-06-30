@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, Fragment } from 'react'
+import DOMPurify from 'dompurify'
 import { auth, db, storage } from '../firebase.js'
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
 import {
@@ -3074,6 +3075,112 @@ function UsersPage({ authUser, userDoc }) {
   )
 }
 
+// ─── Rich text editor (email-besked: fed, links, billeder) ───────────────────
+function htmlToPlainText(html) {
+  const tmp = document.createElement('div')
+  tmp.innerHTML = html || ''
+  return (tmp.textContent || tmp.innerText || '').replace(/\n{3,}/g, '\n\n').trim()
+}
+
+function RichTextEditor({ value, onChange, placeholder = '' }) {
+  const editorRef    = useRef(null)
+  const fileInputRef = useRef(null)
+  const lastValueRef  = useRef(value)
+  const [uploading, setUploading] = useState(false)
+  const [error,     setError]     = useState('')
+
+  // Sæt indhold udefra (fx nulstilling efter afsendelse) uden at ødelægge
+  // cursorpositionen mens brugeren skriver — contentEditable er ikke "controlled".
+  useEffect(() => {
+    if (value !== lastValueRef.current && editorRef.current && editorRef.current.innerHTML !== value) {
+      editorRef.current.innerHTML = value || ''
+      lastValueRef.current = value
+    }
+  }, [value])
+
+  function handleInput() {
+    const html = editorRef.current?.innerHTML ?? ''
+    lastValueRef.current = html
+    onChange(html)
+  }
+
+  function exec(cmd, arg = null) {
+    editorRef.current?.focus()
+    document.execCommand(cmd, false, arg)
+    handleInput()
+  }
+
+  function insertLink() {
+    const url = window.prompt('Indsæt link-URL:', 'https://')
+    if (!url) return
+    exec('createLink', url)
+  }
+
+  async function handleImageFile(file) {
+    if (!file || !file.type.startsWith('image/')) { setError('Kun billedfiler tilladt'); return }
+    if (file.size > 10 * 1024 * 1024)             { setError('Maks 10 MB'); return }
+    setError(''); setUploading(true)
+    try {
+      const idToken = await auth.currentUser?.getIdToken() ?? ''
+      const fd = new FormData()
+      fd.append('image', file)
+      fd.append('idToken', idToken)
+      const res = await fetch('https://app.sejssvejbaek-if.dk/api/upload-image.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}` },
+        body: fd,
+      })
+      const data = await res.json()
+      if (!data.url) throw new Error(data.error || 'Ukendt fejl')
+      addDoc(collection(db, 'media_library'), {
+        url: data.url, name: file.name, size: file.size, uploadedAt: serverTimestamp(),
+      }).catch(() => {})
+      exec('insertImage', data.url)
+    } catch (err) {
+      setError('Billede-upload fejlede: ' + err.message)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const btnStyle = {
+    width: 30, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
+    border: '1px solid var(--sep)', borderRadius: 5, background: 'white',
+    cursor: 'pointer', fontSize: 13, color: 'var(--text)', flexShrink: 0,
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 6, flexWrap: 'wrap' }}>
+        <button type="button" title="Fed" onMouseDown={e => e.preventDefault()} onClick={() => exec('bold')} style={{ ...btnStyle, fontWeight: 700 }}>B</button>
+        <button type="button" title="Kursiv" onMouseDown={e => e.preventDefault()} onClick={() => exec('italic')} style={{ ...btnStyle, fontStyle: 'italic' }}>I</button>
+        <button type="button" title="Punktliste" onMouseDown={e => e.preventDefault()} onClick={() => exec('insertUnorderedList')} style={btnStyle}>•≡</button>
+        <button type="button" title="Indsæt link" onMouseDown={e => e.preventDefault()} onClick={insertLink} style={btnStyle}>🔗</button>
+        <button type="button" title="Fjern link" onMouseDown={e => e.preventDefault()} onClick={() => exec('unlink')} style={btnStyle}>🔗╳</button>
+        <button type="button" title="Indsæt billede" onMouseDown={e => e.preventDefault()}
+          onClick={() => fileInputRef.current?.click()} disabled={uploading} style={btnStyle}>
+          {uploading ? '…' : '🖼'}
+        </button>
+        <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }}
+          onChange={e => { const f = e.target.files?.[0]; if (f) handleImageFile(f); e.target.value = '' }} />
+      </div>
+      {error && <div style={{ fontSize: 11, color: 'var(--danger)', marginBottom: 4 }}>{error}</div>}
+      <div
+        ref={editorRef}
+        contentEditable
+        suppressContentEditableWarning
+        onInput={handleInput}
+        data-placeholder={placeholder}
+        className="rich-text-editor form-control"
+        style={{
+          minHeight: 180, maxHeight: 420, overflowY: 'auto',
+          padding: '10px 12px', fontSize: 14, lineHeight: 1.6, fontFamily: 'inherit', background: 'white',
+        }}
+      />
+    </div>
+  )
+}
+
 // ─── Kommunikation ────────────────────────────────────────────────────────────
 
 function KommunikationPage({ authUser, userDoc }) {
@@ -3081,6 +3188,7 @@ function KommunikationPage({ authUser, userDoc }) {
   const [sender,     setSender]     = useState('SSIF') // SMS afsender-ID
   const [subject,    setSubject]    = useState('')      // Email emne
   const [text,       setText]       = useState('')
+  const [emailHtml,  setEmailHtml]  = useState('')       // Email-besked (rig tekst)
   const [scope,         setScope]         = useState('all') // 'all' | 'holds' | 'manual'
   const [manualInput,   setManualInput]   = useState('')
   const [selectedHolds, setSelectedHolds] = useState(new Map()) // Map<cid_string, 'all'|Set<memberId>>
@@ -3259,7 +3367,8 @@ function KommunikationPage({ authUser, userDoc }) {
     return [...phones]
   }
 
-  const canSend = text.trim()
+  const emailPlainText = channel === 'email' ? htmlToPlainText(emailHtml) : ''
+  const canSend = (channel === 'email' ? !!emailPlainText : !!text.trim())
     && (scope === 'all'
         || (scope === 'holds' && selectedHolds.size > 0)
         || (scope === 'manual' && manualInput.trim()))
@@ -3277,6 +3386,7 @@ function KommunikationPage({ authUser, userDoc }) {
   function buildBody(action) {
     const specificEmails = channel === 'email' ? getSpecificEmails() : []
     const specificPhones = channel === 'sms'   ? getSpecificPhones() : []
+    const htmlSanitized  = channel === 'email' ? DOMPurify.sanitize(emailHtml, { ADD_ATTR: ['target'] }) : ''
     return JSON.stringify({
       action,
       scope:           scope === 'holds' ? 'gruppe' : scope,
@@ -3287,7 +3397,8 @@ function KommunikationPage({ authUser, userDoc }) {
       sender:          sender.trim() || 'SSIF',
       subject:         subject.trim(),
       manual_input:    manualInput,
-      text,
+      text:            channel === 'email' ? htmlToPlainText(htmlSanitized) : text,
+      html:            channel === 'email' ? htmlSanitized : undefined,
     })
   }
 
@@ -3306,7 +3417,8 @@ function KommunikationPage({ authUser, userDoc }) {
   }
 
   async function handleSendClick() {
-    if (!text.trim())                              { setError('Skriv en besked'); return }
+    const hasMessage = channel === 'email' ? !!emailPlainText : !!text.trim()
+    if (!hasMessage)                                { setError('Skriv en besked'); return }
     if (channel === 'email' && !subject.trim())    { setError('Skriv et emne'); return }
     if (scope === 'holds' && selectedHolds.size === 0) { setError('Vælg mindst ét hold'); return }
     if (scope === 'manual' && !manualInput.trim()) { setError('Indtast mindst ét telefonnummer'); return }
@@ -3324,7 +3436,7 @@ function KommunikationPage({ authUser, userDoc }) {
       const data = await res.json()
       if (data.error) { setError(data.error + (data.detail ? ` (${data.detail})` : '')); return }
       setResult(data)
-      setText(''); setSubject(''); setSelectedHolds(new Map()); setPickerHoldId(null)
+      setText(''); setEmailHtml(''); setSubject(''); setSelectedHolds(new Map()); setPickerHoldId(null)
       setManualInput(''); setPreview(null)
       loadLogs()
     } catch (err) { setError('Netværksfejl: ' + err.message) }
@@ -3405,13 +3517,21 @@ function KommunikationPage({ authUser, userDoc }) {
             )}
 
             {/* Besked */}
-            <textarea className="form-control" rows={channel === 'sms' ? 5 : 7}
-              style={{ resize: 'none', fontFamily: 'inherit', fontSize: 14, lineHeight: 1.6 }}
-              placeholder={channel === 'sms' ? 'Skriv din SMS-besked…' : 'Skriv din email-besked…'}
-              value={text}
-              onChange={e => { setText(e.target.value); setPreview(null); setResult(null) }}
-              autoComplete="off" data-form-type="other" autoFocus
-            />
+            {channel === 'sms' ? (
+              <textarea className="form-control" rows={5}
+                style={{ resize: 'none', fontFamily: 'inherit', fontSize: 14, lineHeight: 1.6 }}
+                placeholder="Skriv din SMS-besked…"
+                value={text}
+                onChange={e => { setText(e.target.value); setPreview(null); setResult(null) }}
+                autoComplete="off" data-form-type="other" autoFocus
+              />
+            ) : (
+              <RichTextEditor
+                value={emailHtml}
+                onChange={html => { setEmailHtml(html); setPreview(null); setResult(null) }}
+                placeholder="Skriv din email-besked… (brug værktøjslinjen for fed tekst, links og billeder)"
+              />
+            )}
 
             {/* SMS-tæller */}
             {channel === 'sms' && text.length > 0 && (() => {
@@ -3717,6 +3837,14 @@ function KommunikationPage({ authUser, userDoc }) {
               {channel === 'sms'
                 ? `✓ SMS sendt til ${result.sent} modtagere · ${result.cost}`
                 : `✓ Email sendt til ${result.sent} modtagere${result.failed > 0 ? ` · ${result.failed} fejlede` : ''}`}
+            </div>
+          )}
+          {result?.errorSamples?.length > 0 && (
+            <div style={{ background: '#fff7ed', border: '1px solid #fdba74', borderRadius: 8, padding: '10px 12px', fontSize: 12, color: '#9a3412' }}>
+              <strong>SMTP-fejl fra serveren (årsag til fejlede leveringer):</strong>
+              <ul style={{ margin: '6px 0 0 18px', padding: 0 }}>
+                {result.errorSamples.map((e, i) => <li key={i} style={{ fontFamily: 'monospace' }}>{e}</li>)}
+              </ul>
             </div>
           )}
 

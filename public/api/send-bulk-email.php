@@ -58,6 +58,7 @@ $scope      = trim($input['scope']       ?? 'all');
 $scopeLabel = trim($input['scope_label'] ?? '');
 $subject    = trim($input['subject']     ?? '');
 $text       = trim($input['text']        ?? '');
+$html       = trim($input['html']        ?? '');
 $rawIds     = (array)($input['hold_ids'] ?? []);
 $holdIds    = array_values(array_unique(array_filter(array_map('strval', $rawIds))));
 
@@ -95,7 +96,7 @@ if (empty($emails)) {
     exit;
 }
 
-$result = smtp_bulk_send($emails, $subject, $text, $smtpPass);
+$result = smtp_bulk_send($emails, $subject, $text, $html, $smtpPass);
 
 // Log til Firestore
 $logFields = [
@@ -110,6 +111,12 @@ $logFields = [
     'text'       => ['stringValue'    => $text],
     'ok'         => ['booleanValue'   => $result['sent'] > 0],
 ];
+if ($html) { $logFields['html'] = ['stringValue' => $html]; }
+if (!empty($result['errorSamples'])) {
+    $logFields['errorSamples'] = ['arrayValue' => ['values' => array_map(
+        fn($e) => ['stringValue' => $e], $result['errorSamples']
+    )]];
+}
 @file_get_contents(
     "https://firestore.googleapis.com/v1/projects/{$projectId}/databases/(default)/documents/kommunikation_logs",
     false, stream_context_create(['http' => [
@@ -118,7 +125,10 @@ $logFields = [
     ]])
 );
 
-echo json_encode(['ok' => true, 'sent' => $result['sent'], 'failed' => $result['failed']]);
+echo json_encode([
+    'ok' => true, 'sent' => $result['sent'], 'failed' => $result['failed'],
+    'errorSamples' => $result['errorSamples'] ?? [],
+]);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -189,7 +199,7 @@ function extract_emails(array $fields): array {
 }
 
 // Bulk SMTP: én forbindelse for alle emails
-function smtp_bulk_send(array $recipients, string $subject, string $body, string $pass): array {
+function smtp_bulk_send(array $recipients, string $subject, string $text, string $html, string $pass): array {
     $host = 'send.one.com'; $port = 465;
     $user = 'noreply@sejssvejbaek-if.dk';
     $ctx  = stream_context_create(['ssl' => ['verify_peer' => true, 'verify_peer_name' => true]]);
@@ -200,18 +210,71 @@ function smtp_bulk_send(array $recipients, string $subject, string $body, string
     smtp_c($sock, 'AUTH LOGIN'); smtp_c($sock, base64_encode($user));
     if (strncmp(smtp_c($sock, base64_encode($pass)), '235', 3) !== 0) { fclose($sock); return ['sent' => 0, 'failed' => count($recipients)]; }
     $sent = 0; $failed = 0;
-    $enc  = '=?UTF-8?B?' . base64_encode($subject) . '?=';
+    $enc      = '=?UTF-8?B?' . base64_encode($subject) . '?=';
+    $htmlSafe = $html ? sanitize_email_html($html) : '';
+    // Indsamler DISTINKTE SMTP-fejlsvar (ingen modtager-adresser) til diagnostik —
+    // uden dette har vi ingen mulighed for at se OM en host som one.com afviser
+    // pga. rate-limiting/greylisting, eller om noget reelt er forkert i koden.
+    $errorSamples = [];
     foreach ($recipients as $to) {
         smtp_c($sock, "MAIL FROM:<{$user}>");
-        if (strncmp(smtp_c($sock, "RCPT TO:<{$to}>"), '250', 3) !== 0) { $failed++; continue; }
+        $rcptResp = smtp_c($sock, "RCPT TO:<{$to}>");
+        if (strncmp($rcptResp, '250', 3) !== 0) {
+            $failed++;
+            if (count($errorSamples) < 5) $errorSamples[] = 'RCPT: ' . trim($rcptResp);
+            continue;
+        }
         smtp_c($sock, 'DATA');
-        $msg = "Date: " . date('r') . "\r\nFrom: Sejs-Svejbæk IF <{$user}>\r\nTo: {$to}\r\nSubject: {$enc}\r\n"
-             . "MIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n"
-             . $body . "\r\n.";
-        if (strncmp(smtp_c($sock, $msg), '250', 3) === 0) $sent++; else $failed++;
+        $msg = build_email_message($to, $user, $enc, $text, $htmlSafe);
+        $dataResp = smtp_c($sock, $msg);
+        if (strncmp($dataResp, '250', 3) === 0) {
+            $sent++;
+        } else {
+            $failed++;
+            if (count($errorSamples) < 5) $errorSamples[] = 'DATA: ' . trim($dataResp);
+        }
+        // Lille pause mellem afsendelser — modvirker hastigheds-baseret
+        // rate-limiting/greylisting hos SMTP-udbyderen (kendt problem på one.com
+        // webhotel-SMTP ved bulk-udsendelse over én forbindelse).
+        usleep(300000);
     }
     fwrite($sock, "QUIT\r\n"); fclose($sock);
-    return ['sent' => $sent, 'failed' => $failed];
+    return ['sent' => $sent, 'failed' => $failed, 'errorSamples' => $errorSamples];
+}
+
+// Forsvar i dybden — klienten sanitizer allerede med DOMPurify før afsendelse,
+// men serveren skal ikke blindt stole på input (kunne i teorien komme uden om klienten).
+function sanitize_email_html(string $html): string {
+    $html = preg_replace('#<(script|style|iframe|object|embed|form)\b[^>]*>.*?</\1>#is', '', $html);
+    $html = preg_replace('#<(script|style|iframe|object|embed|form)\b[^>]*/?>#is', '', $html);
+    $html = preg_replace('#\son\w+\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)#i', '', $html);
+    $html = preg_replace('#(href|src)(\s*=\s*)(["\'])\s*javascript:[^"\']*\3#i', '$1$2$3#$3', $html);
+    return $html;
+}
+
+// Bygger MIME-besked — multipart/alternative (text + html) hvis HTML er angivet,
+// ellers almindelig text/plain. SMTP DATA-transparens: linjer der starter med
+// "." skal escapes til ".." (ellers fortolkes linjen som DATA-terminator).
+function build_email_message(string $to, string $from, string $subjectEnc, string $text, string $html): string {
+    $headers = "Date: " . date('r') . "\r\nFrom: Sejs-Svejbæk IF <{$from}>\r\nTo: {$to}\r\nSubject: {$subjectEnc}\r\nMIME-Version: 1.0\r\n";
+    if ($html) {
+        $boundary    = 'b' . md5($to . microtime());
+        $htmlWrapped = '<!DOCTYPE html><html><body style="font-family:Arial,Helvetica,sans-serif;font-size:14px;'
+                     . 'line-height:1.6;color:#1a1a1a;">' . $html . '</body></html>';
+        $headers .= "Content-Type: multipart/alternative; boundary=\"{$boundary}\"\r\n\r\n";
+        $body = "--{$boundary}\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n"
+              . $text . "\r\n\r\n"
+              . "--{$boundary}\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n"
+              . $htmlWrapped . "\r\n\r\n"
+              . "--{$boundary}--";
+    } else {
+        $headers .= "Content-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n";
+        $body = $text;
+    }
+    $full = $headers . $body;
+    $full = preg_replace('/(\r\n)\./', '$1..', $full);
+    if (strpos($full, '.') === 0) $full = '.' . $full;
+    return $full . "\r\n.";
 }
 
 function get_fs_oauth(array $sa): string {

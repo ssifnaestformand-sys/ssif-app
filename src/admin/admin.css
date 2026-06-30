@@ -556,3 +556,10 @@ select.form-control { cursor: pointer; }
 .text-muted  { color: var(--text2); }
 .text-danger { color: var(--danger); }
 .text-green  { color: var(--green); }
+
+/* ─── Rich text editor (Kommunikation: email) ──────────────────────────────── */
+.rich-text-editor:empty:before { content: attr(data-placeholder); color: var(--text3); }
+.rich-text-editor a   { color: var(--green); text-decoration: underline; }
+.rich-text-editor img { max-width: 100%; border-radius: 6px; margin: 6px 0; }
+.rich-text-editor ul, .rich-text-editor ol { margin: 0 0 0 20px; padding: 0; }
+.rich-text-editor:focus { outline: 2px solid var(--green-soft); }
