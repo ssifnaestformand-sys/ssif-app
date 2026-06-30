@@ -1,5 +1,12 @@
 import { useState, useEffect, useRef, useCallback, Fragment } from 'react'
 import DOMPurify from 'dompurify'
+import { useEditor, EditorContent } from '@tiptap/react'
+import StarterKit from '@tiptap/starter-kit'
+import Underline from '@tiptap/extension-underline'
+import Link from '@tiptap/extension-link'
+import TiptapImage from '@tiptap/extension-image'
+import TextAlign from '@tiptap/extension-text-align'
+import Placeholder from '@tiptap/extension-placeholder'
 import { auth, db, storage } from '../firebase.js'
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
 import {
@@ -3082,38 +3089,71 @@ function htmlToPlainText(html) {
   return (tmp.textContent || tmp.innerText || '').replace(/\n{3,}/g, '\n\n').trim()
 }
 
+function ToolbarBtn({ active, onClick, title, children, disabled }) {
+  return (
+    <button type="button" title={title} disabled={disabled}
+      onMouseDown={e => e.preventDefault()}
+      onClick={onClick}
+      style={{
+        minWidth: 30, height: 28, padding: '0 6px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        border: `1px solid ${active ? 'var(--green)' : 'var(--sep)'}`, borderRadius: 5,
+        background: active ? 'var(--green-soft)' : 'white', color: active ? 'var(--green)' : 'var(--text)',
+        cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.4 : 1, fontSize: 13, flexShrink: 0,
+      }}>
+      {children}
+    </button>
+  )
+}
+
+function ToolbarSep() {
+  return <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--sep)', margin: '2px 2px' }} />
+}
+
 function RichTextEditor({ value, onChange, placeholder = '' }) {
-  const editorRef    = useRef(null)
-  const fileInputRef = useRef(null)
-  const lastValueRef  = useRef(value)
-  const [uploading, setUploading] = useState(false)
-  const [error,     setError]     = useState('')
+  const fileInputRef           = useRef(null)
+  const [uploading, setUploading]       = useState(false)
+  const [error,     setError]           = useState('')
+  const [linkPopover, setLinkPopover]   = useState(false)
+  const [linkUrl,     setLinkUrl]       = useState('')
+
+  const editor = useEditor({
+    extensions: [
+      StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
+      Underline,
+      Link.configure({ openOnClick: false, autolink: true, HTMLAttributes: { target: '_blank', rel: 'noopener noreferrer' } }),
+      TiptapImage,
+      TextAlign.configure({ types: ['heading', 'paragraph'] }),
+      Placeholder.configure({ placeholder }),
+    ],
+    content: value || '',
+    onUpdate: ({ editor }) => onChange(editor.getHTML()),
+    editorProps: {
+      attributes: { class: 'rich-text-editor form-control' },
+    },
+  })
 
   // Sæt indhold udefra (fx nulstilling efter afsendelse) uden at ødelægge
-  // cursorpositionen mens brugeren skriver — contentEditable er ikke "controlled".
+  // cursorpositionen mens brugeren skriver.
   useEffect(() => {
-    if (value !== lastValueRef.current && editorRef.current && editorRef.current.innerHTML !== value) {
-      editorRef.current.innerHTML = value || ''
-      lastValueRef.current = value
+    if (!editor) return
+    if (value !== editor.getHTML() && (value || editor.getText())) {
+      editor.commands.setContent(value || '', { emitUpdate: false })
     }
-  }, [value])
+  }, [value, editor])
 
-  function handleInput() {
-    const html = editorRef.current?.innerHTML ?? ''
-    lastValueRef.current = html
-    onChange(html)
+  function openLinkPopover() {
+    setLinkUrl(editor?.getAttributes('link')?.href || 'https://')
+    setLinkPopover(true)
   }
 
-  function exec(cmd, arg = null) {
-    editorRef.current?.focus()
-    document.execCommand(cmd, false, arg)
-    handleInput()
-  }
-
-  function insertLink() {
-    const url = window.prompt('Indsæt link-URL:', 'https://')
-    if (!url) return
-    exec('createLink', url)
+  function applyLink() {
+    const url = linkUrl.trim()
+    if (!url) {
+      editor.chain().focus().unsetLink().run()
+    } else {
+      editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run()
+    }
+    setLinkPopover(false)
   }
 
   async function handleImageFile(file) {
@@ -3135,7 +3175,7 @@ function RichTextEditor({ value, onChange, placeholder = '' }) {
       addDoc(collection(db, 'media_library'), {
         url: data.url, name: file.name, size: file.size, uploadedAt: serverTimestamp(),
       }).catch(() => {})
-      exec('insertImage', data.url)
+      editor.chain().focus().setImage({ src: data.url }).run()
     } catch (err) {
       setError('Billede-upload fejlede: ' + err.message)
     } finally {
@@ -3143,40 +3183,61 @@ function RichTextEditor({ value, onChange, placeholder = '' }) {
     }
   }
 
-  const btnStyle = {
-    width: 30, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
-    border: '1px solid var(--sep)', borderRadius: 5, background: 'white',
-    cursor: 'pointer', fontSize: 13, color: 'var(--text)', flexShrink: 0,
-  }
+  if (!editor) return null
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 4, marginBottom: 6, flexWrap: 'wrap' }}>
-        <button type="button" title="Fed" onMouseDown={e => e.preventDefault()} onClick={() => exec('bold')} style={{ ...btnStyle, fontWeight: 700 }}>B</button>
-        <button type="button" title="Kursiv" onMouseDown={e => e.preventDefault()} onClick={() => exec('italic')} style={{ ...btnStyle, fontStyle: 'italic' }}>I</button>
-        <button type="button" title="Punktliste" onMouseDown={e => e.preventDefault()} onClick={() => exec('insertUnorderedList')} style={btnStyle}>•≡</button>
-        <button type="button" title="Indsæt link" onMouseDown={e => e.preventDefault()} onClick={insertLink} style={btnStyle}>🔗</button>
-        <button type="button" title="Fjern link" onMouseDown={e => e.preventDefault()} onClick={() => exec('unlink')} style={btnStyle}>🔗╳</button>
-        <button type="button" title="Indsæt billede" onMouseDown={e => e.preventDefault()}
-          onClick={() => fileInputRef.current?.click()} disabled={uploading} style={btnStyle}>
-          {uploading ? '…' : '🖼'}
-        </button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6, flexWrap: 'wrap' }}>
+        <select
+          value={editor.isActive('heading', { level: 1 }) ? '1' : editor.isActive('heading', { level: 2 }) ? '2' : editor.isActive('heading', { level: 3 }) ? '3' : 'p'}
+          onChange={e => {
+            const v = e.target.value
+            v === 'p' ? editor.chain().focus().setParagraph().run() : editor.chain().focus().toggleHeading({ level: Number(v) }).run()
+          }}
+          style={{ height: 28, fontSize: 12, border: '1px solid var(--sep)', borderRadius: 5, background: 'white', padding: '0 4px', flexShrink: 0 }}
+        >
+          <option value="p">Normal tekst</option>
+          <option value="1">Overskrift 1</option>
+          <option value="2">Overskrift 2</option>
+          <option value="3">Overskrift 3</option>
+        </select>
+        <ToolbarSep />
+        <ToolbarBtn title="Fed (Ctrl+B)" active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()}><b>B</b></ToolbarBtn>
+        <ToolbarBtn title="Kursiv (Ctrl+I)" active={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()}><i>I</i></ToolbarBtn>
+        <ToolbarBtn title="Understreget (Ctrl+U)" active={editor.isActive('underline')} onClick={() => editor.chain().focus().toggleUnderline().run()}><u>U</u></ToolbarBtn>
+        <ToolbarBtn title="Gennemstreget" active={editor.isActive('strike')} onClick={() => editor.chain().focus().toggleStrike().run()}><s>S</s></ToolbarBtn>
+        <ToolbarSep />
+        <ToolbarBtn title="Punktliste" active={editor.isActive('bulletList')} onClick={() => editor.chain().focus().toggleBulletList().run()}>•≡</ToolbarBtn>
+        <ToolbarBtn title="Nummereret liste" active={editor.isActive('orderedList')} onClick={() => editor.chain().focus().toggleOrderedList().run()}>1≡</ToolbarBtn>
+        <ToolbarBtn title="Citat" active={editor.isActive('blockquote')} onClick={() => editor.chain().focus().toggleBlockquote().run()}>"</ToolbarBtn>
+        <ToolbarSep />
+        <ToolbarBtn title="Venstrejuster" active={editor.isActive({ textAlign: 'left' })} onClick={() => editor.chain().focus().setTextAlign('left').run()}>⟸</ToolbarBtn>
+        <ToolbarBtn title="Centrer" active={editor.isActive({ textAlign: 'center' })} onClick={() => editor.chain().focus().setTextAlign('center').run()}>⟺</ToolbarBtn>
+        <ToolbarBtn title="Højrejuster" active={editor.isActive({ textAlign: 'right' })} onClick={() => editor.chain().focus().setTextAlign('right').run()}>⟹</ToolbarBtn>
+        <ToolbarSep />
+        <ToolbarBtn title="Indsæt link" active={editor.isActive('link')} onClick={openLinkPopover}>🔗</ToolbarBtn>
+        <ToolbarBtn title="Indsæt billede" onClick={() => fileInputRef.current?.click()} disabled={uploading}>{uploading ? '…' : '🖼'}</ToolbarBtn>
         <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }}
           onChange={e => { const f = e.target.files?.[0]; if (f) handleImageFile(f); e.target.value = '' }} />
+        <ToolbarSep />
+        <ToolbarBtn title="Fortryd (Ctrl+Z)" onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()}>↶</ToolbarBtn>
+        <ToolbarBtn title="Gentag (Ctrl+Y)" onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()}>↷</ToolbarBtn>
+        <ToolbarBtn title="Ryd formatering" onClick={() => editor.chain().focus().clearNodes().unsetAllMarks().run()}>Tx</ToolbarBtn>
       </div>
+
+      {linkPopover && (
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6, padding: 8, background: '#f7f8f9', borderRadius: 7, border: '1px solid var(--sep)' }}>
+          <input className="form-control" style={{ flex: 1, height: 30, fontSize: 12 }} autoFocus
+            value={linkUrl} onChange={e => setLinkUrl(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); applyLink() } if (e.key === 'Escape') setLinkPopover(false) }}
+            placeholder="https://…" />
+          <button type="button" className="btn btn-primary" style={{ height: 30, padding: '0 10px', fontSize: 12 }} onClick={applyLink}>Anvend</button>
+          <button type="button" className="btn btn-ghost" style={{ height: 30, padding: '0 10px', fontSize: 12 }} onClick={() => setLinkPopover(false)}>Annuller</button>
+        </div>
+      )}
+
       {error && <div style={{ fontSize: 11, color: 'var(--danger)', marginBottom: 4 }}>{error}</div>}
-      <div
-        ref={editorRef}
-        contentEditable
-        suppressContentEditableWarning
-        onInput={handleInput}
-        data-placeholder={placeholder}
-        className="rich-text-editor form-control"
-        style={{
-          minHeight: 180, maxHeight: 420, overflowY: 'auto',
-          padding: '10px 12px', fontSize: 14, lineHeight: 1.6, fontFamily: 'inherit', background: 'white',
-        }}
-      />
+      <EditorContent editor={editor} />
     </div>
   )
 }
