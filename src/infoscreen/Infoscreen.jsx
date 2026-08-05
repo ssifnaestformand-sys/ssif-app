@@ -8,6 +8,36 @@ import { auth, db } from '../firebase.js'
 
 const REFRESH_INTERVAL_MS = 30 * 60 * 1000
 
+// ── Vejr-konstanter (WMO weather codes) ───────────────────────────────────────
+
+const WMO_ICON = c => {
+  if (c === 0)                   return '☀️'
+  if (c <= 2)                    return '🌤'
+  if (c === 3)                   return '☁️'
+  if (c === 45 || c === 48)      return '🌫'
+  if (c <= 55)                   return '🌦'
+  if (c <= 65)                   return '🌧'
+  if (c <= 75)                   return '🌨'
+  if (c === 77)                  return '❄️'
+  if (c <= 82)                   return '🌦'
+  if (c <= 86)                   return '🌨'
+  return '⛈'
+}
+const WMO_LABEL = c => {
+  if (c === 0)             return 'Klart'
+  if (c === 1)             return 'Let skyet'
+  if (c === 2)             return 'Delvis skyet'
+  if (c === 3)             return 'Overskyet'
+  if (c === 45 || c === 48) return 'Tåge'
+  if (c <= 55)             return 'Støvregn'
+  if (c <= 65)             return 'Regn'
+  if (c <= 75)             return 'Sne'
+  if (c <= 82)             return 'Bygeregn'
+  if (c <= 86)             return 'Snebyger'
+  return 'Tordenvejr'
+}
+const DAYS_SHORT = ['Sø', 'Ma', 'Ti', 'On', 'To', 'Fr', 'Lø']
+
 // ── Dato-hjælpere ─────────────────────────────────────────────────────────────
 
 const DAYS_DA   = ['Søndag','Mandag','Tirsdag','Onsdag','Torsdag','Fredag','Lørdag']
@@ -199,7 +229,14 @@ function TextBlock({ block }) {
       fontStyle:  block.italic   ? 'italic' : 'normal',
       textAlign:  block.align    || 'center',
     }}>
-      {block.text}
+      <div>{block.text}</div>
+      {block.subtitle && (
+        <div className="is-text-subtitle" style={{
+          fontSize: Math.round((block.fontSize || 64) * 0.42) + 'px',
+        }}>
+          {block.subtitle}
+        </div>
+      )}
     </div>
   )
 }
@@ -252,6 +289,128 @@ function EmbedBlock({ block }) {
   )
 }
 
+function VideoBlock({ block }) {
+  const url = block.url || ''
+  const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]+)/)
+  const vmMatch = url.match(/vimeo\.com\/(\d+)/)
+  if (ytMatch) {
+    const id = ytMatch[1]
+    return (
+      <div className="is-video-block">
+        <iframe src={`https://www.youtube-nocookie.com/embed/${id}?autoplay=1&mute=1&loop=1&playlist=${id}&controls=0&rel=0&modestbranding=1`}
+          allow="autoplay; fullscreen" allowFullScreen title="video" />
+      </div>
+    )
+  }
+  if (vmMatch) {
+    return (
+      <div className="is-video-block">
+        <iframe src={`https://player.vimeo.com/video/${vmMatch[1]}?autoplay=1&muted=1&loop=1&background=1`}
+          allow="autoplay; fullscreen" allowFullScreen title="video" />
+      </div>
+    )
+  }
+  if (!url) return (
+    <div className="is-empty-block">
+      <span className="is-empty-icon">🎬</span>
+      <p>Ingen video-URL konfigureret</p>
+    </div>
+  )
+  return (
+    <div className="is-video-block">
+      <video src={url} autoPlay loop muted playsInline
+        style={{ width: '100%', height: '100%', objectFit: block.fit || 'cover', display: 'block' }} />
+    </div>
+  )
+}
+
+function WeatherBlock({ block }) {
+  const [weather, setWeather] = useState(null)
+  const [err, setErr] = useState(false)
+  const lat = block.lat ?? 56.07
+  const lon = block.lon ?? 9.77
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      try {
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=weathercode,temperature_2m_max,temperature_2m_min&current_weather=true&timezone=Europe%2FCopenhagen&forecast_days=5`
+        const res = await fetch(url)
+        const data = await res.json()
+        if (!cancelled) setWeather(data)
+      } catch { if (!cancelled) setErr(true) }
+    }
+    load()
+    const id = setInterval(load, REFRESH_INTERVAL_MS)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [lat, lon])
+
+  if (err) return (
+    <div className="is-empty-block"><span className="is-empty-icon">🌤</span><p>Vejrdata ikke tilgængeligt</p></div>
+  )
+  if (!weather) return (
+    <div className="is-empty-block"><span className="is-empty-icon">🌤</span><p>Henter vejrdata…</p></div>
+  )
+
+  const cw = weather.current_weather
+  const d  = weather.daily
+
+  return (
+    <div className="is-weather-block">
+      <div className="is-block-header">
+        <span className="is-block-icon">🌤</span>
+        <span className="is-block-title">Vejr — {block.city || 'Silkeborg'}</span>
+      </div>
+      <div className="is-weather-current">
+        <span className="is-weather-big-icon">{WMO_ICON(cw?.weathercode ?? 0)}</span>
+        <div className="is-weather-temp-now">{Math.round(cw?.temperature ?? 0)}°</div>
+        <div className="is-weather-desc">{WMO_LABEL(cw?.weathercode ?? 0)}</div>
+      </div>
+      <div className="is-weather-days">
+        {(d?.time || []).slice(0, 5).map((dateStr, i) => {
+          const day = new Date(dateStr)
+          return (
+            <div key={i} className="is-weather-day">
+              <div className="is-weather-day-name">{i === 0 ? 'I dag' : DAYS_SHORT[day.getDay()]}</div>
+              <div className="is-weather-day-icon">{WMO_ICON(d.weathercode[i])}</div>
+              <div className="is-weather-day-temps">
+                <span className="is-weather-high">{Math.round(d.temperature_2m_max[i])}°</span>
+                <span className="is-weather-low">{Math.round(d.temperature_2m_min[i])}°</span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function HoursBlock({ block }) {
+  const rows  = block.rows  || []
+  const title = block.title || 'Åbningstider'
+  return (
+    <div className="is-hours-block">
+      <div className="is-block-header">
+        <span className="is-block-icon">🕐</span>
+        <span className="is-block-title">{title}</span>
+      </div>
+      <div className="is-hours-list">
+        {rows.map((row, i) => (
+          <div key={i} className="is-hours-row">
+            <span className="is-hours-label">{row.label}</span>
+            <span className="is-hours-dots" />
+            <span className="is-hours-value">{row.value}</span>
+          </div>
+        ))}
+        {rows.length === 0 && (
+          <div className="is-empty-block"><p>Ingen åbningstider konfigureret</p></div>
+        )}
+      </div>
+      {block.note && <div className="is-hours-note">{block.note}</div>}
+    </div>
+  )
+}
+
 function renderBlock(block, events, news) {
   switch (block.type) {
     case 'events':    return <EventsBlock    key={block.id} block={block} events={events} />
@@ -260,6 +419,9 @@ function renderBlock(block, events, news) {
     case 'text':      return <TextBlock      key={block.id} block={block} />
     case 'countdown': return <CountdownBlock key={block.id} block={block} />
     case 'embed':     return <EmbedBlock     key={block.id} block={block} />
+    case 'video':     return <VideoBlock     key={block.id} block={block} />
+    case 'weather':   return <WeatherBlock   key={block.id} block={block} />
+    case 'hours':     return <HoursBlock     key={block.id} block={block} />
     default:          return null
   }
 }
@@ -317,8 +479,14 @@ function SlideLayout({ slide, events, news }) {
   const layout = slide.layout || 'full'
 
   const bgStyle = {}
-  if (slide.bgColor)    bgStyle.background = slide.bgColor
-  if (slide.bgImageUrl) { bgStyle.backgroundImage = `url(${slide.bgImageUrl})`; bgStyle.backgroundSize = 'cover'; bgStyle.backgroundPosition = 'center' }
+  if (slide.bgGradient)  bgStyle.background = slide.bgGradient
+  else if (slide.bgColor) bgStyle.background = slide.bgColor
+  if (slide.bgImageUrl) {
+    const overlay = slide.bgOverlay ? `linear-gradient(rgba(0,0,0,${slide.bgOverlay / 100}),rgba(0,0,0,${slide.bgOverlay / 100})),` : ''
+    bgStyle.backgroundImage = `${overlay}url(${slide.bgImageUrl})`
+    bgStyle.backgroundSize = 'cover'
+    bgStyle.backgroundPosition = 'center'
+  }
 
   if (layout === 'zones') {
     const zones = slide.zones || []

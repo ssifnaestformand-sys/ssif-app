@@ -377,6 +377,98 @@ html, body {
   transition: width .1s linear;
 }
 
+/* ── Text subtitle ───────────────────────────────────────────────────────── */
+.is-text-subtitle {
+  display: block;
+  font-weight: 500;
+  font-style: normal;
+  opacity: .72;
+  margin-top: .45em;
+  line-height: 1.3;
+}
+
+/* ── Video block ─────────────────────────────────────────────────────────── */
+.is-video-block {
+  width: 100%; height: 100%;
+  overflow: hidden; position: relative;
+  background: #000;
+}
+.is-video-block iframe,
+.is-video-block video {
+  width: 100%; height: 100%;
+  border: none; display: block;
+}
+
+/* ── Weather block ───────────────────────────────────────────────────────── */
+.is-weather-block { display: flex; flex-direction: column; height: 100%; }
+
+.is-weather-current {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: .6rem; padding: 1rem;
+  background: radial-gradient(circle at 50% 60%, rgba(26,92,42,.18) 0%, transparent 70%);
+}
+.is-weather-big-icon  { font-size: 5.5rem; line-height: 1; filter: drop-shadow(0 4px 16px rgba(0,0,0,.3)); }
+.is-weather-temp-now  {
+  font-size: 7rem; font-weight: 900; color: var(--is-text);
+  line-height: .9; font-variant-numeric: tabular-nums; letter-spacing: -.025em;
+  text-shadow: 0 2px 12px rgba(0,0,0,.35);
+}
+.is-weather-desc      { font-size: 1.3rem; color: var(--is-text2); font-weight: 500; letter-spacing: .02em; }
+
+.is-weather-days {
+  display: flex; flex-shrink: 0;
+  border-top: 1px solid var(--is-border);
+  background: var(--is-surface);
+}
+.is-weather-day {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  padding: 1rem .5rem; gap: .45rem;
+  border-right: 1px solid var(--is-border);
+}
+.is-weather-day:last-child { border-right: none; }
+
+.is-weather-day-name {
+  font-size: .72rem; font-weight: 800; color: var(--is-text2);
+  text-transform: uppercase; letter-spacing: .09em;
+}
+.is-weather-day-icon  { font-size: 1.7rem; line-height: 1; }
+.is-weather-day-temps { display: flex; gap: .55rem; align-items: baseline; }
+.is-weather-high      { font-size: .95rem; font-weight: 700; color: var(--is-text); }
+.is-weather-low       { font-size: .8rem;  color: var(--is-text3); }
+
+/* ── Hours block ─────────────────────────────────────────────────────────── */
+.is-hours-block { display: flex; flex-direction: column; height: 100%; }
+
+.is-hours-list {
+  flex: 1; display: flex; flex-direction: column; justify-content: center;
+  padding: 1.5rem 3rem; gap: .2rem;
+}
+.is-hours-row {
+  display: flex; align-items: center; gap: 1.2rem;
+  padding: .85rem 0;
+  border-bottom: 1px solid var(--is-border);
+}
+.is-hours-row:last-child { border-bottom: none; }
+
+.is-hours-label {
+  font-size: 1.15rem; font-weight: 600; color: var(--is-text2);
+  min-width: 130px; flex-shrink: 0;
+}
+.is-hours-dots {
+  flex: 1;
+  border-bottom: 2px dotted var(--is-border);
+  margin-bottom: 3px;
+}
+.is-hours-value {
+  font-size: 1.35rem; font-weight: 800; color: var(--is-green-lt);
+  font-variant-numeric: tabular-nums; white-space: nowrap; flex-shrink: 0;
+}
+.is-hours-note {
+  padding: .8rem 3rem; font-size: .88rem; color: var(--is-text3);
+  font-style: italic; flex-shrink: 0;
+  border-top: 1px solid var(--is-border);
+}
+
 /* ── Splash ──────────────────────────────────────────────────────────────── */
 .is-splash {
   width: 100vw; height: 100vh;

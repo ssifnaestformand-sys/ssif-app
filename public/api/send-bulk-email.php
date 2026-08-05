@@ -111,7 +111,7 @@ $logFields = [
     'text'       => ['stringValue'    => $text],
     'ok'         => ['booleanValue'   => $result['sent'] > 0],
 ];
-if ($html) { $logFields['html'] = ['stringValue' => $html]; }
+if ($html) { $logFields['html'] = ['stringValue' => sanitize_email_html($html)]; }
 if (!empty($result['errorSamples'])) {
     $logFields['errorSamples'] = ['arrayValue' => ['values' => array_map(
         fn($e) => ['stringValue' => $e], $result['errorSamples']

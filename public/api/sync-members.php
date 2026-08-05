@@ -32,12 +32,9 @@ ignore_user_abort(true);         // Fortsæt selv om curl/HTTP-forbindelsen afbr
 ini_set('memory_limit', '256M'); // Stor XML-fil fra Conventus kræver mere hukommelse
 
 header('Content-Type: application/json; charset=utf-8');
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: POST, OPTIONS');
-header('Access-Control-Allow-Headers: X-Sync-Secret');
 
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(200); exit; }
-if ($_SERVER['REQUEST_METHOD'] !== 'POST')    { http_response_code(405); echo json_encode(['error' => 'Kun POST']); exit; }
+// Server-til-server endpoint — ingen CORS-headers (ingen browser-klient)
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') { http_response_code(405); echo json_encode(['error' => 'Kun POST']); exit; }
 
 // ── Autentificering (kun server-til-server via cron/deploy) ──────────────────
 $syncSecret = getenv('SYNC_SECRET') ?: '';

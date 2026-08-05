@@ -4300,10 +4300,13 @@ const INFOSCREEN_BASE_URL = 'https://sejssvejbaek-if.dk/app/infoscreen/?s='
 const BLOCK_DEFS = [
   { type: 'events',    label: 'Begivenheder', icon: '📅', desc: 'Live liste over kommende begivenheder' },
   { type: 'news',      label: 'Nyheder',      icon: '📰', desc: 'Seneste nyheder fra SSIF' },
-  { type: 'image',     label: 'Billede',       icon: '🖼',  desc: 'Foto, logo eller grafik' },
-  { type: 'text',      label: 'Tekst',         icon: '✏️', desc: 'Fritekst med valgfri styling' },
-  { type: 'countdown', label: 'Nedtælling',    icon: '⏱',  desc: 'Dage til en bestemt dato' },
-  { type: 'embed',     label: 'Indlejring',    icon: '🌐', desc: 'URL, iframe-widget eller HTML/JS-script' },
+  { type: 'image',     label: 'Billede',      icon: '🖼',  desc: 'Foto, logo eller grafik' },
+  { type: 'video',     label: 'Video',        icon: '🎬', desc: 'YouTube, Vimeo eller MP4-link' },
+  { type: 'text',      label: 'Tekst',        icon: '✏️', desc: 'Overskrift med valgfri underoverskrift' },
+  { type: 'weather',   label: 'Vejr',         icon: '🌤', desc: '5-dages vejrudsigt (Open-Meteo)' },
+  { type: 'hours',     label: 'Åbningstider', icon: '🕐', desc: 'Åbningstider med label/tidspunkt-rækker' },
+  { type: 'countdown', label: 'Nedtælling',   icon: '⏱',  desc: 'Dage til en bestemt dato' },
+  { type: 'embed',     label: 'Indlejring',   icon: '🌐', desc: 'URL, iframe-widget eller HTML/JS-script' },
 ]
 
 const SLIDE_LAYOUTS = [
@@ -4323,7 +4326,14 @@ function defaultBlock(type) {
     case 'events':    return { id, type, holdIds: [] }
     case 'news':      return { id, type }
     case 'image':     return { id, type, url: '', fit: 'cover' }
-    case 'text':      return { id, type, text: '', fontSize: 64, color: '#ffffff', bold: false, italic: false, align: 'center' }
+    case 'video':     return { id, type, url: '', fit: 'cover' }
+    case 'text':      return { id, type, text: '', subtitle: '', fontSize: 72, color: '#ffffff', bold: true, italic: false, align: 'center' }
+    case 'weather':   return { id, type, lat: 56.07, lon: 9.77, city: 'Silkeborg' }
+    case 'hours':     return { id, type, title: 'Åbningstider', rows: [
+      { label: 'Man–Fre', value: '08:00–22:00' },
+      { label: 'Lørdag',  value: '09:00–18:00' },
+      { label: 'Søndag',  value: '10:00–16:00' },
+    ], note: '' }
     case 'countdown': return { id, type, label: 'Dage til', targetDate: '' }
     case 'embed':     return { id, type, mode: 'iframe', src: '', html: '', bg: '#000000' }
     default:          return { id, type }
@@ -4333,11 +4343,89 @@ function defaultBlock(type) {
 function blankSlide() {
   return {
     id: isUid(), duration: 15, layout: 'full', blocks: [],
-    bgColor: '', bgImageUrl: '',
+    bgColor: '', bgGradient: '', bgImageUrl: '', bgOverlay: 0,
     schedule: { enabled: false, days: [], timeFrom: '', timeTo: '' },
     zones: [],
   }
 }
+
+const BG_GRADIENTS = [
+  { label: 'SSIF grøn',    value: 'linear-gradient(135deg, #1a5c2a 0%, #0d2e13 100%)' },
+  { label: 'SSIF dyb',     value: 'linear-gradient(135deg, #0d3318 0%, #071a0c 100%)' },
+  { label: 'Blå nat',      value: 'linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%)' },
+  { label: 'Midnat',       value: 'linear-gradient(135deg, #09090b 0%, #18181b 100%)' },
+  { label: 'Varm solopg.', value: 'linear-gradient(135deg, #431407 0%, #7c2d12 100%)' },
+]
+
+const SLIDE_TEMPLATES = [
+  {
+    id: 'blank',
+    label: 'Tom slide',
+    desc: 'Start fra bunden',
+    icon: '⬜',
+    build: () => blankSlide(),
+  },
+  {
+    id: 'announcement',
+    label: 'Stor meddelelse',
+    desc: 'Overskrift + underoverskrift på gradient',
+    icon: '📢',
+    build: () => ({ ...blankSlide(), bgGradient: BG_GRADIENTS[0].value, layout: 'full',
+      blocks: [defaultBlock('text')] }),
+  },
+  {
+    id: 'events',
+    label: 'Begivenheder',
+    desc: 'Live liste over kommende aktiviteter',
+    icon: '📅',
+    build: () => ({ ...blankSlide(), layout: 'full', blocks: [defaultBlock('events')] }),
+  },
+  {
+    id: 'news',
+    label: 'Nyheder',
+    desc: 'Seneste nyheder fra SSIF',
+    icon: '📰',
+    build: () => ({ ...blankSlide(), layout: 'full', blocks: [defaultBlock('news')] }),
+  },
+  {
+    id: 'weather',
+    label: 'Vejrudsigt',
+    desc: '5-dages vejrudsigt',
+    icon: '🌤',
+    build: () => ({ ...blankSlide(), layout: 'full', blocks: [defaultBlock('weather')] }),
+  },
+  {
+    id: 'weather_events',
+    label: 'Vejr + Program',
+    desc: 'Vejr til venstre, begivenheder til højre',
+    icon: '🌤📅',
+    build: () => ({ ...blankSlide(), layout: 'left-right',
+      blocks: [defaultBlock('weather'), defaultBlock('events')] }),
+  },
+  {
+    id: 'hours',
+    label: 'Åbningstider',
+    desc: 'Åbningstider for hallen',
+    icon: '🕐',
+    build: () => ({ ...blankSlide(), layout: 'full', blocks: [defaultBlock('hours')] }),
+  },
+  {
+    id: 'countdown',
+    label: 'Nedtælling',
+    desc: 'Stor nedtælling på mørk gradient',
+    icon: '⏱',
+    build: () => ({ ...blankSlide(), bgGradient: BG_GRADIENTS[1].value, layout: 'full',
+      blocks: [{ ...defaultBlock('countdown'), label: 'Dage til' }] }),
+  },
+  {
+    id: 'image_text',
+    label: 'Billede med tekst',
+    desc: 'Baggrundsbillede + mørkt overlay + overskrift',
+    icon: '🖼✏️',
+    build: () => ({ ...blankSlide(), bgOverlay: 50, layout: 'full',
+      blocks: [{ ...defaultBlock('text'), text: 'Din overskrift', subtitle: 'Underoverskrift her' }] }),
+  },
+]
 
 function BlockEditor({ block, onChange, holds }) {
   if (block.type === 'news') return (
@@ -4381,11 +4469,88 @@ function BlockEditor({ block, onChange, holds }) {
       </div>
     </>
   )
+  if (block.type === 'video') return (
+    <>
+      <input className="form-control" type="url" value={block.url || ''}
+        onChange={e => onChange({ url: e.target.value })}
+        placeholder="https://youtube.com/watch?v=… eller https://…/video.mp4"
+        style={{ marginBottom: 8 }} />
+      <p className="form-hint" style={{ marginBottom: 10 }}>YouTube, Vimeo og direkte MP4-links understøttes · afspilles automatisk uden lyd</p>
+      <div style={{ display: 'flex', gap: 6 }}>
+        {[['cover', 'Udfyld'], ['contain', 'Tilpas']].map(([v, l]) => (
+          <button key={v} type="button" onClick={() => onChange({ fit: v })}
+            style={{ padding: '5px 14px', borderRadius: 6, border: '1.5px solid', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              borderColor: (block.fit || 'cover') === v ? 'var(--green)' : 'var(--border)',
+              background:  (block.fit || 'cover') === v ? 'var(--green-soft,#f0fdf4)' : 'var(--bg)',
+              color:       (block.fit || 'cover') === v ? 'var(--green)' : 'var(--text2)' }}>{l}</button>
+        ))}
+      </div>
+    </>
+  )
+  if (block.type === 'weather') return (
+    <>
+      <div className="form-group">
+        <label className="form-label">By-navn <span style={{ fontWeight: 400, color: 'var(--text3)' }}>(vises på skærmen)</span></label>
+        <input className="form-control" value={block.city || ''}
+          onChange={e => onChange({ city: e.target.value })} placeholder="Silkeborg" />
+      </div>
+      <div className="form-group" style={{ marginTop: 10 }}>
+        <label className="form-label">GPS-placering</label>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input className="form-control" type="number" step="0.01" value={block.lat ?? 56.07}
+            onChange={e => onChange({ lat: parseFloat(e.target.value) || 56.07 })}
+            placeholder="Breddegrad" style={{ flex: 1 }} />
+          <input className="form-control" type="number" step="0.01" value={block.lon ?? 9.77}
+            onChange={e => onChange({ lon: parseFloat(e.target.value) || 9.77 })}
+            placeholder="Længdegrad" style={{ flex: 1 }} />
+        </div>
+        <p className="form-hint">Standard: Silkeborg (56.07, 9.77) · Data fra Open-Meteo, opdateres hvert 30 min</p>
+      </div>
+    </>
+  )
+  if (block.type === 'hours') return (
+    <>
+      <div className="form-group">
+        <label className="form-label">Overskrift</label>
+        <input className="form-control" value={block.title || ''}
+          onChange={e => onChange({ title: e.target.value })} placeholder="Åbningstider" />
+      </div>
+      <div className="form-group" style={{ marginTop: 10 }}>
+        <label className="form-label">Tider</label>
+        {(block.rows || []).map((row, i) => (
+          <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+            <input className="form-control" value={row.label}
+              onChange={e => { const rows = [...(block.rows||[])]; rows[i] = { ...rows[i], label: e.target.value }; onChange({ rows }) }}
+              placeholder="Man–Fre" style={{ flex: 1 }} />
+            <input className="form-control" value={row.value}
+              onChange={e => { const rows = [...(block.rows||[])]; rows[i] = { ...rows[i], value: e.target.value }; onChange({ rows }) }}
+              placeholder="08:00–22:00" style={{ flex: 1 }} />
+            <button type="button" className="btn btn-ghost btn-sm" style={{ color: '#dc2626', flexShrink: 0 }}
+              onClick={() => { const rows = (block.rows||[]).filter((_, j) => j !== i); onChange({ rows }) }}>
+              <Icon name="trash" size={11} />
+            </button>
+          </div>
+        ))}
+        <button type="button" className="btn btn-ghost btn-sm" style={{ marginTop: 2 }}
+          onClick={() => onChange({ rows: [...(block.rows||[]), { label: '', value: '' }] })}>
+          + Tilføj linje
+        </button>
+      </div>
+      <div className="form-group" style={{ marginTop: 10 }}>
+        <label className="form-label">Note <span style={{ fontWeight: 400, color: 'var(--text3)' }}>(valgfri)</span></label>
+        <input className="form-control" value={block.note || ''}
+          onChange={e => onChange({ note: e.target.value })} placeholder="fx Lukket på helligdage" />
+      </div>
+    </>
+  )
   if (block.type === 'text') return (
     <>
       <textarea className="form-control" rows={3} value={block.text}
         onChange={e => onChange({ text: e.target.value })}
-        placeholder="Skriv din tekst…" style={{ marginBottom: 10, resize: 'vertical' }} />
+        placeholder="Overskrift…" style={{ marginBottom: 6, resize: 'vertical' }} />
+      <input className="form-control" value={block.subtitle || ''}
+        onChange={e => onChange({ subtitle: e.target.value })}
+        placeholder="Underoverskrift (valgfri)…" style={{ marginBottom: 10 }} />
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
         <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5 }}>
           Størrelse
@@ -4520,6 +4685,124 @@ function BgImageLibraryBtn({ value, onSelect }) {
   )
 }
 
+function SlidePreviewPanel({ slide, config }) {
+  if (!slide) return null
+  const header    = config?.header || {}
+  const headerBg  = header.bgColor || '#1a5c2a'
+  const headerTc  = header.textColor || '#ffffff'
+  const layout    = slide.layout || 'full'
+  const blocks    = slide.blocks || []
+  const zones     = slide.zones  || []
+
+  const bgStyle = { background: '#07100a', width: '100%', height: '100%' }
+  if (slide.bgGradient)   bgStyle.background = slide.bgGradient
+  else if (slide.bgColor) bgStyle.background = slide.bgColor
+  if (slide.bgImageUrl) {
+    const ol = slide.bgOverlay ? `linear-gradient(rgba(0,0,0,${slide.bgOverlay/100}),rgba(0,0,0,${slide.bgOverlay/100})),` : ''
+    bgStyle.backgroundImage = `${ol}url(${slide.bgImageUrl})`
+    bgStyle.backgroundSize = 'cover'
+    bgStyle.backgroundPosition = 'center'
+  }
+
+  function previewBlock(block) {
+    if (!block) return null
+    const def = BLOCK_DEFS.find(d => d.type === block.type)
+    if (block.type === 'text') return (
+      <div style={{
+        width: '100%', height: '100%', display: 'flex', flexDirection: 'column',
+        alignItems: block.align === 'left' ? 'flex-start' : block.align === 'right' ? 'flex-end' : 'center',
+        justifyContent: 'center', padding: '4px 8px', gap: 2, overflow: 'hidden',
+      }}>
+        <div style={{
+          color: block.color || '#fff', fontWeight: block.bold ? 800 : 400,
+          fontSize: Math.min(15, Math.max(7, (block.fontSize || 72) / 8)) + 'px',
+          textAlign: block.align || 'center', lineHeight: 1.2,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%',
+          textShadow: '0 1px 4px rgba(0,0,0,.5)',
+        }}>{block.text || 'Tekst…'}</div>
+        {block.subtitle && <div style={{
+          color: block.color || '#fff', opacity: .7,
+          fontSize: Math.min(10, Math.max(5, (block.fontSize || 72) / 14)) + 'px',
+          textAlign: block.align || 'center', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '100%',
+        }}>{block.subtitle}</div>}
+      </div>
+    )
+    if (block.type === 'image' && block.url) return (
+      <div style={{ width: '100%', height: '100%', overflow: 'hidden' }}>
+        <img src={block.url} alt="" style={{ width: '100%', height: '100%', objectFit: block.fit || 'cover' }} onError={e => { e.target.style.display = 'none' }} />
+      </div>
+    )
+    if (block.type === 'countdown') return (
+      <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
+        <div style={{ color: '#4ade80', fontSize: 18, fontWeight: 900, lineHeight: 1 }}>—</div>
+        <div style={{ color: '#86efac', fontSize: 6, textTransform: 'uppercase', letterSpacing: '.1em', textAlign: 'center' }}>{block.label || 'Nedtælling'}</div>
+      </div>
+    )
+    return (
+      <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
+        <span style={{ fontSize: 12 }}>{def?.icon || '□'}</span>
+        <span style={{ color: '#86efac', fontSize: 6, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', textAlign: 'center' }}>{def?.label}</span>
+      </div>
+    )
+  }
+
+  function slot(block, extraStyle = {}) {
+    return <div style={{ flex: 1, display: 'flex', minWidth: 0, minHeight: 0, overflow: 'hidden', ...extraStyle }}>{previewBlock(block)}</div>
+  }
+
+  return (
+    <div style={{ borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', boxShadow: 'var(--shadow)', marginBottom: 16, background: '#07100a' }}>
+      {/* Mini header bar */}
+      <div style={{ background: headerBg, height: 18, padding: '0 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+        <span style={{ color: headerTc, fontSize: 7, fontWeight: 800, letterSpacing: '.04em', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+          {header.text || 'Sejs-Svejbæk IF'}
+        </span>
+        <span style={{ color: headerTc, fontSize: 8, fontWeight: 800, opacity: .9, fontVariantNumeric: 'tabular-nums' }}>12:34</span>
+      </div>
+      {/* 16:9 slide body */}
+      <div style={{ position: 'relative', paddingBottom: '53%' }}>
+        <div style={{ position: 'absolute', inset: 0, ...bgStyle, display: 'flex', overflow: 'hidden' }}>
+          {layout === 'full' && (
+            <div style={{ width: '100%', height: '100%', display: 'flex' }}>{previewBlock(blocks[0])}</div>
+          )}
+          {layout === 'top-bottom' && (
+            <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+              {slot(blocks[0], { borderBottom: '1px solid rgba(255,255,255,.15)' })}
+              {slot(blocks[1])}
+            </div>
+          )}
+          {layout === 'left-right' && (
+            <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'row' }}>
+              {slot(blocks[0], { borderRight: '1px solid rgba(255,255,255,.15)' })}
+              {slot(blocks[1])}
+            </div>
+          )}
+          {layout === 'zones' && (
+            <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'row' }}>
+              {zones.length ? zones.map((zone, zi) => (
+                <div key={zone.id} style={{ width: zone.size || '50%', height: '100%', display: 'flex', flexDirection: 'column', borderRight: zi < zones.length - 1 ? '1px solid rgba(255,255,255,.15)' : 'none', overflow: 'hidden' }}>
+                  {(zone.blocks || []).slice(0, 1).map(b => (
+                    <div key={b.id} style={{ flex: 1, display: 'flex' }}>{previewBlock(b)}</div>
+                  ))}
+                  {!zone.blocks?.length && (
+                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: .3 }}>
+                      <span style={{ color: '#4ade80', fontSize: 6 }}>Zone {zi + 1}</span>
+                    </div>
+                  )}
+                </div>
+              )) : (
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: .3 }}>
+                  <span style={{ color: '#4ade80', fontSize: 7 }}>Ingen zoner</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function InfoScreensPage({ authUser }) {
   const [screens,       setScreens]       = useState([])
   const [loading,       setLoading]       = useState(true)
@@ -4531,6 +4814,7 @@ function InfoScreensPage({ authUser }) {
   const [pushing,       setPushing]       = useState(null)
   const [selectedSlide, setSelectedSlide] = useState(0)
   const [activeTab,     setActiveTab]     = useState('slides')
+  const [addSlideOpen,  setAddSlideOpen]  = useState(false)
 
   useEffect(() => {
     getDocs(query(collection(db, 'infoscreens'), orderBy('createdAt', 'desc')))
@@ -4622,10 +4906,21 @@ function InfoScreensPage({ authUser }) {
     const slide = slides[safeIdx]
     const layout = SLIDE_LAYOUTS.find(l => l.id === (slide?.layout || 'full')) || SLIDE_LAYOUTS[0]
 
-    function addSlide() {
-      const s = blankSlide()
+    function addSlide(template) {
+      const s = template ? template.build() : blankSlide()
       patchSlides(ss => [...ss, s])
       setSelectedSlide(slides.length)
+      setAddSlideOpen(false)
+    }
+    function duplicateSlide(i) {
+      const src   = slides[i]
+      const copy  = {
+        ...src, id: isUid(),
+        blocks: (src.blocks || []).map(b => ({ ...b, id: isUid() })),
+        zones:  (src.zones  || []).map(z => ({ ...z, id: isUid(), blocks: (z.blocks || []).map(b => ({ ...b, id: isUid() })) })),
+      }
+      patchSlides(ss => [...ss.slice(0, i + 1), copy, ...ss.slice(i + 1)])
+      setSelectedSlide(i + 1)
     }
     function delSlide(i) {
       patchSlides(ss => ss.filter((_, j) => j !== i))
@@ -4763,40 +5058,74 @@ function InfoScreensPage({ authUser }) {
                 const isActive = i === safeIdx
                 const icons = [...new Set((s.blocks || []).map(b => BLOCK_DEFS.find(d => d.type === b.type)?.icon || ''))].join(' ')
                 const names = (s.blocks || []).map(b => BLOCK_DEFS.find(d => d.type === b.type)?.label || b.type).join(' + ')
+                const swatchBg = s.bgGradient || s.bgColor || '#07100a'
                 return (
                   <div key={s.id} onClick={() => setSelectedSlide(i)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 8, cursor: 'pointer', border: '1.5px solid', userSelect: 'none',
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8, cursor: 'pointer', border: '1.5px solid', userSelect: 'none',
                       borderColor: isActive ? 'var(--green)' : 'var(--border)',
                       background:  isActive ? 'var(--green-soft,#f0fdf4)' : 'var(--bg)' }}>
-                    <div style={{ width: 24, height: 24, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                      background: isActive ? 'var(--green)' : 'var(--muted,#e5e7eb)' }}>
-                      <span style={{ color: isActive ? '#fff' : 'var(--text2)', fontSize: 11, fontWeight: 800 }}>{i + 1}</span>
-                    </div>
+                    {/* Color swatch */}
+                    <div style={{
+                      width: 36, height: 24, borderRadius: 5, flexShrink: 0, border: '1px solid rgba(0,0,0,.12)',
+                      background: swatchBg,
+                      backgroundImage: s.bgImageUrl ? `url(${s.bgImageUrl})` : undefined,
+                      backgroundSize: 'cover', backgroundPosition: 'center', overflow: 'hidden',
+                    }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: isActive ? 'var(--green)' : 'var(--text)' }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: isActive ? 'var(--green)' : 'var(--text)' }}>
                         {icons || '—'}&nbsp;<span style={{ opacity: .6, fontWeight: 400 }}>{s.duration}s</span>
                       </div>
                       {names && <div style={{ fontSize: 11, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 1 }}>{names}</div>}
                     </div>
                     <div style={{ display: 'flex', gap: 1, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-                      <button type="button" className="btn btn-ghost btn-sm" disabled={i === 0} onClick={() => moveSlide(i, -1)} style={{ padding: '2px 4px' }}>↑</button>
-                      <button type="button" className="btn btn-ghost btn-sm" disabled={i === slides.length - 1} onClick={() => moveSlide(i, 1)} style={{ padding: '2px 4px' }}>↓</button>
-                      <button type="button" className="btn btn-ghost btn-sm" style={{ color: '#dc2626', padding: '2px 4px' }} onClick={() => delSlide(i)}>
+                      <button type="button" className="btn btn-ghost btn-sm" disabled={i === 0} onClick={() => moveSlide(i, -1)} style={{ padding: '2px 4px' }} title="Flyt op">↑</button>
+                      <button type="button" className="btn btn-ghost btn-sm" disabled={i === slides.length - 1} onClick={() => moveSlide(i, 1)} style={{ padding: '2px 4px' }} title="Flyt ned">↓</button>
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => duplicateSlide(i)} style={{ padding: '2px 5px', fontSize: 13 }} title="Kopiér slide">⧉</button>
+                      <button type="button" className="btn btn-ghost btn-sm" style={{ color: '#dc2626', padding: '2px 4px' }} onClick={() => delSlide(i)} title="Slet slide">
                         <Icon name="trash" size={11} />
                       </button>
                     </div>
                   </div>
                 )
               })}
-              <button type="button" onClick={addSlide}
-                style={{ padding: '10px', borderRadius: 8, border: '1.5px dashed var(--border)', background: 'none', color: 'var(--text3)', fontSize: 13, cursor: 'pointer' }}>
-                + Tilføj slide
-              </button>
+
+              {/* Template picker / add slide */}
+              <div style={{ position: 'relative' }}>
+                <button type="button" onClick={() => setAddSlideOpen(o => !o)}
+                  style={{ width: '100%', padding: '10px', borderRadius: 8, border: '1.5px dashed var(--border)', background: 'none', color: 'var(--text3)', fontSize: 13, cursor: 'pointer' }}>
+                  + Tilføj slide
+                </button>
+                {addSlideOpen && (
+                  <>
+                    <div style={{ position: 'fixed', inset: 0, zIndex: 49 }} onClick={() => setAddSlideOpen(false)} />
+                    <div style={{ position: 'absolute', bottom: '100%', left: 0, right: 0, marginBottom: 4, zIndex: 50,
+                      background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10,
+                      boxShadow: 'var(--shadow-md)', padding: 8, display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 420, overflowY: 'auto' }}>
+                      <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.07em', padding: '2px 4px 4px', borderBottom: '1px solid var(--border)', marginBottom: 2 }}>Vælg skabelon</p>
+                      {SLIDE_TEMPLATES.map(tpl => (
+                        <button key={tpl.id} type="button" onClick={() => addSlide(tpl)}
+                          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 8px', borderRadius: 7, border: '1px solid transparent', background: 'var(--bg)', cursor: 'pointer', textAlign: 'left', width: '100%' }}
+                          onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--green)'; e.currentTarget.style.background = 'var(--green-soft,#f0fdf4)' }}
+                          onMouseLeave={e => { e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.background = 'var(--bg)' }}>
+                          <span style={{ fontSize: 18, width: 26, textAlign: 'center', flexShrink: 0, lineHeight: 1 }}>{tpl.icon}</span>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{tpl.label}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tpl.desc}</div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
 
             {/* Right: slide editor */}
             {slide ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {/* Live preview */}
+                <SlidePreviewPanel slide={slide} config={editor.config} />
+
                 {/* Slide settings */}
                 <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                   <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-end' }}>
@@ -4828,22 +5157,53 @@ function InfoScreensPage({ authUser }) {
                   {/* Background */}
                   <div>
                     <label className="form-label">Baggrund</label>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+
+                    {/* Solid color */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
                       <input type="color" value={slide.bgColor || '#000000'}
-                        onChange={e => patchSlide(safeIdx, { bgColor: e.target.value })}
-                        style={{ width: 36, height: 28, padding: 2, border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer' }} />
-                      <span style={{ fontSize: 12, color: 'var(--text3)' }}>Farve</span>
-                      {slide.bgColor && (
-                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => patchSlide(safeIdx, { bgColor: '' })}>✕ Ryd</button>
+                        onChange={e => patchSlide(safeIdx, { bgColor: e.target.value, bgGradient: '' })}
+                        style={{ width: 34, height: 28, padding: 2, border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer' }} />
+                      <span style={{ fontSize: 12, color: 'var(--text3)' }}>Ensfarvet</span>
+                      {(slide.bgColor || slide.bgGradient) && (
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => patchSlide(safeIdx, { bgColor: '', bgGradient: '' })}>✕ Ryd</button>
                       )}
                     </div>
-                    <div style={{ marginTop: 8 }}>
+
+                    {/* Gradient presets */}
+                    <p style={{ fontSize: 11, color: 'var(--text3)', margin: '8px 0 5px' }}>Gradientskabeloner</p>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {BG_GRADIENTS.map(g => (
+                        <button key={g.label} type="button" title={g.label}
+                          onClick={() => patchSlide(safeIdx, { bgGradient: g.value, bgColor: '' })}
+                          style={{
+                            width: 34, height: 28, borderRadius: 6, border: '2px solid', cursor: 'pointer',
+                            background: g.value,
+                            borderColor: slide.bgGradient === g.value ? 'var(--green)' : 'var(--border)',
+                            boxShadow:   slide.bgGradient === g.value ? '0 0 0 2px var(--green-soft,#f0fdf4)' : 'none',
+                          }} />
+                      ))}
+                    </div>
+
+                    {/* Background image */}
+                    <div style={{ marginTop: 10 }}>
                       <p style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 6 }}>Baggrundsbillede</p>
                       <ImageUploader
                         value={slide.bgImageUrl || ''}
                         onChange={url => patchSlide(safeIdx, { bgImageUrl: url })}
                         hint="Anbefalet 1920×1080 · maks 10 MB"
                       />
+                      {slide.bgImageUrl && (
+                        <div style={{ marginTop: 10 }}>
+                          <label className="form-label" style={{ fontSize: 12 }}>
+                            Mørkhed over billedet&nbsp;
+                            <span style={{ fontWeight: 400, color: 'var(--text3)' }}>({slide.bgOverlay || 0}%)</span>
+                          </label>
+                          <input type="range" min={0} max={80} step={5} value={slide.bgOverlay || 0}
+                            onChange={e => patchSlide(safeIdx, { bgOverlay: parseInt(e.target.value) })}
+                            style={{ width: '100%', accentColor: 'var(--green)', marginTop: 4 }} />
+                          <p className="form-hint">Gør tekst mere læselig henover lyse billeder</p>
+                        </div>
+                      )}
                     </div>
                   </div>
 

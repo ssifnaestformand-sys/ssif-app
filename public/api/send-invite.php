@@ -119,10 +119,12 @@ function smtp_send_one(string $to, string $subject, string $body, string $pass):
     sc($sock, "MAIL FROM:<{$user}>");
     if (strncmp(sc($sock, "RCPT TO:<{$to}>"), '250', 3) !== 0) { fclose($sock); return false; }
     sc($sock, 'DATA');
-    $enc = '=?UTF-8?B?' . base64_encode($subject) . '?=';
+    $enc      = '=?UTF-8?B?' . base64_encode($subject) . '?=';
+    $stuffed  = preg_replace('/(\r\n)\./', '$1..', str_replace("\n", "\r\n", $body));
+    if (isset($stuffed[0]) && $stuffed[0] === '.') $stuffed = '.' . $stuffed;
     $msg = "Date: " . date('r') . "\r\nFrom: Sejs-Svejbæk IF <{$user}>\r\nTo: {$to}\r\nSubject: {$enc}\r\n"
          . "MIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n"
-         . $body . "\r\n.";
+         . $stuffed . "\r\n.";
     $ok = strncmp(sc($sock, $msg), '250', 3) === 0;
     fwrite($sock, "QUIT\r\n"); fclose($sock);
     return $ok;

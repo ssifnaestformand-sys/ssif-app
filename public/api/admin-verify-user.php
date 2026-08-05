@@ -214,8 +214,10 @@ function smtp_send(string $to, string $subject, string $body): bool {
     smtp_c($sock, "MAIL FROM:<{$from}>");
     smtp_c($sock, "RCPT TO:<{$to}>");
     smtp_c($sock, 'DATA');
-    $enc = '=?UTF-8?B?' . base64_encode($subject) . '?=';
-    smtp_c($sock, "Date: ".date('r')."\r\nFrom: SSIF App <{$from}>\r\nTo: {$to}\r\nSubject: {$enc}\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n{$body}\r\n.");
+    $enc     = '=?UTF-8?B?' . base64_encode($subject) . '?=';
+    $stuffed = preg_replace('/(\r\n)\./', '$1..', str_replace("\n", "\r\n", $body));
+    if (isset($stuffed[0]) && $stuffed[0] === '.') $stuffed = '.' . $stuffed;
+    smtp_c($sock, "Date: ".date('r')."\r\nFrom: SSIF App <{$from}>\r\nTo: {$to}\r\nSubject: {$enc}\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n{$stuffed}\r\n.");
     fwrite($sock, "QUIT\r\n"); fclose($sock); return true;
 }
 function smtp_r($s): string { $o=''; while($l=fgets($s,512)){$o=$l;if(isset($l[3])&&$l[3]===' ')break;} return $o; }
