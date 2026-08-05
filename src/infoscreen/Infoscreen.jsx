@@ -488,6 +488,7 @@ function SlideLayout({ slide, events, news }) {
     bgStyle.backgroundPosition = 'center'
   }
 
+  // Legacy: zones layout
   if (layout === 'zones') {
     const zones = slide.zones || []
     return (
@@ -499,6 +500,8 @@ function SlideLayout({ slide, events, news }) {
       </div>
     )
   }
+
+  // Legacy: fixed split layouts (old slides without block coordinates)
   if (layout === 'left-right' && blocks.length >= 2) {
     return (
       <div className="is-layout-lr" style={bgStyle}>
@@ -515,11 +518,22 @@ function SlideLayout({ slide, events, news }) {
       </div>
     )
   }
+
+  // Free absolute layout — new slides + legacy 'full' fallback
+  // Blocks without x/y/w/h default to full-slide (100%)
   return (
-    <div className="is-layout-full" style={bgStyle}>
-      {blocks[0] ? renderBlock(blocks[0], events, news) : (
-        <div className="is-empty-block"><p>Ingen indhold</p></div>
-      )}
+    <div style={{ position: 'relative', width: '100%', height: '100%', ...bgStyle }}>
+      {blocks.map(block => (
+        <div key={block.id} style={{
+          position: 'absolute',
+          left: `${block.x ?? 0}%`, top: `${block.y ?? 0}%`,
+          width: `${block.w ?? 100}%`, height: `${block.h ?? 100}%`,
+          overflow: 'hidden',
+        }}>
+          {renderBlock(block, events, news)}
+        </div>
+      ))}
+      {!blocks.length && <div className="is-empty-block"><p>Ingen indhold</p></div>}
     </div>
   )
 }
