@@ -4680,6 +4680,73 @@ function BgImageLibraryBtn({ value, onSelect }) {
   )
 }
 
+// ── Infoscreen UI helpers ─────────────────────────────────────────────────────
+
+function PanelSection({ title, icon, badge, children, defaultOpen = true }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div style={{ borderBottom: '1px solid var(--border)' }}>
+      <button type="button" onClick={() => setOpen(o => !o)}
+        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '11px 14px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+        {icon && <span style={{ fontSize: 13, lineHeight: 1, flexShrink: 0 }}>{icon}</span>}
+        <span style={{ flex: 1, fontWeight: 700, fontSize: 11, color: 'var(--text)', textTransform: 'uppercase', letterSpacing: '.06em' }}>{title}</span>
+        {badge != null && (
+          <span style={{ fontSize: 10, background: 'var(--green-soft,#f0fdf4)', color: 'var(--green)', padding: '1px 7px', borderRadius: 10, fontWeight: 700, flexShrink: 0 }}>{badge}</span>
+        )}
+        <svg width="10" height="10" viewBox="0 0 10 10" style={{ color: 'var(--text3)', flexShrink: 0, transform: open ? 'none' : 'rotate(-90deg)', transition: 'transform .15s' }}>
+          <path d="M1 3.5l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </button>
+      {open && <div style={{ padding: '2px 14px 14px' }}>{children}</div>}
+    </div>
+  )
+}
+
+function SlideThumbnail({ slide, index, isActive, isFirst, isLast, onClick, onMove, onDuplicate, onDelete }) {
+  const [hover, setHover] = useState(false)
+  const bgStyle = { background: '#07100a' }
+  if (slide.bgGradient)   bgStyle.background = slide.bgGradient
+  else if (slide.bgColor) bgStyle.background = slide.bgColor
+  if (slide.bgImageUrl) {
+    bgStyle.backgroundImage = `url(${slide.bgImageUrl})`
+    bgStyle.backgroundSize = 'cover'; bgStyle.backgroundPosition = 'center'
+  }
+  const icons = [...new Set((slide.blocks || []).map(b => BLOCK_DEFS.find(d => d.type === b.type)?.icon).filter(Boolean))]
+  return (
+    <div style={{ position: 'relative' }} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
+      <div onClick={onClick} style={{ borderRadius: 6, overflow: 'hidden', border: '2.5px solid', cursor: 'pointer', userSelect: 'none',
+        borderColor: isActive ? 'var(--green)' : hover ? 'var(--text3)' : 'var(--border)' }}>
+        <div style={{ position: 'relative', paddingBottom: '56.25%', ...bgStyle }}>
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 3, padding: 6 }}>
+            {icons.length > 0
+              ? icons.map((ic, i) => <span key={i} style={{ fontSize: 15, lineHeight: 1 }}>{ic}</span>)
+              : <span style={{ color: 'rgba(255,255,255,.18)', fontSize: 9, fontWeight: 600 }}>Tom</span>}
+          </div>
+        </div>
+        <div style={{ background: isActive ? 'var(--green)' : '#111', padding: '3px 7px', display: 'flex', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 9, fontWeight: 700, color: isActive ? '#fff' : '#777' }}>#{index + 1}</span>
+          <span style={{ fontSize: 9, color: isActive ? 'rgba(255,255,255,.75)' : '#555' }}>{slide.duration}s</span>
+        </div>
+      </div>
+      {hover && (
+        <div style={{ position: 'absolute', top: 3, right: 3, display: 'flex', gap: 1, zIndex: 2 }}>
+          {[
+            [!isFirst, '↑', () => onMove(-1), '#222'],
+            [!isLast,  '↓', () => onMove(1),  '#222'],
+            [true,     '⧉', onDuplicate,       '#222'],
+            [true,     '✕', onDelete,           '#dc2626'],
+          ].map(([enabled, lbl, fn, bg], i) => (
+            <button key={i} type="button" disabled={!enabled} onClick={e => { e.stopPropagation(); if (enabled) fn() }}
+              style={{ width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 3, border: 'none', background: enabled ? bg : '#333', color: '#fff', cursor: enabled ? 'pointer' : 'default', fontSize: 9, padding: 0, opacity: enabled ? 1 : .4 }}>
+              {lbl}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function SlideCanvas({ slide, config, selectedId, onSelect, onPatch }) {
   if (!slide) return null
   const header   = config?.header || {}
@@ -4972,345 +5039,296 @@ function InfoScreensPage({ authUser }) {
     return (
       <>
         {/* Top bar */}
-        <div className="page-header" style={{ marginBottom: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
-            <button className="btn btn-ghost btn-sm" onClick={closeEditor}>← Tilbage</button>
-            <input value={config.name}
-              onChange={e => patchConfig(c => ({ ...c, name: e.target.value }))}
-              placeholder="Skærmens navn…"
-              style={{ fontSize: 18, fontWeight: 700, border: 'none', outline: 'none', background: 'transparent', color: 'var(--text)', flex: 1, minWidth: 0 }} />
-          </div>
-          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-            {saving ? 'Gemmer…' : '💾 Gem skærm'}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingBottom: 14, borderBottom: '1px solid var(--border)', marginBottom: 20 }}>
+          <button className="btn btn-ghost btn-sm" onClick={closeEditor}>← Tilbage</button>
+          <div style={{ width: 1, height: 20, background: 'var(--border)', flexShrink: 0 }} />
+          <input value={config.name}
+            onChange={e => patchConfig(c => ({ ...c, name: e.target.value }))}
+            placeholder="Skærmens navn…"
+            style={{ fontSize: 16, fontWeight: 700, border: 'none', outline: 'none', background: 'transparent', color: 'var(--text)', flex: 1, minWidth: 0 }} />
+          <span style={{ fontSize: 12, color: 'var(--text3)', flexShrink: 0, whiteSpace: 'nowrap' }}>{slides.length} slide{slides.length !== 1 ? 's' : ''}</span>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving} style={{ flexShrink: 0 }}>
+            {saving ? 'Gemmer…' : 'Gem'}
           </button>
         </div>
 
-        {/* Tabs */}
-        <div style={{ display: 'flex', gap: 2, marginBottom: 16, borderBottom: '2px solid var(--border)' }}>
-          {[['slides', '📋 Slides'], ['header', '🎨 Topbjælke']].map(([tab, label]) => (
-            <button key={tab} type="button" onClick={() => setActiveTab(tab)}
-              style={{ padding: '8px 18px', background: 'none', border: 'none', cursor: 'pointer',
-                fontWeight: activeTab === tab ? 700 : 500,
-                color: activeTab === tab ? 'var(--green)' : 'var(--text2)',
-                borderBottom: activeTab === tab ? '2px solid var(--green)' : '2px solid transparent',
-                marginBottom: -2 }}>
-              {label}
-            </button>
-          ))}
-        </div>
+        {/* 3-panel layout */}
+        <div style={{ display: 'flex', gap: 0, alignItems: 'flex-start' }}>
 
-        {/* ── Header tab ── */}
-        {activeTab === 'header' && (
-          <div style={{ maxWidth: 520 }}>
-            <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div style={{ borderRadius: 8, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,.15)' }}>
-                <div style={{ background: config.header.bgColor || '#1a5c2a', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    {config.header.logoUrl
-                      ? <img src={config.header.logoUrl} style={{ height: 28, objectFit: 'contain' }} onError={e => { e.target.style.display = 'none' }} />
-                      : <div style={{ width: 28, height: 28, borderRadius: 4, background: 'rgba(255,255,255,.2)' }} />}
-                    <span style={{ color: config.header.textColor || '#ffffff', fontWeight: 800, fontSize: 15 }}>{config.header.text || 'Sejs-Svejbæk IF'}</span>
+          {/* ── LEFT: Filmstrip ── */}
+          <div style={{ width: 152, flexShrink: 0, paddingRight: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.07em', margin: '0 0 4px' }}>Slides</p>
+            {slides.map((s, i) => (
+              <SlideThumbnail key={s.id} slide={s} index={i}
+                isActive={i === safeIdx}
+                isFirst={i === 0}
+                isLast={i === slides.length - 1}
+                onClick={() => setSelectedSlide(i)}
+                onMove={dir => moveSlide(i, dir)}
+                onDuplicate={() => duplicateSlide(i)}
+                onDelete={() => delSlide(i)}
+              />
+            ))}
+            <div style={{ position: 'relative' }}>
+              <button type="button" onClick={() => setAddSlideOpen(o => !o)}
+                style={{ width: '100%', padding: '8px', borderRadius: 7, border: '1.5px dashed var(--border)', background: 'none', color: 'var(--text3)', fontSize: 11, cursor: 'pointer' }}>
+                + Tilføj slide
+              </button>
+              {addSlideOpen && (
+                <>
+                  <div style={{ position: 'fixed', inset: 0, zIndex: 49 }} onClick={() => setAddSlideOpen(false)} />
+                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, zIndex: 50,
+                    background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10,
+                    boxShadow: 'var(--shadow-md)', padding: 8, display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 380, overflowY: 'auto' }}>
+                    <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.07em', padding: '2px 4px 6px', borderBottom: '1px solid var(--border)', marginBottom: 2 }}>Vælg skabelon</p>
+                    {SLIDE_TEMPLATES.map(tpl => (
+                      <button key={tpl.id} type="button" onClick={() => addSlide(tpl)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px', borderRadius: 7, border: '1px solid transparent', background: 'var(--bg)', cursor: 'pointer', textAlign: 'left', width: '100%' }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--green)'; e.currentTarget.style.background = 'var(--green-soft,#f0fdf4)' }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.background = 'var(--bg)' }}>
+                        <span style={{ fontSize: 18, width: 24, textAlign: 'center', flexShrink: 0 }}>{tpl.icon}</span>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{tpl.label}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tpl.desc}</div>
+                        </div>
+                      </button>
+                    ))}
                   </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ color: config.header.textColor || '#ffffff', fontWeight: 800, fontSize: 22, fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>12:34</div>
-                    <div style={{ color: config.header.textColor || '#ffffff', opacity: .65, fontSize: 10, marginTop: 2 }}>Tirsdag 17. jun 2026</div>
-                  </div>
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text2)' }}>Baggrundsfarve</label>
-                <input type="color" value={config.header.bgColor || '#1a5c2a'}
-                  onChange={e => patchHeader({ bgColor: e.target.value })}
-                  style={{ width: 40, height: 30, padding: 2, border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer' }} />
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => patchHeader({ bgColor: '#1a5c2a' })}>Nulstil</button>
-                <span style={{ color: 'var(--border)', fontSize: 16 }}>|</span>
-                <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text2)' }}>Tekstfarve</label>
-                <input type="color" value={config.header.textColor || '#ffffff'}
-                  onChange={e => patchHeader({ textColor: e.target.value })}
-                  style={{ width: 40, height: 30, padding: 2, border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer' }} />
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => patchHeader({ textColor: '#ffffff' })}>Nulstil</button>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Tekst / klubnavn</label>
-                <input className="form-control" value={config.header.text}
-                  onChange={e => patchHeader({ text: e.target.value })} placeholder="Sejs-Svejbæk IF" />
-                <p className="form-hint">Tomt = "Sejs-Svejbæk IF"</p>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Logo</label>
-                <ImageUploader value={config.header.logoUrl} onChange={url => patchHeader({ logoUrl: url })} hint="PNG med transparent baggrund anbefales · maks 2 MB" />
-                <input className="form-control" type="url" value={config.header.logoUrl}
-                  onChange={e => patchHeader({ logoUrl: e.target.value })} placeholder="https://…" style={{ marginTop: 8 }} />
-                <p className="form-hint">Tomt = SSIF-logo</p>
-              </div>
+                </>
+              )}
             </div>
           </div>
-        )}
 
-        {/* ── Slides tab ── */}
-        {activeTab === 'slides' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: 16, alignItems: 'start' }}>
-
-            {/* Left: slide list */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {slides.map((s, i) => {
-                const isActive = i === safeIdx
-                const icons = [...new Set((s.blocks || []).map(b => BLOCK_DEFS.find(d => d.type === b.type)?.icon || ''))].join(' ')
-                const names = (s.blocks || []).map(b => BLOCK_DEFS.find(d => d.type === b.type)?.label || b.type).join(' + ')
-                const swatchBg = s.bgGradient || s.bgColor || '#07100a'
-                return (
-                  <div key={s.id} onClick={() => setSelectedSlide(i)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8, cursor: 'pointer', border: '1.5px solid', userSelect: 'none',
-                      borderColor: isActive ? 'var(--green)' : 'var(--border)',
-                      background:  isActive ? 'var(--green-soft,#f0fdf4)' : 'var(--bg)' }}>
-                    {/* Color swatch */}
-                    <div style={{
-                      width: 36, height: 24, borderRadius: 5, flexShrink: 0, border: '1px solid rgba(0,0,0,.12)',
-                      background: swatchBg,
-                      backgroundImage: s.bgImageUrl ? `url(${s.bgImageUrl})` : undefined,
-                      backgroundSize: 'cover', backgroundPosition: 'center', overflow: 'hidden',
-                    }} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: isActive ? 'var(--green)' : 'var(--text)' }}>
-                        {icons || '—'}&nbsp;<span style={{ opacity: .6, fontWeight: 400 }}>{s.duration}s</span>
-                      </div>
-                      {names && <div style={{ fontSize: 11, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 1 }}>{names}</div>}
-                    </div>
-                    <div style={{ display: 'flex', gap: 1, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-                      <button type="button" className="btn btn-ghost btn-sm" disabled={i === 0} onClick={() => moveSlide(i, -1)} style={{ padding: '2px 4px' }} title="Flyt op">↑</button>
-                      <button type="button" className="btn btn-ghost btn-sm" disabled={i === slides.length - 1} onClick={() => moveSlide(i, 1)} style={{ padding: '2px 4px' }} title="Flyt ned">↓</button>
-                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => duplicateSlide(i)} style={{ padding: '2px 5px', fontSize: 13 }} title="Kopiér slide">⧉</button>
-                      <button type="button" className="btn btn-ghost btn-sm" style={{ color: '#dc2626', padding: '2px 4px' }} onClick={() => delSlide(i)} title="Slet slide">
-                        <Icon name="trash" size={11} />
-                      </button>
-                    </div>
+          {/* ── CENTER: Canvas ── */}
+          <div style={{ flex: 1, minWidth: 0, paddingRight: 20 }}>
+            {slide ? (
+              <>
+                <SlideCanvas
+                  slide={slide} config={config}
+                  selectedId={selectedBlockId}
+                  onSelect={setSelectedBlockId}
+                  onPatch={(blockId, p) => patchBlock(safeIdx, blockId, p)}
+                />
+                {(slide.blocks || []).length === 0 && (
+                  <div style={{ marginTop: 12, padding: '20px 16px', border: '1.5px dashed var(--border)', borderRadius: 10, background: 'var(--bg)', textAlign: 'center' }}>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text2)', marginBottom: 4 }}>Tomt slide</p>
+                    <p style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.5 }}>Tilføj elementer i panelet til højre</p>
                   </div>
-                )
-              })}
-
-              {/* Template picker / add slide */}
-              <div style={{ position: 'relative' }}>
-                <button type="button" onClick={() => setAddSlideOpen(o => !o)}
-                  style={{ width: '100%', padding: '10px', borderRadius: 8, border: '1.5px dashed var(--border)', background: 'none', color: 'var(--text3)', fontSize: 13, cursor: 'pointer' }}>
-                  + Tilføj slide
-                </button>
-                {addSlideOpen && (
-                  <>
-                    <div style={{ position: 'fixed', inset: 0, zIndex: 49 }} onClick={() => setAddSlideOpen(false)} />
-                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, zIndex: 50,
-                      background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10,
-                      boxShadow: 'var(--shadow-md)', padding: 8, display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 420, overflowY: 'auto' }}>
-                      <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.07em', padding: '2px 4px 4px', borderBottom: '1px solid var(--border)', marginBottom: 2 }}>Vælg skabelon</p>
-                      {SLIDE_TEMPLATES.map(tpl => (
-                        <button key={tpl.id} type="button" onClick={() => addSlide(tpl)}
-                          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 8px', borderRadius: 7, border: '1px solid transparent', background: 'var(--bg)', cursor: 'pointer', textAlign: 'left', width: '100%' }}
-                          onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--green)'; e.currentTarget.style.background = 'var(--green-soft,#f0fdf4)' }}
-                          onMouseLeave={e => { e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.background = 'var(--bg)' }}>
-                          <span style={{ fontSize: 18, width: 26, textAlign: 'center', flexShrink: 0, lineHeight: 1 }}>{tpl.icon}</span>
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{tpl.label}</div>
-                            <div style={{ fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tpl.desc}</div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  </>
                 )}
+              </>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '80px 24px', color: 'var(--text3)' }}>
+                <div style={{ fontSize: 40, marginBottom: 14 }}>📋</div>
+                <p style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Ingen slide valgt</p>
+                <p style={{ fontSize: 13, lineHeight: 1.6 }}>Tilføj dit første slide i filmstrimlen til venstre</p>
               </div>
-            </div>
+            )}
+          </div>
 
-            {/* Right: slide editor */}
+          {/* ── RIGHT: Properties ── */}
+          <div style={{ width: 284, flexShrink: 0, borderLeft: '1px solid var(--border)', overflowY: 'auto', maxHeight: 'calc(100vh - 140px)', position: 'sticky', top: 0 }}>
             {slide ? (() => {
               const selBlock = (slide.blocks || []).find(b => b.id === selectedBlockId) || null
               const selDef   = selBlock ? BLOCK_DEFS.find(d => d.type === selBlock.type) : null
               return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {/* Interactive canvas */}
-                  <SlideCanvas
-                    slide={slide} config={editor.config}
-                    selectedId={selectedBlockId}
-                    onSelect={setSelectedBlockId}
-                    onPatch={(blockId, p) => patchBlock(safeIdx, blockId, p)}
-                  />
-
-                  {/* Slide settings */}
-                  <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                    <div>
-                      <label className="form-label">Varighed</label>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                        <input type="number" min={3} max={300} value={slide.duration}
-                          onChange={e => patchSlide(safeIdx, { duration: parseInt(e.target.value) || 15 })}
-                          className="form-control" style={{ width: 72 }} />
-                        <span style={{ fontSize: 12, color: 'var(--text3)' }}>sek</span>
-                      </div>
-                    </div>
-
-                    {/* Background */}
-                    <div>
-                      <label className="form-label">Baggrund</label>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
-                        <input type="color" value={slide.bgColor || '#000000'}
-                          onChange={e => patchSlide(safeIdx, { bgColor: e.target.value, bgGradient: '' })}
-                          style={{ width: 34, height: 28, padding: 2, border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer' }} />
-                        <span style={{ fontSize: 12, color: 'var(--text3)' }}>Ensfarvet</span>
-                        {(slide.bgColor || slide.bgGradient) && (
-                          <button type="button" className="btn btn-ghost btn-sm" onClick={() => patchSlide(safeIdx, { bgColor: '', bgGradient: '' })}>✕ Ryd</button>
-                        )}
-                      </div>
-                      <p style={{ fontSize: 11, color: 'var(--text3)', margin: '8px 0 5px' }}>Gradientskabeloner</p>
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        {BG_GRADIENTS.map(g => (
-                          <button key={g.label} type="button" title={g.label}
-                            onClick={() => patchSlide(safeIdx, { bgGradient: g.value, bgColor: '' })}
-                            style={{ width: 34, height: 28, borderRadius: 6, border: '2px solid', cursor: 'pointer', background: g.value,
-                              borderColor: slide.bgGradient === g.value ? 'var(--green)' : 'var(--border)',
-                              boxShadow:   slide.bgGradient === g.value ? '0 0 0 2px var(--green-soft,#f0fdf4)' : 'none' }} />
-                        ))}
-                      </div>
-                      <div style={{ marginTop: 10 }}>
-                        <p style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 6 }}>Baggrundsbillede</p>
-                        <ImageUploader value={slide.bgImageUrl || ''} onChange={url => patchSlide(safeIdx, { bgImageUrl: url })} hint="Anbefalet 1920×1080 · maks 10 MB" />
-                        {slide.bgImageUrl && (
-                          <div style={{ marginTop: 10 }}>
-                            <label className="form-label" style={{ fontSize: 12 }}>
-                              Mørkhed over billedet&nbsp;<span style={{ fontWeight: 400, color: 'var(--text3)' }}>({slide.bgOverlay || 0}%)</span>
-                            </label>
-                            <input type="range" min={0} max={80} step={5} value={slide.bgOverlay || 0}
-                              onChange={e => patchSlide(safeIdx, { bgOverlay: parseInt(e.target.value) })}
-                              style={{ width: '100%', accentColor: 'var(--green)', marginTop: 4 }} />
-                            <p className="form-hint">Gør tekst mere læselig henover lyse billeder</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Schedule */}
-                    <div>
-                      <label className="form-label">Tidsstyring</label>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, cursor: 'pointer' }}>
-                        <input type="checkbox" checked={slide.schedule?.enabled || false}
-                          onChange={e => patchSlide(safeIdx, { schedule: { ...(slide.schedule||{}), enabled: e.target.checked } })}
-                          style={{ accentColor: 'var(--green)' }} />
-                        <span style={{ fontSize: 13, color: 'var(--text2)' }}>Aktivér tidsstyring</span>
-                      </label>
-                      {slide.schedule?.enabled && (
-                        <>
-                          <div style={{ display: 'flex', gap: 4, marginTop: 8, flexWrap: 'wrap' }}>
-                            {[['Sø',0],['Ma',1],['Ti',2],['On',3],['To',4],['Fr',5],['Lø',6]].map(([lbl, day]) => {
-                              const on = (slide.schedule?.days || []).includes(day)
-                              return (
-                                <button key={day} type="button"
-                                  onClick={() => { const days = on ? (slide.schedule?.days||[]).filter(d => d !== day) : [...(slide.schedule?.days||[]), day]; patchSlide(safeIdx, { schedule: { ...(slide.schedule||{}), days } }) }}
-                                  style={{ padding: '4px 9px', borderRadius: 6, border: '1.5px solid', fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                                    borderColor: on ? 'var(--green)' : 'var(--border)', background: on ? 'var(--green-soft,#f0fdf4)' : 'var(--bg)', color: on ? 'var(--green)' : 'var(--text2)' }}>
-                                  {lbl}
-                                </button>
-                              )
-                            })}
-                          </div>
-                          <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 3 }}>Ingen dage valgt = alle dage</p>
-                          <div style={{ display: 'flex', gap: 10, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                            <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5 }}>
-                              Fra <input type="time" value={slide.schedule?.timeFrom || ''}
-                                onChange={e => patchSlide(safeIdx, { schedule: { ...(slide.schedule||{}), timeFrom: e.target.value } })}
-                                className="form-control" style={{ width: 110, marginLeft: 4 }} />
-                            </label>
-                            <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5 }}>
-                              Til <input type="time" value={slide.schedule?.timeTo || ''}
-                                onChange={e => patchSlide(safeIdx, { schedule: { ...(slide.schedule||{}), timeTo: e.target.value } })}
-                                className="form-control" style={{ width: 110, marginLeft: 4 }} />
-                            </label>
-                          </div>
-                          <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 3 }}>Tomt tidsinterval = hele dagen</p>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Block list — click to select */}
-                  {(slide.blocks || []).length > 0 && (
-                    <div className="card card-pad" style={{ padding: '10px 12px' }}>
-                      <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Elementer på sliden</p>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <>
+                  {/* ELEMENTER */}
+                  <PanelSection title="Elementer" icon="◻" badge={(slide.blocks || []).length || undefined} defaultOpen>
+                    {(slide.blocks || []).length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 12 }}>
                         {(slide.blocks || []).map(block => {
                           const def   = BLOCK_DEFS.find(d => d.type === block.type)
                           const isSel = block.id === selectedBlockId
                           return (
                             <div key={block.id} onClick={() => setSelectedBlockId(isSel ? null : block.id)}
-                              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 7, cursor: 'pointer', border: '1.5px solid',
-                                borderColor: isSel ? 'var(--green)' : 'var(--border)',
+                              style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', border: '1.5px solid',
+                                borderColor: isSel ? 'var(--green)' : 'transparent',
                                 background:  isSel ? 'var(--green-soft,#f0fdf4)' : 'var(--bg)' }}>
-                              <span style={{ fontSize: 15, lineHeight: 1, flexShrink: 0 }}>{def?.icon}</span>
-                              <span style={{ fontSize: 13, fontWeight: isSel ? 700 : 400, color: isSel ? 'var(--green)' : 'var(--text)', flex: 1 }}>{def?.label}</span>
-                              <span style={{ fontSize: 10, color: 'var(--text3)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
-                                {Math.round(block.w ?? 100)}×{Math.round(block.h ?? 100)} @ {Math.round(block.x ?? 0)},{Math.round(block.y ?? 0)}
+                              <span style={{ fontSize: 13, flexShrink: 0 }}>{def?.icon}</span>
+                              <span style={{ fontSize: 12, fontWeight: isSel ? 700 : 400, color: isSel ? 'var(--green)' : 'var(--text)', flex: 1 }}>{def?.label}</span>
+                              <span style={{ fontSize: 9, color: 'var(--text3)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                                {Math.round(block.w ?? 100)}×{Math.round(block.h ?? 100)}
                               </span>
-                              <button type="button" className="btn btn-ghost btn-sm" style={{ padding: '2px 5px', color: '#dc2626', flexShrink: 0 }}
-                                onClick={e => { e.stopPropagation(); delBlock(block.id) }}>
-                                <Icon name="trash" size={11} />
-                              </button>
+                              <button type="button" onClick={e => { e.stopPropagation(); delBlock(block.id) }}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 3px', color: '#dc2626', flexShrink: 0, lineHeight: 1, fontSize: 11 }}>✕</button>
                             </div>
                           )
                         })}
                       </div>
-                    </div>
-                  )}
-
-                  {/* Selected block editor */}
-                  {selBlock && (
-                    <div className="card card-pad">
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-                        <span style={{ fontSize: 18, lineHeight: 1 }}>{selDef?.icon}</span>
-                        <span style={{ fontWeight: 700, fontSize: 14, flex: 1 }}>{selDef?.label}</span>
-                        <button type="button" className="btn btn-ghost btn-sm" style={{ color: '#dc2626' }} onClick={() => delBlock(selBlock.id)}>
-                          <Icon name="trash" size={13} />
-                        </button>
-                      </div>
-
-                      {/* Position & size */}
-                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14, padding: '10px 12px', background: 'var(--bg)', borderRadius: 8, border: '1px solid var(--border)' }}>
-                        <p style={{ width: '100%', fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>Position &amp; størrelse</p>
-                        {[['X', 'x', 0, 95], ['Y', 'y', 0, 95], ['Bredde', 'w', 5, 100], ['Højde', 'h', 5, 100]].map(([lbl, key, mn, mx]) => (
-                          <label key={key} style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                            {lbl}
-                            <input type="number" min={mn} max={mx} value={Math.round(selBlock[key] ?? (key === 'w' || key === 'h' ? 100 : 0))}
-                              onChange={e => patchBlock(safeIdx, selBlock.id, { [key]: Math.max(mn, Math.min(mx, parseInt(e.target.value) || 0)) })}
-                              className="form-control" style={{ width: 60, marginLeft: 4 }} />
-                            <span style={{ color: 'var(--text3)' }}>%</span>
-                          </label>
-                        ))}
-                      </div>
-
-                      <BlockEditor block={selBlock} onChange={p => patchBlock(safeIdx, selBlock.id, p)} holds={holds} />
-                    </div>
-                  )}
-
-                  {/* Add element */}
-                  <div className="card card-pad">
-                    <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>Tilføj element</p>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px,1fr))', gap: 8 }}>
+                    ) : (
+                      <p style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 12, lineHeight: 1.5 }}>Ingen elementer endnu. Tilføj nedenfor.</p>
+                    )}
+                    <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>Tilføj element</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
                       {BLOCK_DEFS.map(def => (
                         <button key={def.type} type="button" onClick={() => addBlock(def.type)}
-                          style={{ display: 'flex', flexDirection: 'column', gap: 5, padding: '12px', borderRadius: 8, border: '1.5px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', textAlign: 'left' }}
-                          onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--green)'}
-                          onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}>
-                          <span style={{ fontSize: 22 }}>{def.icon}</span>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{def.label}</span>
-                          <span style={{ fontSize: 11, color: 'var(--text3)', lineHeight: 1.4 }}>{def.desc}</span>
+                          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 8px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', textAlign: 'left' }}
+                          onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--green)'; e.currentTarget.style.color = 'var(--green)' }}
+                          onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = '' }}>
+                          <span style={{ fontSize: 14 }}>{def.icon}</span>
+                          <span style={{ fontSize: 11, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{def.label}</span>
                         </button>
                       ))}
                     </div>
-                  </div>
-                </div>
+                  </PanelSection>
+
+                  {/* VALGT ELEMENT */}
+                  {selBlock && (
+                    <PanelSection key={selBlock.id} title={selDef?.label || 'Element'} icon={selDef?.icon} defaultOpen>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14, padding: '10px', background: 'var(--bg)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                        {[['X', 'x', 0, 95], ['Y', 'y', 0, 95], ['Bredde', 'w', 5, 100], ['Højde', 'h', 5, 100]].map(([lbl, key, mn, mx]) => (
+                          <label key={key} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em' }}>{lbl}</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                              <input type="number" min={mn} max={mx}
+                                value={Math.round(selBlock[key] ?? (key === 'w' || key === 'h' ? 100 : 0))}
+                                onChange={e => patchBlock(safeIdx, selBlock.id, { [key]: Math.max(mn, Math.min(mx, parseInt(e.target.value) || 0)) })}
+                                className="form-control" style={{ flex: 1, textAlign: 'center', padding: '4px 6px', fontSize: 12 }} />
+                              <span style={{ fontSize: 10, color: 'var(--text3)' }}>%</span>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                      <BlockEditor block={selBlock} onChange={p => patchBlock(safeIdx, selBlock.id, p)} holds={holds} />
+                    </PanelSection>
+                  )}
+
+                  {/* SLIDE INDSTILLINGER */}
+                  <PanelSection title="Slide" defaultOpen={!selBlock}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                      <div>
+                        <label className="form-label" style={{ fontSize: 11, marginBottom: 4 }}>Varighed</label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <input type="number" min={3} max={300} value={slide.duration}
+                            onChange={e => patchSlide(safeIdx, { duration: parseInt(e.target.value) || 15 })}
+                            className="form-control" style={{ width: 72 }} />
+                          <span style={{ fontSize: 12, color: 'var(--text3)' }}>sekunder</span>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="form-label" style={{ fontSize: 11, marginBottom: 6 }}>Baggrund</label>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
+                          <input type="color" value={slide.bgColor || '#000000'}
+                            onChange={e => patchSlide(safeIdx, { bgColor: e.target.value, bgGradient: '' })}
+                            style={{ width: 30, height: 26, padding: 1, border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer' }} />
+                          {(slide.bgColor || slide.bgGradient) && (
+                            <button type="button" className="btn btn-ghost btn-sm" onClick={() => patchSlide(safeIdx, { bgColor: '', bgGradient: '' })}>✕ Ryd</button>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
+                          {BG_GRADIENTS.map(g => (
+                            <button key={g.label} type="button" title={g.label}
+                              onClick={() => patchSlide(safeIdx, { bgGradient: g.value, bgColor: '' })}
+                              style={{ width: 28, height: 22, borderRadius: 5, border: '2.5px solid', cursor: 'pointer', background: g.value,
+                                borderColor: slide.bgGradient === g.value ? 'var(--green)' : 'var(--border)' }} />
+                          ))}
+                        </div>
+                        <ImageUploader value={slide.bgImageUrl || ''} onChange={url => patchSlide(safeIdx, { bgImageUrl: url })} hint="1920×1080 · maks 10 MB" />
+                        {slide.bgImageUrl && (
+                          <div style={{ marginTop: 8 }}>
+                            <label style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 3, display: 'block' }}>
+                              Overlay mørkhed ({slide.bgOverlay || 0}%)
+                            </label>
+                            <input type="range" min={0} max={80} step={5} value={slide.bgOverlay || 0}
+                              onChange={e => patchSlide(safeIdx, { bgOverlay: parseInt(e.target.value) })}
+                              style={{ width: '100%', accentColor: 'var(--green)' }} />
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <label className="form-label" style={{ fontSize: 11, marginBottom: 6 }}>Tidsstyring</label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                          <input type="checkbox" checked={slide.schedule?.enabled || false}
+                            onChange={e => patchSlide(safeIdx, { schedule: { ...(slide.schedule || {}), enabled: e.target.checked } })}
+                            style={{ accentColor: 'var(--green)' }} />
+                          <span style={{ fontSize: 12, color: 'var(--text2)' }}>Aktivér tidsstyring</span>
+                        </label>
+                        {slide.schedule?.enabled && (
+                          <>
+                            <div style={{ display: 'flex', gap: 3, marginTop: 8, flexWrap: 'wrap' }}>
+                              {[['Sø',0],['Ma',1],['Ti',2],['On',3],['To',4],['Fr',5],['Lø',6]].map(([lbl, day]) => {
+                                const on = (slide.schedule?.days || []).includes(day)
+                                return (
+                                  <button key={day} type="button"
+                                    onClick={() => { const days = on ? (slide.schedule?.days||[]).filter(d => d !== day) : [...(slide.schedule?.days||[]), day]; patchSlide(safeIdx, { schedule: { ...(slide.schedule||{}), days } }) }}
+                                    style={{ padding: '3px 7px', borderRadius: 5, border: '1.5px solid', fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                                      borderColor: on ? 'var(--green)' : 'var(--border)', background: on ? 'var(--green-soft,#f0fdf4)' : 'var(--bg)', color: on ? 'var(--green)' : 'var(--text2)' }}>
+                                    {lbl}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                            <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                              <label style={{ fontSize: 11, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                Fra <input type="time" value={slide.schedule?.timeFrom || ''}
+                                  onChange={e => patchSlide(safeIdx, { schedule: { ...(slide.schedule||{}), timeFrom: e.target.value } })}
+                                  className="form-control" style={{ width: 100, marginLeft: 3 }} />
+                              </label>
+                              <label style={{ fontSize: 11, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                Til <input type="time" value={slide.schedule?.timeTo || ''}
+                                  onChange={e => patchSlide(safeIdx, { schedule: { ...(slide.schedule||{}), timeTo: e.target.value } })}
+                                  className="form-control" style={{ width: 100, marginLeft: 3 }} />
+                              </label>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </PanelSection>
+
+                  {/* TOPBJÆLKE */}
+                  <PanelSection title="Topbjælke" defaultOpen={false}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      <div style={{ borderRadius: 6, overflow: 'hidden', border: '1px solid var(--border)' }}>
+                        <div style={{ background: config.header.bgColor || '#1a5c2a', padding: '7px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            {config.header.logoUrl && (
+                              <img src={config.header.logoUrl} style={{ height: 20, objectFit: 'contain' }} onError={e => { e.target.style.display = 'none' }} alt="" />
+                            )}
+                            <span style={{ color: config.header.textColor || '#fff', fontWeight: 800, fontSize: 11 }}>{config.header.text || 'Sejs-Svejbæk IF'}</span>
+                          </div>
+                          <span style={{ color: config.header.textColor || '#fff', fontWeight: 800, fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>12:34</span>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                        <label style={{ fontSize: 11, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                          Baggrund
+                          <input type="color" value={config.header.bgColor || '#1a5c2a'}
+                            onChange={e => patchHeader({ bgColor: e.target.value })}
+                            style={{ width: 28, height: 22, padding: 1, border: '1px solid var(--border)', borderRadius: 3, cursor: 'pointer', marginLeft: 3 }} />
+                        </label>
+                        <label style={{ fontSize: 11, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                          Tekst
+                          <input type="color" value={config.header.textColor || '#ffffff'}
+                            onChange={e => patchHeader({ textColor: e.target.value })}
+                            style={{ width: 28, height: 22, padding: 1, border: '1px solid var(--border)', borderRadius: 3, cursor: 'pointer', marginLeft: 3 }} />
+                        </label>
+                      </div>
+                      <div className="form-group" style={{ margin: 0 }}>
+                        <label className="form-label" style={{ fontSize: 11 }}>Klubnavn</label>
+                        <input className="form-control" value={config.header.text}
+                          onChange={e => patchHeader({ text: e.target.value })} placeholder="Sejs-Svejbæk IF" style={{ fontSize: 12 }} />
+                      </div>
+                      <div className="form-group" style={{ margin: 0 }}>
+                        <label className="form-label" style={{ fontSize: 11 }}>Logo</label>
+                        <ImageUploader value={config.header.logoUrl} onChange={url => patchHeader({ logoUrl: url })} hint="PNG transparent · maks 2 MB" />
+                        <input className="form-control" type="url" value={config.header.logoUrl}
+                          onChange={e => patchHeader({ logoUrl: e.target.value })} placeholder="https://…" style={{ marginTop: 6, fontSize: 11 }} />
+                      </div>
+                    </div>
+                  </PanelSection>
+                </>
               )
             })() : (
-              <div className="card card-pad" style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--text3)' }}>
-                <div style={{ fontSize: 32, marginBottom: 10 }}>📋</div>
-                <p style={{ fontSize: 14 }}>Tilføj et slide til venstre for at komme i gang.</p>
+              <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--text3)' }}>
+                <div style={{ fontSize: 28, marginBottom: 8 }}>📋</div>
+                <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Vælg et slide</p>
+                <p style={{ fontSize: 12, lineHeight: 1.5 }}>Klik på et slide i filmstrimlen til venstre</p>
               </div>
             )}
           </div>
-        )}
+
+        </div>
       </>
     )
   }
@@ -5319,68 +5337,96 @@ function InfoScreensPage({ authUser }) {
   return (
     <>
       <div className="page-header">
-        <h1 className="page-title">Infoskærme</h1>
+        <div>
+          <h1 className="page-title">Infoskærme</h1>
+          <p style={{ fontSize: 13, color: 'var(--text3)', marginTop: 2 }}>Byg og styr indhold til dine digitale skilte</p>
+        </div>
         <button className="btn btn-primary" onClick={openNew}>+ Ny skærm</button>
-      </div>
-
-      <div className="card card-pad" style={{ marginBottom: 16, background: '#f0fdf4', border: '1px solid #86efac' }}>
-        <p style={{ fontSize: 13, color: '#166534', lineHeight: 1.6 }}>
-          <strong>Sådan virker det:</strong> Opret en skærm og byg dit indhold med slides.
-          Indsæt skærmens URL i Chrome/Edge i kiosk-tilstand (F11).
-          Brug <strong>↻</strong>-knappen til at sende opdateret indhold til alle tilsluttede skærme øjeblikkeligt.
-        </p>
       </div>
 
       {loading ? (
         <div className="loading-dots"><span/><span/><span/></div>
       ) : screens.length === 0 ? (
-        <div className="card card-pad" style={{ textAlign: 'center', padding: '60px 20px' }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>🖥</div>
-          <p style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>Ingen infoskærme endnu</p>
-          <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>Opret din første skærm og vis live-indhold på din hal-skærm, kantine-tv eller udendørs tavle.</p>
-          <button className="btn btn-primary" onClick={openNew}>Opret første skærm</button>
+        <div className="card card-pad" style={{ textAlign: 'center', padding: '48px 24px' }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>🖥</div>
+          <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Din første infoskærm</h2>
+          <p style={{ fontSize: 13, color: 'var(--text3)', maxWidth: 440, margin: '0 auto 28px', lineHeight: 1.6 }}>
+            Vis live-indhold på hal-skærme, kantine-tv og udendørs tavler — opdatér fra backoffice, se det med det samme.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 28, maxWidth: 540, margin: '0 auto 28px', textAlign: 'left' }}>
+            {[['1','Opret skærm','Giv skærmen et navn og design topbjælken'],
+              ['2','Byg slides','Vælg skabeloner og tilpas layout og indhold'],
+              ['3','Gå live','Åbn URL\'en i Chrome på tv\'et — det er det hele']].map(([n,t,d]) => (
+              <div key={n} style={{ background: 'var(--bg)', borderRadius: 10, padding: '16px 14px', border: '1px solid var(--border)' }}>
+                <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--green)', color: '#fff', fontWeight: 800, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>{n}</div>
+                <p style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>{t}</p>
+                <p style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.5 }}>{d}</p>
+              </div>
+            ))}
+          </div>
+          <button className="btn btn-primary" style={{ fontSize: 14, padding: '10px 28px' }} onClick={openNew}>Opret første skærm</button>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {screens.map(sc => {
             const url        = INFOSCREEN_BASE_URL + sc.id
             const isCopied   = copied === sc.id
             const slideCount = sc.slides?.length || 0
-            const icons      = [...new Set((sc.slides || []).flatMap(s => (s.blocks || []).map(b => BLOCK_DEFS.find(d => d.type === b.type)?.icon || '')))].filter(Boolean).join(' ')
+            const icons      = [...new Set((sc.slides || []).flatMap(s => (s.blocks || []).map(b => BLOCK_DEFS.find(d => d.type === b.type)?.icon || '')))].filter(Boolean)
             return (
-              <div key={sc.id} className="card" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 16 }}>
-                <div style={{ width: 44, height: 44, borderRadius: 10, background: 'var(--green-soft,#f0fdf4)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <Icon name="monitor" size={20} color="var(--green)" />
+              <div key={sc.id} className="card" style={{ padding: 0, overflow: 'hidden', display: 'grid', gridTemplateColumns: '88px 1fr' }}>
+                {/* Visual preview strip */}
+                <div style={{ background: '#080d08', display: 'flex', flexDirection: 'column', gap: 3, padding: 8, alignItems: 'center', justifyContent: 'center' }}>
+                  {(sc.slides || []).slice(0, 3).map((s, i) => {
+                    const bg = s.bgGradient || s.bgColor || '#1a2a1a'
+                    return (
+                      <div key={i} style={{ width: 60, height: 34, borderRadius: 4, overflow: 'hidden', flexShrink: 0, position: 'relative',
+                        background: bg, backgroundImage: s.bgImageUrl ? `url(${s.bgImageUrl})` : 'none', backgroundSize: 'cover', backgroundPosition: 'center' }}>
+                        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <span style={{ fontSize: 9, lineHeight: 1 }}>
+                            {(s.blocks || []).map(b => BLOCK_DEFS.find(d => d.type === b.type)?.icon || '').join('')}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {slideCount > 3 && <span style={{ fontSize: 9, color: '#555', marginTop: 2 }}>+{slideCount - 3}</span>}
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 3 }}>{sc.name}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 6 }}>
-                    {slideCount} slide{slideCount !== 1 ? 's' : ''} · {icons || '—'}
+                {/* Content */}
+                <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: 15 }}>{sc.name}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>
+                        {slideCount} slide{slideCount !== 1 ? 's' : ''}
+                        {icons.length > 0 && <span style={{ marginLeft: 6 }}>{icons.slice(0, 6).join(' ')}</span>}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
+                      <button className="btn btn-ghost btn-sm" title="Opdatér skærm" disabled={pushing === sc.id} onClick={() => pushContent(sc.id)} style={{ color: pushing === sc.id ? 'var(--green)' : undefined }}>
+                        <Icon name="refresh" size={13} />
+                      </button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => openEdit(sc)}>
+                        <Icon name="edit" size={13} />&nbsp;Redigér
+                      </button>
+                      <button className="btn btn-ghost btn-sm" style={{ color: '#dc2626' }} disabled={deleting === sc.id} onClick={() => handleDelete(sc)}>
+                        <Icon name="trash" size={13} />
+                      </button>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <code style={{ fontSize: 11, background: '#f1f5f9', padding: '3px 8px', borderRadius: 5, color: '#475569', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{url}</code>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'var(--bg)', borderRadius: 7, border: '1px solid var(--border)' }}>
+                    <code style={{ fontSize: 11, color: '#475569', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{url}</code>
                     <button type="button" onClick={() => copyUrl(sc.id)}
-                      style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: isCopied ? 'var(--green-soft,#f0fdf4)' : 'white', cursor: 'pointer', fontSize: 11, fontWeight: 600, color: isCopied ? 'var(--green)' : 'var(--text2)', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                      <Icon name={isCopied ? 'check' : 'copy'} size={12} color={isCopied ? 'var(--green)' : 'var(--text2)'} sw={2.5} />
-                      {isCopied ? 'Kopieret!' : 'Kopiér URL'}
+                      style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 5, border: '1px solid var(--border)', background: isCopied ? 'var(--green-soft,#f0fdf4)' : 'white', cursor: 'pointer', fontSize: 11, fontWeight: 600, color: isCopied ? 'var(--green)' : 'var(--text2)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      <Icon name={isCopied ? 'check' : 'copy'} size={11} color={isCopied ? 'var(--green)' : 'var(--text2)'} sw={2.5} />
+                      {isCopied ? 'Kopieret!' : 'Kopiér'}
                     </button>
                     <a href={url} target="_blank" rel="noopener noreferrer"
-                      style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'white', textDecoration: 'none', fontSize: 11, fontWeight: 600, color: 'var(--text2)', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                      <Icon name="link" size={12} color="var(--text2)" />
+                      style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 5, border: '1px solid var(--border)', background: 'white', textDecoration: 'none', fontSize: 11, fontWeight: 600, color: 'var(--text2)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      <Icon name="link" size={11} color="var(--text2)" />
                       Åbn
                     </a>
                   </div>
-                </div>
-                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                  <button className="btn btn-ghost btn-sm" title="Send opdateret indhold til skærmen" disabled={pushing === sc.id} onClick={() => pushContent(sc.id)} style={{ color: pushing === sc.id ? 'var(--green)' : undefined }}>
-                    <Icon name="refresh" size={14} />
-                  </button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => openEdit(sc)}>
-                    <Icon name="edit" size={14} />
-                  </button>
-                  <button className="btn btn-ghost btn-sm" style={{ color: '#dc2626' }} disabled={deleting === sc.id} onClick={() => handleDelete(sc)}>
-                    <Icon name="trash" size={14} />
-                  </button>
                 </div>
               </div>
             )
