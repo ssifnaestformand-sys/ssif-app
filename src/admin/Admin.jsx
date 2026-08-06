@@ -5227,6 +5227,35 @@ function InfoScreensPage({ authUser }) {
                     </div>
                   </div>
 
+                  {/* Block list — click to select */}
+                  {(slide.blocks || []).length > 0 && (
+                    <div className="card card-pad" style={{ padding: '10px 12px' }}>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Elementer på sliden</p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        {(slide.blocks || []).map(block => {
+                          const def   = BLOCK_DEFS.find(d => d.type === block.type)
+                          const isSel = block.id === selectedBlockId
+                          return (
+                            <div key={block.id} onClick={() => setSelectedBlockId(isSel ? null : block.id)}
+                              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 7, cursor: 'pointer', border: '1.5px solid',
+                                borderColor: isSel ? 'var(--green)' : 'var(--border)',
+                                background:  isSel ? 'var(--green-soft,#f0fdf4)' : 'var(--bg)' }}>
+                              <span style={{ fontSize: 15, lineHeight: 1, flexShrink: 0 }}>{def?.icon}</span>
+                              <span style={{ fontSize: 13, fontWeight: isSel ? 700 : 400, color: isSel ? 'var(--green)' : 'var(--text)', flex: 1 }}>{def?.label}</span>
+                              <span style={{ fontSize: 10, color: 'var(--text3)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                                {Math.round(block.w ?? 100)}×{Math.round(block.h ?? 100)} @ {Math.round(block.x ?? 0)},{Math.round(block.y ?? 0)}
+                              </span>
+                              <button type="button" className="btn btn-ghost btn-sm" style={{ padding: '2px 5px', color: '#dc2626', flexShrink: 0 }}
+                                onClick={e => { e.stopPropagation(); delBlock(block.id) }}>
+                                <Icon name="trash" size={11} />
+                              </button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Selected block editor */}
                   {selBlock && (
                     <div className="card card-pad">
