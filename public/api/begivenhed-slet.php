@@ -25,6 +25,7 @@ $conventus_id = $auth['conventus_id'];
 $fsToken      = $auth['fsToken'];
 $projectId    = $auth['projectId'];
 $base         = $auth['base'];
+$resourceBase = $auth['resourceBase'];
 
 $body         = json_decode(file_get_contents('php://input'), true) ?? [];
 $begivenhedId = trim((string)($body['begivenhedId'] ?? ''));
@@ -39,14 +40,21 @@ if (!isset($lederHoldIds[$holdId])) {
     http_response_code(403); echo json_encode(['error' => 'Ingen adgang']); exit;
 }
 
-// Slet alle deltagere + begivenheden i ét batch
+// Slet alle deltagere + begivenheden i ét batch.
+// VIGTIGT: document-navne i commit skal bruge resource-format (projects/…),
+// ikke HTTP request-URL (https://…).
 $deltagerDocs = fs_list("{$base}/begivenheder/{$begivenhedId}/deltagere", $fsToken);
 $writes = [];
 foreach ($deltagerDocs as $d) {
-    $writes[] = ['delete' => $d['name']];
+    $writes[] = ['delete' => $d['name']]; // fs_list returnerer allerede resource-format
 }
-$writes[] = ['delete' => "{$base}/begivenheder/{$begivenhedId}"];
+$writes[] = ['delete' => "{$resourceBase}/begivenheder/{$begivenhedId}"];
 
-fs_commit($projectId, $fsToken, $writes);
+$ok = fs_commit($projectId, $fsToken, $writes);
+if (!$ok) {
+    http_response_code(500);
+    echo json_encode(['error' => 'Sletning fejlede — prøv igen']);
+    exit;
+}
 
 echo json_encode(['ok' => true]);

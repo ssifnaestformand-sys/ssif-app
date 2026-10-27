@@ -308,6 +308,9 @@ function trainer_auth(): array {
         'conventus_id' => $conventus_id,
         'fsToken'      => $fsToken,
         'projectId'    => $projectId,
+        // base: bruges som HTTP request-URL til Firestore REST-kald
         'base'         => "https://firestore.googleapis.com/v1/projects/{$projectId}/databases/(default)/documents",
+        // resourceBase: bruges som document-navn i batch commit (projects/…, uden https-præfix)
+        'resourceBase' => "projects/{$projectId}/databases/(default)/documents",
     ];
 }

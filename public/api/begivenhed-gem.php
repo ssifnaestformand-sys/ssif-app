@@ -34,6 +34,7 @@ $conventus_id = $auth['conventus_id'];
 $fsToken      = $auth['fsToken'];
 $projectId    = $auth['projectId'];
 $base         = $auth['base'];
+$resourceBase = $auth['resourceBase'];
 
 $body = json_decode(file_get_contents('php://input'), true) ?? [];
 
@@ -91,7 +92,7 @@ if ($begivenhedId === null) {
         $memberId = trim((string)($d['id'] ?? ''));
         if (!$memberId) continue;
         $writes[] = ['update' => [
-            'name'   => "{$base}/begivenheder/{$newId}/deltagere/{$memberId}",
+            'name'   => "{$resourceBase}/begivenheder/{$newId}/deltagere/{$memberId}",
             'fields' => [
                 'navn'          => ['stringValue' => trim((string)($d['navn'] ?? ''))],
                 'udtaget'       => ['booleanValue' => (bool)($d['udtaget'] ?? true)],
@@ -139,7 +140,7 @@ if ($begivenhedId === null) {
         $newMemberIds[$memberId] = true;
         $ex = $existing[$memberId] ?? null;
         $writes[] = ['update' => [
-            'name'   => "{$base}/begivenheder/{$begivenhedId}/deltagere/{$memberId}",
+            'name'   => "{$resourceBase}/begivenheder/{$begivenhedId}/deltagere/{$memberId}",
             'fields' => [
                 'navn'          => ['stringValue' => trim((string)($d['navn'] ?? ''))],
                 'udtaget'       => ['booleanValue' => (bool)($d['udtaget'] ?? true)],
@@ -152,7 +153,7 @@ if ($begivenhedId === null) {
     }
     foreach (array_keys($existing) as $memberId) {
         if (!isset($newMemberIds[$memberId])) {
-            $writes[] = ['delete' => "{$base}/begivenheder/{$begivenhedId}/deltagere/{$memberId}"];
+            $writes[] = ['delete' => "{$resourceBase}/begivenheder/{$begivenhedId}/deltagere/{$memberId}"];
         }
     }
     if (!empty($writes)) fs_commit($projectId, $fsToken, $writes);

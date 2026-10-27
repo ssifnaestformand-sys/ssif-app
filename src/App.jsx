@@ -465,8 +465,13 @@ function HoldScreen({ hold, user, onBack }) {
         hold={hold}
         begivenhed={editBev}
         user={user}
-        onBack={() => { setView('liste'); setEditBev(null) }}
+        onBack={() => {
+          // Retur til detalje-view hvis vi kom derfra, ellers til liste
+          if (editBev) { setView('detalje') } else { setView('liste') }
+          setEditBev(null)
+        }}
         onSaved={() => { setView('liste'); setEditBev(null); loadData() }}
+        onDeleted={() => { setView('liste'); setEditBev(null); setSelectedBev(null); loadData() }}
       />
     )
   }
@@ -545,7 +550,7 @@ const BEV_TYPES = [
   { id: 'møde',   label: 'Møde',   icon: '📋' },
 ]
 
-function BegivenhedFormScreen({ hold, begivenhed, user, onBack, onSaved }) {
+function BegivenhedFormScreen({ hold, begivenhed, user, onBack, onSaved, onDeleted }) {
   const isEdit = begivenhed !== null
 
   const [step,      setStep]      = useState(1)
@@ -562,8 +567,11 @@ function BegivenhedFormScreen({ hold, begivenhed, user, onBack, onSaved }) {
   const [spillereLoad,   setSpillereLoad]   = useState(false)
   const [spillereError,  setSpillereError]  = useState('')
 
-  const [saving,    setSaving]    = useState(false)
-  const [formError, setFormError] = useState('')
+  const [saving,          setSaving]          = useState(false)
+  const [formError,       setFormError]       = useState('')
+  const [showSletConfirm, setShowSletConfirm] = useState(false)
+  const [deleting,        setDeleting]        = useState(false)
+  const [sletError,       setSletError]       = useState('')
 
   async function loadSpillere() {
     if (spillere !== null) return
@@ -642,9 +650,72 @@ function BegivenhedFormScreen({ hold, begivenhed, user, onBack, onSaved }) {
     }
   }
 
+  async function handleSlet() {
+    setDeleting(true)
+    setSletError('')
+    try {
+      const idToken = await user.getIdToken()
+      const res = await fetch('/api/begivenhed-slet.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ begivenhedId: begivenhed.id }),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        onDeleted()
+      } else {
+        setSletError(data.error || 'Sletning fejlede — prøv igen')
+        setShowSletConfirm(false)
+      }
+    } catch {
+      setSletError('Netværksfejl ved sletning')
+      setShowSletConfirm(false)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   const udtajetAntal = spillere
     ? Object.values(udtaget).filter(Boolean).length
     : 0
+
+  // Slet-sektion vises kun ved redigering
+  const SletSektion = () => !isEdit ? null : (
+    <div style={{ marginTop: 8 }}>
+      {sletError && <div className="error-box" style={{ marginBottom: 10 }}>{sletError}</div>}
+      {showSletConfirm ? (
+        <div style={{
+          background: 'var(--red-soft)', border: '1px solid var(--red-border)',
+          borderRadius: 12, padding: 16,
+          display: 'flex', flexDirection: 'column', gap: 12,
+        }}>
+          <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--red)' }}>
+            Slet begivenheden permanent?
+          </p>
+          <p style={{ fontSize: 13, color: 'var(--text2)' }}>
+            Alle deltagere og svartokens fjernes. Kan ikke fortrydes.
+          </p>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button className="btn btn-outline" style={{ flex: 1 }}
+              onClick={() => { setShowSletConfirm(false); setSletError('') }}>
+              Annuller
+            </button>
+            <button className="btn btn-primary"
+              style={{ flex: 1, background: 'var(--red)' }}
+              onClick={handleSlet} disabled={deleting}>
+              {deleting ? 'Sletter…' : 'Slet'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button className="btn btn-ghost"
+          style={{ color: 'var(--red)', width: '100%', justifyContent: 'center' }}
+          onClick={() => setShowSletConfirm(true)}>
+          Slet begivenhed
+        </button>
+      )}
+    </div>
+  )
 
   const header = (title, onBk) => (
     <header style={{
@@ -738,6 +809,8 @@ function BegivenhedFormScreen({ hold, begivenhed, user, onBack, onSaved }) {
         <button className="btn btn-primary" onClick={handleNextStep}>
           Næste: Udtagelse →
         </button>
+
+        <SletSektion />
       </main>
     </div>
   )
@@ -784,6 +857,8 @@ function BegivenhedFormScreen({ hold, begivenhed, user, onBack, onSaved }) {
           disabled={saving || !spillere || !!spillereError}>
           {saving ? 'Gemmer…' : isEdit ? 'Gem ændringer' : 'Opret begivenhed'}
         </button>
+
+        <SletSektion />
       </main>
     </div>
   )
