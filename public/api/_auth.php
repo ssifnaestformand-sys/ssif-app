@@ -272,6 +272,12 @@ function get_leder_holds(string $email, string $conventus_id, string $projectId,
     return $lederHoldIds;
 }
 
+// ── Testtilstand-hjælpere ─────────────────────────────────────────────────────
+
+function is_test_mode(): bool { return getenv('TEST_MODE') === '1'; }
+function test_email(): string { return getenv('TEST_EMAIL') ?: ''; }
+function test_phone(): string { return getenv('TEST_PHONE') ?: ''; }
+
 // Standard auth-opsætning for træner-endpoints.
 // Terminerer med HTTP 401/403/500 ved fejl. Returnerer auth-kontekst.
 function trainer_auth(): array {

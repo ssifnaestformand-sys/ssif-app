@@ -93,4 +93,4 @@ foreach (array_keys($lederHoldIds) as $holdId) {
 
 usort($holds, fn($a, $b) => strcoll($a['titel'], $b['titel']));
 
-echo json_encode(['name' => $displayName, 'holds' => $holds]);
+echo json_encode(['name' => $displayName, 'holds' => $holds, 'testMode' => is_test_mode()]);

@@ -91,6 +91,7 @@ if ($begivenhedId === null) {
     foreach ($deltagere as $d) {
         $memberId = trim((string)($d['id'] ?? ''));
         if (!$memberId) continue;
+        $token = bin2hex(random_bytes(16));
         $writes[] = ['update' => [
             'name'   => "{$resourceBase}/begivenheder/{$newId}/deltagere/{$memberId}",
             'fields' => [
@@ -98,12 +99,27 @@ if ($begivenhedId === null) {
                 'udtaget'       => ['booleanValue' => (bool)($d['udtaget'] ?? true)],
                 'svar'          => ['nullValue' => null],
                 'svarTidspunkt' => ['nullValue' => null],
-                'svarToken'     => ['stringValue' => bin2hex(random_bytes(16))],
+                'svarToken'     => ['stringValue' => $token],
                 'extraSvar'     => ['nullValue' => null],
             ],
         ]];
+        $writes[] = ['update' => [
+            'name'   => "{$resourceBase}/svarlinks/{$token}",
+            'fields' => [
+                'begivenhedId' => ['stringValue' => $newId],
+                'memberId'     => ['stringValue' => $memberId],
+            ],
+        ]];
     }
-    if (!empty($writes)) fs_commit($projectId, $fsToken, $writes);
+    if (!empty($writes)) {
+        $ok = fs_commit($projectId, $fsToken, $writes);
+        if (!$ok) {
+            fs_commit($projectId, $fsToken, [['delete' => "{$resourceBase}/begivenheder/{$newId}"]]);
+            http_response_code(500);
+            echo json_encode(['error' => 'Deltagere kunne ikke gemmes']);
+            exit;
+        }
+    }
 
     echo json_encode(['id' => $newId]);
 } else {
@@ -138,7 +154,9 @@ if ($begivenhedId === null) {
         $memberId = trim((string)($d['id'] ?? ''));
         if (!$memberId) continue;
         $newMemberIds[$memberId] = true;
-        $ex = $existing[$memberId] ?? null;
+        $ex    = $existing[$memberId] ?? null;
+        $token = $ex ? ($ex['svarToken']['stringValue'] ?? '') : '';
+        if (!$token) $token = bin2hex(random_bytes(16));
         $writes[] = ['update' => [
             'name'   => "{$resourceBase}/begivenheder/{$begivenhedId}/deltagere/{$memberId}",
             'fields' => [
@@ -146,17 +164,37 @@ if ($begivenhedId === null) {
                 'udtaget'       => ['booleanValue' => (bool)($d['udtaget'] ?? true)],
                 'svar'          => $ex['svar']          ?? ['nullValue' => null],
                 'svarTidspunkt' => $ex['svarTidspunkt'] ?? ['nullValue' => null],
-                'svarToken'     => $ex['svarToken']     ?? ['stringValue' => bin2hex(random_bytes(16))],
+                'svarToken'     => ['stringValue' => $token],
                 'extraSvar'     => $ex['extraSvar']     ?? ['nullValue' => null],
             ],
         ]];
+        if (!$ex) {
+            $writes[] = ['update' => [
+                'name'   => "{$resourceBase}/svarlinks/{$token}",
+                'fields' => [
+                    'begivenhedId' => ['stringValue' => $begivenhedId],
+                    'memberId'     => ['stringValue' => $memberId],
+                ],
+            ]];
+        }
     }
     foreach (array_keys($existing) as $memberId) {
         if (!isset($newMemberIds[$memberId])) {
             $writes[] = ['delete' => "{$resourceBase}/begivenheder/{$begivenhedId}/deltagere/{$memberId}"];
+            $token = $existing[$memberId]['svarToken']['stringValue'] ?? '';
+            if ($token) {
+                $writes[] = ['delete' => "{$resourceBase}/svarlinks/{$token}"];
+            }
         }
     }
-    if (!empty($writes)) fs_commit($projectId, $fsToken, $writes);
+    if (!empty($writes)) {
+        $ok = fs_commit($projectId, $fsToken, $writes);
+        if (!$ok) {
+            http_response_code(500);
+            echo json_encode(['error' => 'Deltagere kunne ikke gemmes — prøv igen']);
+            exit;
+        }
+    }
 
     echo json_encode(['id' => $begivenhedId]);
 }

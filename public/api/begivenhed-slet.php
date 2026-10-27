@@ -46,7 +46,11 @@ if (!isset($lederHoldIds[$holdId])) {
 $deltagerDocs = fs_list("{$base}/begivenheder/{$begivenhedId}/deltagere", $fsToken);
 $writes = [];
 foreach ($deltagerDocs as $d) {
-    $writes[] = ['delete' => $d['name']]; // fs_list returnerer allerede resource-format
+    $writes[] = ['delete' => $d['name']];
+    $token = $d['fields']['svarToken']['stringValue'] ?? '';
+    if ($token) {
+        $writes[] = ['delete' => "{$resourceBase}/svarlinks/{$token}"];
+    }
 }
 $writes[] = ['delete' => "{$resourceBase}/begivenheder/{$begivenhedId}"];
 

@@ -15,6 +15,7 @@ export default function App() {
   const [fbUser,      setFbUser]      = useState(null)
   const [trainerName, setTrainerName] = useState('')
   const [holds,       setHolds]       = useState([])
+  const [testMode,    setTestMode]    = useState(false)
 
   useEffect(() => {
     return onAuthStateChanged(auth, async fbUser => {
@@ -40,6 +41,7 @@ export default function App() {
       if (data.holds) {
         setTrainerName(data.name || fbUser.displayName || '')
         setHolds(data.holds)
+        setTestMode(data.testMode || false)
         setScreen('app')
       } else if (data.error === 'email_not_verified') {
         setScreen('unverified')
@@ -56,6 +58,7 @@ export default function App() {
     setFbUser(null)
     setHolds([])
     setTrainerName('')
+    setTestMode(false)
   }
 
   if (screen === 'splash' || screen === 'checking') return <SplashScreen />
@@ -63,13 +66,32 @@ export default function App() {
   if (screen === 'unverified') return <UnverifiedScreen user={fbUser} onLogout={handleLogout} />
   if (screen === 'denied')     return <AccessDeniedScreen user={fbUser} onLogout={handleLogout} />
   return (
-    <DashboardScreen
-      user={fbUser}
-      displayName={trainerName || fbUser?.displayName || fbUser?.email?.split('@')[0] || 'Træner'}
-      holds={holds}
-      onLogout={handleLogout}
-      onRefresh={() => checkAccess(fbUser)}
-    />
+    <>
+      {testMode && <TestModeBanner />}
+      <DashboardScreen
+        user={fbUser}
+        displayName={trainerName || fbUser?.displayName || fbUser?.email?.split('@')[0] || 'Træner'}
+        holds={holds}
+        onLogout={handleLogout}
+        onRefresh={() => checkAccess(fbUser)}
+      />
+    </>
+  )
+}
+
+// ── TestModeBanner ────────────────────────────────────────────────────────────
+
+function TestModeBanner() {
+  return (
+    <div style={{
+      position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
+      background: '#ea8c00', color: '#fff',
+      padding: '8px 16px',
+      fontSize: 13, fontWeight: 700, textAlign: 'center',
+      boxShadow: '0 2px 6px rgba(0,0,0,.2)',
+    }}>
+      TESTTILSTAND AKTIV — alle mails og SMS'er går til testmodtager
+    </div>
   )
 }
 
@@ -872,6 +894,10 @@ function BegivenhedDetailScreen({ begivenhedId, user, onBack, onEdit, onDeleted 
   const [error,       setError]       = useState('')
   const [deleting,    setDeleting]    = useState(false)
   const [confirmSlet, setConfirmSlet] = useState(false)
+  const [showSend,    setShowSend]    = useState(false)
+  const [sending,     setSending]     = useState(false)
+  const [sendFejl,    setSendFejl]    = useState('')
+  const [sendOk,      setSendOk]      = useState(null)
 
   useEffect(() => { loadDetalje() }, [begivenhedId])
 
@@ -919,6 +945,31 @@ function BegivenhedDetailScreen({ begivenhedId, user, onBack, onEdit, onDeleted 
       setConfirmSlet(false)
     } finally {
       setDeleting(false)
+    }
+  }
+
+  async function handleSend(kanal) {
+    setSending(true)
+    setSendFejl('')
+    setSendOk(null)
+    try {
+      const idToken = await user.getIdToken()
+      const res = await fetch('/api/begivenhed-send.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ begivenhedId, kanal }),
+      })
+      const d = await res.json()
+      if (d.ok) {
+        setSendOk(d)
+        await loadDetalje()
+      } else {
+        setSendFejl(d.error || 'Udsendelse fejlede')
+      }
+    } catch {
+      setSendFejl('Netværksfejl')
+    } finally {
+      setSending(false)
     }
   }
 
@@ -981,15 +1032,60 @@ function BegivenhedDetailScreen({ begivenhedId, user, onBack, onEdit, onDeleted 
 
         {bev && !confirmSlet && (
           <>
+            {/* Send-dialog */}
+            {showSend ? (
+              <div style={{
+                background: 'var(--bg)', border: '1px solid var(--border)',
+                borderRadius: 12, padding: 16,
+                display: 'flex', flexDirection: 'column', gap: 12,
+              }}>
+                <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>
+                  Send begivenhed til {udtaget.length} udtagne
+                </p>
+                {sendFejl && <div className="error-box">{sendFejl}</div>}
+                {sendOk ? (
+                  <div style={{
+                    background: 'var(--green-soft)', border: '1px solid var(--border)',
+                    borderRadius: 10, padding: 12, fontSize: 13, color: 'var(--green)', fontWeight: 600,
+                  }}>
+                    Sendt til {sendOk.sendt}{sendOk.fejlet > 0 ? `, ${sendOk.fejlet} fejlede` : ''} ✓
+                  </div>
+                ) : (
+                  <button className="btn btn-primary"
+                    onClick={() => handleSend('mail')} disabled={sending || udtaget.length === 0}>
+                    {sending ? 'Sender…' : 'Send mail med svarknapper'}
+                  </button>
+                )}
+                <button className="btn btn-ghost"
+                  style={{ textAlign: 'center', justifyContent: 'center' }}
+                  onClick={() => { setShowSend(false); setSendFejl(''); setSendOk(null) }}>
+                  {sendOk ? 'Luk' : 'Annuller'}
+                </button>
+              </div>
+            ) : (
+              <button className="btn btn-primary"
+                onClick={() => { setShowSend(true); setSendFejl(''); setSendOk(null) }}
+                disabled={udtaget.length === 0}>
+                Send begivenhed til {udtaget.length} udtagne
+              </button>
+            )}
+
             <div style={{
               background: 'var(--bg)', border: '1px solid var(--border)',
               borderRadius: 12, padding: 16,
               display: 'flex', flexDirection: 'column', gap: 12,
             }}>
-              <span className={`bev-type-badge bev-type-${bev.type}`}
-                style={{ alignSelf: 'flex-start' }}>
-                {bev.type}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span className={`bev-type-badge bev-type-${bev.type}`}>
+                  {bev.type}
+                </span>
+                {bev.status === 'udsendt' && (
+                  <span style={{
+                    fontSize: 11, fontWeight: 700, color: '#1a5c2a',
+                    background: '#e8f5ec', borderRadius: 6, padding: '3px 8px',
+                  }}>Udsendt</span>
+                )}
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 14 }}>
                 <div>
                   <div style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 700, marginBottom: 3 }}>DATO</div>
