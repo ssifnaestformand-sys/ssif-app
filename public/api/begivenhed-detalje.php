@@ -65,6 +65,7 @@ $begivenhed = [
     'beskrivelse'     => $f['beskrivelse']['stringValue'] ?? null,
     'status'          => $f['status']['stringValue']      ?? 'kladde',
     'oprettetAf'      => $f['oprettetAf']['stringValue']  ?? '',
+    'svarfrist'       => $f['svarfrist']['stringValue']   ?? null,
     'extraSpørgsmaal' => $extraSpørgsmaal,
 ];
 

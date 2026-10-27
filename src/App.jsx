@@ -669,6 +669,9 @@ function BegivenhedFormScreen({ hold, begivenhed, user, onBack, onSaved, onDelet
   const [sted,      setSted]      = useState(begivenhed?.sted || '')
   const [beskrivelse, setBeskrivelse] = useState(begivenhed?.beskrivelse || '')
   const [extraSpørgsmaalTekst, setExtraSpørgsmaalTekst] = useState(begivenhed?.extraSpørgsmaal?.tekst || '')
+  const [svarfrist,            setSvarfrist]            = useState(begivenhed?.svarfrist || '')
+  const [pamTidspunkt,         setPamTidspunkt]         = useState(begivenhed?.pamindelse?.tidspunkt?.slice(0, 16) || '')
+  const [pamKanal,             setPamKanal]             = useState(begivenhed?.pamindelse?.kanal || 'mail')
 
   const [spillere,       setSpillere]       = useState(null)
   const [udtaget,        setUdtaget]        = useState({})
@@ -741,6 +744,10 @@ function BegivenhedFormScreen({ hold, begivenhed, user, onBack, onSaved, onDelet
           beskrivelse: beskrivelse.trim(),
           extraSpørgsmaal: extraSpørgsmaalTekst.trim()
             ? { tekst: extraSpørgsmaalTekst.trim(), type: 'ja_nej' }
+            : null,
+          svarfrist: svarfrist || null,
+          pamindelse: (svarfrist && pamTidspunkt)
+            ? { tidspunkt: pamTidspunkt, kanal: pamKanal }
             : null,
           deltagere: spillere.map(s => ({
             id: s.id, navn: s.navn,
@@ -923,6 +930,37 @@ function BegivenhedFormScreen({ hold, begivenhed, user, onBack, onSaved, onDelet
             onChange={e => setExtraSpørgsmaalTekst(e.target.value)}
             placeholder="fx Kan du køre?" />
         </div>
+
+        <div className="form-field">
+          <label className="form-label">
+            Svarfrist <span style={{ fontWeight: 400, color: 'var(--text3)' }}>(valgfri)</span>
+          </label>
+          <input className="form-input" type="date" value={svarfrist}
+            onChange={e => { setSvarfrist(e.target.value); if (!e.target.value) setPamTidspunkt('') }} />
+        </div>
+
+        {svarfrist && (
+          <div style={{ background: 'var(--surface)', borderRadius: 12, padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text2)' }}>Automatisk påmindelse</div>
+            <div className="form-field" style={{ marginBottom: 0 }}>
+              <label className="form-label">
+                Send påmindelse den <span style={{ fontWeight: 400, color: 'var(--text3)' }}>(valgfri)</span>
+              </label>
+              <input className="form-input" type="datetime-local" value={pamTidspunkt}
+                onChange={e => setPamTidspunkt(e.target.value)} />
+            </div>
+            {pamTidspunkt && (
+              <div className="form-field" style={{ marginBottom: 0 }}>
+                <label className="form-label">Via</label>
+                <select className="form-input" value={pamKanal} onChange={e => setPamKanal(e.target.value)}>
+                  <option value="mail">Mail</option>
+                  <option value="sms">SMS</option>
+                  <option value="begge">Mail + SMS</option>
+                </select>
+              </div>
+            )}
+          </div>
+        )}
 
         {formError && <div className="error-box">{formError}</div>}
 
@@ -1197,6 +1235,12 @@ function BegivenhedDetailScreen({ begivenhedId, user, onBack, onEdit, onDeleted 
                 <p style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.55 }}>
                   {bev.beskrivelse}
                 </p>
+              )}
+              {bev.svarfrist && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text2)' }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--surface)', borderRadius: 6, padding: '2px 7px', color: 'var(--text3)' }}>SVARFRIST</span>
+                  {formatDato(bev.svarfrist)}
+                </div>
               )}
             </div>
 
