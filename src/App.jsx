@@ -351,7 +351,8 @@ function UnverifiedScreen({ user, onLogout }) {
 // ── DashboardScreen ───────────────────────────────────────────────────────────
 
 function DashboardScreen({ displayName, holds, onLogout, onRefresh }) {
-  const [refreshing, setRefreshing] = useState(false)
+  const [refreshing,    setRefreshing]    = useState(false)
+  const [selectedHold,  setSelectedHold]  = useState(null)
 
   async function handleRefresh() {
     setRefreshing(true)
@@ -359,12 +360,17 @@ function DashboardScreen({ displayName, holds, onLogout, onRefresh }) {
     setRefreshing(false)
   }
 
+  if (selectedHold) {
+    return <HoldScreen hold={selectedHold} onBack={() => setSelectedHold(null)} />
+  }
+
   return (
     <div className="screen">
-      {/* App-bar */}
+      {/* App-bar — paddingTop tager højde for iOS-statusbjælken */}
       <header style={{
         background: 'var(--green)', color: '#fff',
-        padding: '13px 18px',
+        paddingTop: 'max(13px, env(safe-area-inset-top))',
+        paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
         display: 'flex', alignItems: 'center', gap: 12,
       }}>
         <span style={{ fontSize: 22, lineHeight: 1 }}>⚽</span>
@@ -405,7 +411,7 @@ function DashboardScreen({ displayName, holds, onLogout, onRefresh }) {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {holds.map(hold => (
-              <div key={hold.id} className="hold-card">
+              <div key={hold.id} className="hold-card" onClick={() => setSelectedHold(hold)}>
                 <div className="hold-icon">🏃</div>
                 <div>
                   <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)' }}>
@@ -426,6 +432,38 @@ function DashboardScreen({ displayName, holds, onLogout, onRefresh }) {
             ))}
           </div>
         )}
+      </main>
+    </div>
+  )
+}
+
+// ── HoldScreen ────────────────────────────────────────────────────────────────
+
+function HoldScreen({ hold, onBack }) {
+  return (
+    <div className="screen">
+      <header style={{
+        background: 'var(--green)', color: '#fff',
+        paddingTop: 'max(13px, env(safe-area-inset-top))',
+        paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
+        display: 'flex', alignItems: 'center', gap: 12,
+      }}>
+        <button onClick={onBack} style={{
+          background: 'none', border: 'none', color: '#fff',
+          cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 4px 0 0',
+        }}>‹</button>
+        <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>
+          {hold.titel || `Hold ${hold.id}`}
+        </span>
+      </header>
+      <main style={{ padding: '20px 16px', maxWidth: 600, margin: '0 auto', width: '100%', flex: 1 }}>
+        {hold.afdeling && (
+          <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>{hold.afdeling}</p>
+        )}
+        <div className="empty-state" style={{ marginTop: 40 }}>
+          <h3>Begivenheder kommer i Skive 2</h3>
+          <p>Her vil du snart kunne oprette kampe, stævner og events for holdet.</p>
+        </div>
       </main>
     </div>
   )
