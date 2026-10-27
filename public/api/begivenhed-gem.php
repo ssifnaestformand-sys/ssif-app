@@ -45,10 +45,11 @@ $type        = trim((string)($body['type'] ?? ''));
 $titel       = trim((string)($body['titel'] ?? ''));
 $dato        = trim((string)($body['dato'] ?? ''));
 $tidspunkt   = trim((string)($body['tidspunkt'] ?? ''));
-$modetid     = trim((string)($body['modetid'] ?? ''));
-$sted        = trim((string)($body['sted'] ?? ''));
-$beskrivelse = trim((string)($body['beskrivelse'] ?? ''));
-$deltagere   = $body['deltagere'] ?? [];
+$modetid         = trim((string)($body['modetid'] ?? ''));
+$sted            = trim((string)($body['sted'] ?? ''));
+$beskrivelse     = trim((string)($body['beskrivelse'] ?? ''));
+$deltagere       = $body['deltagere'] ?? [];
+$extraSpørgsmaal = $body['extraSpørgsmaal'] ?? null;
 
 if (!$holdId || !$type || !$titel || !$dato || !$tidspunkt) {
     http_response_code(400); echo json_encode(['error' => 'Manglende påkrævede felter (holdId, type, titel, dato, tidspunkt)']); exit;
@@ -73,10 +74,15 @@ $bevFields = [
     'modetid'         => $modetid ? ['stringValue' => $modetid] : ['nullValue' => null],
     'sted'            => $sted    ? ['stringValue' => $sted]    : ['nullValue' => null],
     'beskrivelse'     => $beskrivelse ? ['stringValue' => $beskrivelse] : ['nullValue' => null],
-    'status'          => ['stringValue' => 'kladde'],
-    'opdateretAt'     => ['timestampValue' => $now],
-    'svarfrist'       => ['nullValue' => null],
-    'extraSpørgsmaal' => ['nullValue' => null],
+    'status'      => ['stringValue' => 'kladde'],
+    'opdateretAt' => ['timestampValue' => $now],
+    'svarfrist'   => ['nullValue' => null],
+    'extraSpørgsmaal' => $extraSpørgsmaal && !empty($extraSpørgsmaal['tekst'])
+        ? ['mapValue' => ['fields' => [
+            'tekst' => ['stringValue' => trim((string)($extraSpørgsmaal['tekst'] ?? ''))],
+            'type'  => ['stringValue' => 'ja_nej'],
+          ]]]
+        : ['nullValue' => null],
 ];
 
 if ($begivenhedId === null) {

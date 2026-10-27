@@ -64,6 +64,15 @@ $deltFields  = $deltResp ? ($deltResp['fields'] ?? []) : [];
 $nuvsvar     = $deltFields['svar']['stringValue'] ?? null;
 $navn        = $deltFields['navn']['stringValue']  ?? '';
 
+// Hent eventuel extra spørgsmål
+$extraSpørgsmaalTekst = '';
+$hasExtraSpørgsmaal   = false;
+if (isset($bf['extraSpørgsmaal']['mapValue']['fields'])) {
+    $eq = $bf['extraSpørgsmaal']['mapValue']['fields'];
+    $extraSpørgsmaalTekst = $eq['tekst']['stringValue'] ?? '';
+    $hasExtraSpørgsmaal   = $extraSpørgsmaalTekst !== '';
+}
+
 // ── POST: registrér svar ──────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $svar = trim($_POST['svar'] ?? '');
@@ -72,17 +81,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         vis_fejl('Ugyldigt svar', 'Tryk på en af knapperne for at svare.');
         exit;
     }
+    $extraSvar = trim($_POST['extra_svar'] ?? '');
+    if ($hasExtraSpørgsmaal && !in_array($extraSvar, ['ja', 'nej'], true)) {
+        $extraSvar = null; // ikke påkrævet
+    }
 
     $now       = date('Y-m-d\TH:i:s\Z');
-    $maskParts = 'updateMask.fieldPaths=svar&updateMask.fieldPaths=svarTidspunkt';
-    $patchUrl  = "{$fsBase}/begivenheder/{$begivenhedId}/deltagere/{$memberId}?{$maskParts}";
+    $maskPaths = 'updateMask.fieldPaths=svar&updateMask.fieldPaths=svarTidspunkt';
+    $patchFields = [
+        'svar'          => ['stringValue' => $svar],
+        'svarTidspunkt' => ['timestampValue' => $now],
+    ];
+    if ($hasExtraSpørgsmaal) {
+        $maskPaths .= '&updateMask.fieldPaths=extraSvar';
+        $patchFields['extraSvar'] = $extraSvar ? ['stringValue' => $extraSvar] : ['nullValue' => null];
+    }
+
+    $patchUrl  = "{$fsBase}/begivenheder/{$begivenhedId}/deltagere/{$memberId}?{$maskPaths}";
     $patchResp = @file_get_contents($patchUrl, false, stream_context_create(['http' => [
         'method'        => 'PATCH',
         'header'        => "Authorization: Bearer {$fsToken}\r\nContent-Type: application/json\r\n",
-        'content'       => json_encode(['fields' => [
-            'svar'          => ['stringValue' => $svar],
-            'svarTidspunkt' => ['timestampValue' => $now],
-        ]]),
+        'content'       => json_encode(['fields' => $patchFields]),
         'timeout'       => 10,
         'ignore_errors' => true,
     ]]));
@@ -92,19 +111,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    vis_bekræftelse($navn, $svar, $bf);
+    vis_bekræftelse($navn, $svar, $extraSvar, $extraSpørgsmaalTekst, $bf);
     exit;
 }
 
 // ── GET: vis svarside ─────────────────────────────────────────────────────────
-$forudvalgt = trim($_GET['svar'] ?? '');
+$forudvalgt          = trim($_GET['svar'] ?? '');
 if (!in_array($forudvalgt, ['kommer', 'kommer_ikke'], true)) $forudvalgt = '';
+$nuværendeExtraSvar  = $deltFields['extraSvar']['stringValue'] ?? null;
 
-vis_svarside($navn, $nuvsvar, $forudvalgt, $bf, $token);
+vis_svarside($navn, $nuvsvar, $forudvalgt, $bf, $token, $hasExtraSpørgsmaal, $extraSpørgsmaalTekst, $nuværendeExtraSvar);
 
 // ── Sidefunktioner ────────────────────────────────────────────────────────────
 
-function vis_svarside(string $navn, ?string $nuvsvar, string $forudvalgt, array $bf, string $token): void {
+function vis_svarside(string $navn, ?string $nuvsvar, string $forudvalgt, array $bf, string $token,
+                      bool $hasExtra, string $extraTekst, ?string $nuværendeExtra): void {
     $titel    = htmlspecialchars($bf['titel']['stringValue'] ?? '');
     $type     = $bf['type']['stringValue'] ?? '';
     $dato     = htmlspecialchars($bf['dato']['stringValue'] ?? '');
@@ -135,6 +156,26 @@ function vis_svarside(string $navn, ?string $nuvsvar, string $forudvalgt, array 
         $tidlSvarHtml = "<p class=\"curr-svar\">{$label} — du kan ændre dit svar herunder.</p>";
     }
 
+    $extraHtml = '';
+    if ($hasExtra) {
+        $ekstraTekstEnc = htmlspecialchars($extraTekst);
+        $jaClass  = $nuværendeExtra === 'ja'  ? ' selected' : '';
+        $nejClass = $nuværendeExtra === 'nej' ? ' selected' : '';
+        $extraHtml = <<<EXT
+    <div class="extra-blok">
+      <p class="spørgsmål" style="margin-bottom:0">{$ekstraTekstEnc}</p>
+      <div class="btn-row">
+        <label class="bsvar ekstra-ja{$jaClass}">
+          <input type="radio" name="extra_svar" value="ja" style="display:none"> Ja
+        </label>
+        <label class="bsvar ekstra-nej{$nejClass}">
+          <input type="radio" name="extra_svar" value="nej" style="display:none"> Nej
+        </label>
+      </div>
+    </div>
+EXT;
+    }
+
     $postUrl = '/s/' . rawurlencode($token);
 
     header('Content-Type: text/html; charset=UTF-8');
@@ -148,8 +189,9 @@ function vis_svarside(string $navn, ?string $nuvsvar, string $forudvalgt, array 
     <div class="detaljer">{$detDetaljer}</div>
     {$beskHtml}
     {$tidlSvarHtml}
-    <p class="spørgsmål">Kan du komme?</p>
     <form method="POST" action="{$postUrl}">
+      {$extraHtml}
+      <p class="spørgsmål">Kan du komme?</p>
       <div class="btn-row">
         <button type="submit" name="svar" value="kommer" class="bsvar kommer{$kommerClass}">
           Kommer &#10003;
@@ -162,17 +204,33 @@ function vis_svarside(string $navn, ?string $nuvsvar, string $forudvalgt, array 
     <p class="footer">Sejs-Svejb&aelig;k IF</p>
   </div>
 </div>
+<script>
+document.querySelectorAll('.ekstra-ja,.ekstra-nej').forEach(function(lbl){
+  lbl.addEventListener('click',function(){
+    document.querySelectorAll('.ekstra-ja,.ekstra-nej').forEach(function(l){l.classList.remove('selected')});
+    lbl.classList.add('selected');
+    lbl.querySelector('input').checked=true;
+  });
+});
+</script>
 HTML;
     echo '</body></html>';
 }
 
-function vis_bekræftelse(string $navn, string $svar, array $bf): void {
+function vis_bekræftelse(string $navn, string $svar, ?string $extraSvar, string $extraSpørgsmaalTekst, array $bf): void {
     $titel   = htmlspecialchars($bf['titel']['stringValue'] ?? '');
     $navnEnc = htmlspecialchars($navn);
     if ($svar === 'kommer') {
         $ikon = '&#10003;'; $farve = '#1a5c2a'; $tekst = 'Tak! Vi ses til';
     } else {
         $ikon = '&#10005;'; $farve = '#dc2626'; $tekst = 'Ok, du er frameldt';
+    }
+
+    $extraHtml = '';
+    if ($extraSvar && $extraSpørgsmaalTekst) {
+        $tekstEnc = htmlspecialchars($extraSpørgsmaalTekst);
+        $svarEnc  = $extraSvar === 'ja' ? 'Ja' : 'Nej';
+        $extraHtml = "<p style=\"font-size:14px;color:#4a4a4a\">{$tekstEnc}: <strong>{$svarEnc}</strong></p>";
     }
 
     header('Content-Type: text/html; charset=UTF-8');
@@ -184,6 +242,7 @@ function vis_bekræftelse(string $navn, string $svar, array $bf): void {
     <div class="ikon-stor" style="color:{$farve}">{$ikon}</div>
     <h1>{$tekst} {$titel}</h1>
     <p style="font-size:14px;color:#4a4a4a">Hej {$navnEnc} — dit svar er gemt.</p>
+    {$extraHtml}
     <p class="footer">Sejs-Svejb&aelig;k IF</p>
   </div>
 </div>
@@ -261,6 +320,11 @@ h1{font-size:20px;font-weight:800;color:#1a1a1a;line-height:1.25}
 .bsvar.ikke{background:#fff;color:#dc2626;border-color:#fecaca}
 .bsvar.ikke.selected{background:#dc2626;color:#fff;border-color:#dc2626}
 .ikon-stor{font-size:48px;line-height:1;text-align:center}
+.extra-blok{display:flex;flex-direction:column;gap:8px;padding:12px 14px;background:#f8faf8;border-radius:10px;border:1px solid #dde5dd}
+.bsvar.ekstra-ja{background:#fff;color:#1a5c2a;border-color:#dde5dd;text-align:center;cursor:pointer;display:flex;align-items:center;justify-content:center;user-select:none}
+.bsvar.ekstra-ja.selected{background:#1a5c2a;color:#fff;border-color:#1a5c2a}
+.bsvar.ekstra-nej{background:#fff;color:#4a4a4a;border-color:#dde5dd;text-align:center;cursor:pointer;display:flex;align-items:center;justify-content:center;user-select:none}
+.bsvar.ekstra-nej.selected{background:#555;color:#fff;border-color:#555}
 .footer{font-size:12px;color:#aaa;text-align:center;margin-top:6px}
 </style>
 </head>

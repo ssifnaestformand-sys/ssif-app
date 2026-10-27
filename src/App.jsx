@@ -668,6 +668,7 @@ function BegivenhedFormScreen({ hold, begivenhed, user, onBack, onSaved, onDelet
   const [modetid,   setModetid]   = useState(begivenhed?.modetid || '')
   const [sted,      setSted]      = useState(begivenhed?.sted || '')
   const [beskrivelse, setBeskrivelse] = useState(begivenhed?.beskrivelse || '')
+  const [extraSpørgsmaalTekst, setExtraSpørgsmaalTekst] = useState(begivenhed?.extraSpørgsmaal?.tekst || '')
 
   const [spillere,       setSpillere]       = useState(null)
   const [udtaget,        setUdtaget]        = useState({})
@@ -738,6 +739,9 @@ function BegivenhedFormScreen({ hold, begivenhed, user, onBack, onSaved, onDelet
           modetid: modetid.trim(),
           sted: sted.trim(),
           beskrivelse: beskrivelse.trim(),
+          extraSpørgsmaal: extraSpørgsmaalTekst.trim()
+            ? { tekst: extraSpørgsmaalTekst.trim(), type: 'ja_nej' }
+            : null,
           deltagere: spillere.map(s => ({
             id: s.id, navn: s.navn,
             udtaget: udtaget[s.id] !== false,
@@ -909,6 +913,15 @@ function BegivenhedFormScreen({ hold, begivenhed, user, onBack, onSaved, onDelet
             onChange={e => setBeskrivelse(e.target.value)}
             rows={3} style={{ resize: 'vertical' }}
             placeholder="Yderligere info til forældrene" />
+        </div>
+
+        <div className="form-field">
+          <label className="form-label">
+            Ekstra spørgsmål til forældrene <span style={{ fontWeight: 400, color: 'var(--text3)' }}>(valgfri, ja/nej)</span>
+          </label>
+          <input className="form-input" type="text" value={extraSpørgsmaalTekst}
+            onChange={e => setExtraSpørgsmaalTekst(e.target.value)}
+            placeholder="fx Kan du køre?" />
         </div>
 
         {formError && <div className="error-box">{formError}</div>}
@@ -1216,12 +1229,19 @@ function BegivenhedDetailScreen({ begivenhedId, user, onBack, onEdit, onDeleted 
                 <div key={d.id} className="spiller-row" style={{ cursor: 'default' }}>
                   <div className="spiller-check"><CheckIcon /></div>
                   <span style={{ fontSize: 14, fontWeight: 500, flex: 1 }}>{d.navn}</span>
-                  {d.svar === 'kommer' && (
-                    <span style={{ fontSize: 12, color: '#1a5c2a', fontWeight: 700 }}>Kommer ✓</span>
-                  )}
-                  {d.svar === 'kommer_ikke' && (
-                    <span style={{ fontSize: 12, color: 'var(--red)', fontWeight: 700 }}>Kommer ikke</span>
-                  )}
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+                    {d.svar === 'kommer' && (
+                      <span style={{ fontSize: 12, color: '#1a5c2a', fontWeight: 700 }}>Kommer ✓</span>
+                    )}
+                    {d.svar === 'kommer_ikke' && (
+                      <span style={{ fontSize: 12, color: 'var(--red)', fontWeight: 700 }}>Kommer ikke</span>
+                    )}
+                    {bev.extraSpørgsmaal && d.extraSvar && (
+                      <span style={{ fontSize: 11, color: 'var(--text3)' }}>
+                        {bev.extraSpørgsmaal.tekst}: <strong>{d.extraSvar === 'ja' ? 'Ja' : 'Nej'}</strong>
+                      </span>
+                    )}
+                  </div>
                 </div>
               ))}
 

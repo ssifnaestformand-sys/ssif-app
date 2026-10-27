@@ -44,18 +44,28 @@ if (!isset($lederHoldIds[$holdId])) {
     http_response_code(403); echo json_encode(['error' => 'Ingen adgang']); exit;
 }
 
+$extraSpørgsmaal = null;
+if (isset($f['extraSpørgsmaal']['mapValue']['fields'])) {
+    $eq = $f['extraSpørgsmaal']['mapValue']['fields'];
+    $extraSpørgsmaal = [
+        'tekst' => $eq['tekst']['stringValue'] ?? '',
+        'type'  => $eq['type']['stringValue']  ?? 'ja_nej',
+    ];
+}
+
 $begivenhed = [
-    'id'          => $begivenhedId,
-    'holdId'      => $holdId,
-    'type'        => $f['type']['stringValue']        ?? '',
-    'titel'       => $f['titel']['stringValue']       ?? '',
-    'dato'        => $f['dato']['stringValue']        ?? '',
-    'tidspunkt'   => $f['tidspunkt']['stringValue']   ?? '',
-    'modetid'     => $f['modetid']['stringValue']     ?? null,
-    'sted'        => $f['sted']['stringValue']        ?? null,
-    'beskrivelse' => $f['beskrivelse']['stringValue'] ?? null,
-    'status'      => $f['status']['stringValue']      ?? 'kladde',
-    'oprettetAf'  => $f['oprettetAf']['stringValue']  ?? '',
+    'id'              => $begivenhedId,
+    'holdId'          => $holdId,
+    'type'            => $f['type']['stringValue']        ?? '',
+    'titel'           => $f['titel']['stringValue']       ?? '',
+    'dato'            => $f['dato']['stringValue']        ?? '',
+    'tidspunkt'       => $f['tidspunkt']['stringValue']   ?? '',
+    'modetid'         => $f['modetid']['stringValue']     ?? null,
+    'sted'            => $f['sted']['stringValue']        ?? null,
+    'beskrivelse'     => $f['beskrivelse']['stringValue'] ?? null,
+    'status'          => $f['status']['stringValue']      ?? 'kladde',
+    'oprettetAf'      => $f['oprettetAf']['stringValue']  ?? '',
+    'extraSpørgsmaal' => $extraSpørgsmaal,
 ];
 
 $deltagerDocs = fs_list("{$base}/begivenheder/{$begivenhedId}/deltagere", $fsToken);
@@ -63,10 +73,11 @@ $deltagere    = [];
 foreach ($deltagerDocs as $d) {
     $df = $d['fields'];
     $deltagere[] = [
-        'id'      => basename($d['name'] ?? ''),
-        'navn'    => $df['navn']['stringValue']    ?? '',
-        'udtaget' => $df['udtaget']['booleanValue'] ?? true,
-        'svar'    => $df['svar']['stringValue']    ?? null,
+        'id'       => basename($d['name'] ?? ''),
+        'navn'     => $df['navn']['stringValue']    ?? '',
+        'udtaget'  => $df['udtaget']['booleanValue'] ?? true,
+        'svar'     => $df['svar']['stringValue']    ?? null,
+        'extraSvar'=> $df['extraSvar']['stringValue'] ?? null,
     ];
 }
 usort($deltagere, fn($a, $b) => strcoll($a['navn'], $b['navn']));
