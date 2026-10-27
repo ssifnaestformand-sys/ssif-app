@@ -193,3 +193,109 @@ body {
   font-size: 13px;
   line-height: 1.55;
 }
+
+/* ── Begivenhed-cards ────────────────────────────────────────────────────── */
+
+.bev-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  transition: background .1s;
+}
+.bev-card:active { background: var(--green-soft); }
+
+.bev-type-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+  color: #fff;
+}
+.bev-type-kamp    { background: #1a5c2a; }
+.bev-type-stævne  { background: #1d6a96; }
+.bev-type-event   { background: #7c3aed; }
+.bev-type-møde    { background: #b45309; }
+
+/* ── Type-vælger ─────────────────────────────────────────────────────────── */
+
+.type-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.type-btn {
+  background: var(--bg);
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text2);
+  transition: border-color .12s, background .12s;
+}
+.type-btn:active { background: var(--green-soft); }
+.type-btn.active {
+  border-color: var(--green);
+  background: var(--green-soft);
+  color: var(--green);
+}
+.type-btn .type-icon { font-size: 22px; }
+
+/* ── Spiller-rækker ──────────────────────────────────────────────────────── */
+
+.spiller-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background .1s;
+}
+.spiller-row:not([style*="default"]):active { background: var(--green-soft); }
+.spiller-row.fravalgt { opacity: .45; }
+
+.spiller-check {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .12s, border-color .12s;
+}
+.spiller-row:not(.fravalgt) .spiller-check {
+  background: var(--green);
+  border-color: var(--green);
+  color: #fff;
+}
+
+/* ── Trin-indikator ──────────────────────────────────────────────────────── */
+
+.steps {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text3);
+  font-weight: 600;
+}
+.steps .step.active { color: var(--green); }
+.steps .step-sep { color: var(--border); }

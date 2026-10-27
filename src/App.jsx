@@ -9,14 +9,12 @@ import { auth } from './firebase.js'
 import './trainer.css'
 
 // ── App ───────────────────────────────────────────────────────────────────────
-// Screens: splash → login → (checking) → app | denied | unverified
-// Adgang afgøres af /api/trainer-data.php (lederHolds i Conventus), ikke users.role.
 
 export default function App() {
-  const [screen,  setScreen]  = useState('splash')
-  const [fbUser,  setFbUser]  = useState(null)
+  const [screen,      setScreen]      = useState('splash')
+  const [fbUser,      setFbUser]      = useState(null)
   const [trainerName, setTrainerName] = useState('')
-  const [holds,   setHolds]   = useState([])
+  const [holds,       setHolds]       = useState([])
 
   useEffect(() => {
     return onAuthStateChanged(auth, async fbUser => {
@@ -171,7 +169,6 @@ function LoginScreen() {
     }
   }
 
-  // ── Main ──
   if (view === 'main') return (
     <div className="screen-center">
       <div style={{ width: '100%', maxWidth: 380 }}>
@@ -199,7 +196,6 @@ function LoginScreen() {
     </div>
   )
 
-  // ── Conventus-formular ──
   if (view === 'conventus') return (
     <div className="screen-center">
       <div style={{ width: '100%', maxWidth: 380 }}>
@@ -230,7 +226,6 @@ function LoginScreen() {
     </div>
   )
 
-  // ── Multi-profil ──
   if (view === 'conventus-profiles') return (
     <div className="screen-center">
       <div style={{ width: '100%', maxWidth: 380 }}>
@@ -263,7 +258,6 @@ function LoginScreen() {
     </div>
   )
 
-  // ── Email-formular ──
   if (view === 'email') return (
     <div className="screen-center">
       <div style={{ width: '100%', maxWidth: 380 }}>
@@ -350,9 +344,9 @@ function UnverifiedScreen({ user, onLogout }) {
 
 // ── DashboardScreen ───────────────────────────────────────────────────────────
 
-function DashboardScreen({ displayName, holds, onLogout, onRefresh }) {
-  const [refreshing,    setRefreshing]    = useState(false)
-  const [selectedHold,  setSelectedHold]  = useState(null)
+function DashboardScreen({ user, displayName, holds, onLogout, onRefresh }) {
+  const [refreshing,   setRefreshing]   = useState(false)
+  const [selectedHold, setSelectedHold] = useState(null)
 
   async function handleRefresh() {
     setRefreshing(true)
@@ -361,12 +355,11 @@ function DashboardScreen({ displayName, holds, onLogout, onRefresh }) {
   }
 
   if (selectedHold) {
-    return <HoldScreen hold={selectedHold} onBack={() => setSelectedHold(null)} />
+    return <HoldScreen hold={selectedHold} user={user} onBack={() => setSelectedHold(null)} />
   }
 
   return (
     <div className="screen">
-      {/* App-bar — paddingTop tager højde for iOS-statusbjælken */}
       <header style={{
         background: 'var(--green)', color: '#fff',
         paddingTop: 'max(13px, env(safe-area-inset-top))',
@@ -392,12 +385,10 @@ function DashboardScreen({ displayName, holds, onLogout, onRefresh }) {
         </button>
       </header>
 
-      {/* Indhold */}
       <main style={{ padding: '20px 16px', maxWidth: 600, margin: '0 auto', width: '100%', flex: 1 }}>
         <p style={{ fontSize: 14, color: 'var(--text3)', marginBottom: 22 }}>
           Hej {displayName} 👋
         </p>
-
         <h2 style={{ fontSize: 17, fontWeight: 800, marginBottom: 14 }}>Mine hold</h2>
 
         {holds.length === 0 ? (
@@ -423,11 +414,7 @@ function DashboardScreen({ displayName, holds, onLogout, onRefresh }) {
                     </div>
                   )}
                 </div>
-                <svg style={{ marginLeft: 'auto', color: 'var(--text3)', flexShrink: 0 }}
-                  width="18" height="18" viewBox="0 0 18 18" fill="none">
-                  <path d="M6.5 4.5l4.5 4.5-4.5 4.5" stroke="currentColor" strokeWidth="1.6"
-                    strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
+                <ChevronIcon />
               </div>
             ))}
           </div>
@@ -439,7 +426,63 @@ function DashboardScreen({ displayName, holds, onLogout, onRefresh }) {
 
 // ── HoldScreen ────────────────────────────────────────────────────────────────
 
-function HoldScreen({ hold, onBack }) {
+function HoldScreen({ hold, user, onBack }) {
+  const [view,         setView]         = useState('liste')
+  const [begivenheder, setBegivenheder] = useState([])
+  const [loading,      setLoading]      = useState(true)
+  const [error,        setError]        = useState('')
+  const [selectedBev,  setSelectedBev]  = useState(null)
+  const [editBev,      setEditBev]      = useState(null)
+
+  useEffect(() => { loadData() }, [])
+
+  async function loadData() {
+    setLoading(true)
+    setError('')
+    try {
+      const idToken = await user.getIdToken()
+      const res = await fetch('/api/hold-data.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ holdId: hold.id }),
+      })
+      const data = await res.json()
+      if (data.begivenheder !== undefined) {
+        setBegivenheder(data.begivenheder)
+      } else {
+        setError(data.error || 'Fejl ved hentning af begivenheder')
+      }
+    } catch {
+      setError('Netværksfejl')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (view === 'form') {
+    return (
+      <BegivenhedFormScreen
+        hold={hold}
+        begivenhed={editBev}
+        user={user}
+        onBack={() => { setView('liste'); setEditBev(null) }}
+        onSaved={() => { setView('liste'); setEditBev(null); loadData() }}
+      />
+    )
+  }
+
+  if (view === 'detalje' && selectedBev) {
+    return (
+      <BegivenhedDetailScreen
+        begivenhedId={selectedBev.id}
+        user={user}
+        onBack={() => { setView('liste'); setSelectedBev(null) }}
+        onEdit={bevMedDeltagere => { setEditBev(bevMedDeltagere); setView('form') }}
+        onDeleted={() => { setView('liste'); setSelectedBev(null); loadData() }}
+      />
+    )
+  }
+
   return (
     <div className="screen">
       <header style={{
@@ -456,20 +499,519 @@ function HoldScreen({ hold, onBack }) {
           {hold.titel || `Hold ${hold.id}`}
         </span>
       </header>
-      <main style={{ padding: '20px 16px', maxWidth: 600, margin: '0 auto', width: '100%', flex: 1 }}>
+
+      <main style={{ padding: '16px', maxWidth: 600, margin: '0 auto', width: '100%', flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
         {hold.afdeling && (
-          <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>{hold.afdeling}</p>
+          <p style={{ fontSize: 13, color: 'var(--text3)' }}>{hold.afdeling}</p>
         )}
-        <div className="empty-state" style={{ marginTop: 40 }}>
-          <h3>Begivenheder kommer i Skive 2</h3>
-          <p>Her vil du snart kunne oprette kampe, stævner og events for holdet.</p>
-        </div>
+        <button className="btn btn-primary" onClick={() => { setEditBev(null); setView('form') }}>
+          + Opret begivenhed
+        </button>
+
+        {loading && <div className="spinner" style={{ margin: '32px auto' }} />}
+        {error && <div className="error-box">{error}</div>}
+
+        {!loading && !error && begivenheder.length === 0 && (
+          <div className="empty-state">
+            <h3>Ingen begivenheder endnu</h3>
+            <p>Opret en kamp, et stævne, et event eller et møde.</p>
+          </div>
+        )}
+
+        {begivenheder.map(bev => (
+          <div key={bev.id} className="bev-card"
+            onClick={() => { setSelectedBev(bev); setView('detalje') }}>
+            <span className={`bev-type-badge bev-type-${bev.type}`}>{bev.type}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>{bev.titel}</div>
+              <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>
+                {formatDato(bev.dato)}{bev.tidspunkt ? ` · ${bev.tidspunkt}` : ''}
+              </div>
+            </div>
+            <ChevronIcon />
+          </div>
+        ))}
       </main>
     </div>
   )
 }
 
-// ── Ikoner ────────────────────────────────────────────────────────────────────
+// ── BegivenhedFormScreen ──────────────────────────────────────────────────────
+
+const BEV_TYPES = [
+  { id: 'kamp',    label: 'Kamp',   icon: '⚽' },
+  { id: 'stævne', label: 'Stævne', icon: '🏆' },
+  { id: 'event',  label: 'Event',  icon: '🎉' },
+  { id: 'møde',   label: 'Møde',   icon: '📋' },
+]
+
+function BegivenhedFormScreen({ hold, begivenhed, user, onBack, onSaved }) {
+  const isEdit = begivenhed !== null
+
+  const [step,      setStep]      = useState(1)
+  const [type,      setType]      = useState(begivenhed?.type || '')
+  const [titel,     setTitel]     = useState(begivenhed?.titel || '')
+  const [dato,      setDato]      = useState(begivenhed?.dato || '')
+  const [tidspunkt, setTidspunkt] = useState(begivenhed?.tidspunkt || '')
+  const [modetid,   setModetid]   = useState(begivenhed?.modetid || '')
+  const [sted,      setSted]      = useState(begivenhed?.sted || '')
+  const [beskrivelse, setBeskrivelse] = useState(begivenhed?.beskrivelse || '')
+
+  const [spillere,       setSpillere]       = useState(null)
+  const [udtaget,        setUdtaget]        = useState({})
+  const [spillereLoad,   setSpillereLoad]   = useState(false)
+  const [spillereError,  setSpillereError]  = useState('')
+
+  const [saving,    setSaving]    = useState(false)
+  const [formError, setFormError] = useState('')
+
+  async function loadSpillere() {
+    if (spillere !== null) return
+    setSpillereLoad(true)
+    setSpillereError('')
+    try {
+      const idToken = await user.getIdToken()
+      const res = await fetch('/api/hold-spillere.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ holdId: hold.id }),
+      })
+      const data = await res.json()
+      if (Array.isArray(data)) {
+        setSpillere(data)
+        const u = {}
+        data.forEach(s => {
+          const existing = isEdit && begivenhed.deltagere
+            ? begivenhed.deltagere.find(d => d.id === s.id)
+            : null
+          u[s.id] = existing ? existing.udtaget : true
+        })
+        setUdtaget(u)
+      } else {
+        setSpillereError(data.error || 'Fejl ved hentning af spillere')
+      }
+    } catch {
+      setSpillereError('Netværksfejl')
+    } finally {
+      setSpillereLoad(false)
+    }
+  }
+
+  async function handleNextStep() {
+    if (!type || !titel.trim() || !dato || !tidspunkt) {
+      setFormError('Udfyld type, titel, dato og tidspunkt.')
+      return
+    }
+    setFormError('')
+    await loadSpillere()
+    setStep(2)
+  }
+
+  async function handleGem() {
+    if (!spillere) return
+    setSaving(true)
+    setFormError('')
+    try {
+      const idToken = await user.getIdToken()
+      const res = await fetch('/api/begivenhed-gem.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          begivenhedId: isEdit ? begivenhed.id : null,
+          holdId: hold.id,
+          type, titel: titel.trim(), dato, tidspunkt,
+          modetid: modetid.trim(),
+          sted: sted.trim(),
+          beskrivelse: beskrivelse.trim(),
+          deltagere: spillere.map(s => ({
+            id: s.id, navn: s.navn,
+            udtaget: udtaget[s.id] !== false,
+          })),
+        }),
+      })
+      const data = await res.json()
+      if (data.id) {
+        onSaved(data.id)
+      } else {
+        setFormError(data.error || 'Gem fejlede')
+      }
+    } catch {
+      setFormError('Netværksfejl')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const udtajetAntal = spillere
+    ? Object.values(udtaget).filter(Boolean).length
+    : 0
+
+  const header = (title, onBk) => (
+    <header style={{
+      background: 'var(--green)', color: '#fff',
+      paddingTop: 'max(13px, env(safe-area-inset-top))',
+      paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
+      display: 'flex', alignItems: 'center', gap: 12,
+    }}>
+      <button onClick={onBk} style={{
+        background: 'none', border: 'none', color: '#fff',
+        cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 4px 0 0',
+      }}>‹</button>
+      <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>{title}</span>
+    </header>
+  )
+
+  if (step === 1) return (
+    <div className="screen">
+      {header(isEdit ? 'Ret begivenhed' : 'Opret begivenhed', onBack)}
+      <main style={{ padding: '16px', maxWidth: 600, margin: '0 auto', width: '100%', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div className="steps">
+          <span className="step active">1 Oplysninger</span>
+          <span className="step-sep">›</span>
+          <span className="step">2 Udtagelse</span>
+        </div>
+
+        <div>
+          <div className="form-label" style={{ marginBottom: 10 }}>Type</div>
+          <div className="type-grid">
+            {BEV_TYPES.map(t => (
+              <button key={t.id}
+                className={`type-btn${type === t.id ? ' active' : ''}`}
+                onClick={() => setType(t.id)}>
+                <span className="type-icon">{t.icon}</span>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="form-field">
+          <label className="form-label">Titel</label>
+          <input className="form-input" type="text" value={titel}
+            onChange={e => setTitel(e.target.value)}
+            placeholder="fx Kamp mod FC Silkeborg" />
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="form-field">
+            <label className="form-label">Dato</label>
+            <input className="form-input" type="date" value={dato}
+              onChange={e => setDato(e.target.value)} />
+          </div>
+          <div className="form-field">
+            <label className="form-label">Tidspunkt</label>
+            <input className="form-input" type="time" value={tidspunkt}
+              onChange={e => setTidspunkt(e.target.value)} />
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="form-field">
+            <label className="form-label">
+              Mødetid <span style={{ fontWeight: 400, color: 'var(--text3)' }}>(valgfri)</span>
+            </label>
+            <input className="form-input" type="time" value={modetid}
+              onChange={e => setModetid(e.target.value)} />
+          </div>
+          <div className="form-field">
+            <label className="form-label">
+              Sted <span style={{ fontWeight: 400, color: 'var(--text3)' }}>(valgfri)</span>
+            </label>
+            <input className="form-input" type="text" value={sted}
+              onChange={e => setSted(e.target.value)}
+              placeholder="fx Sejs Hallen" />
+          </div>
+        </div>
+
+        <div className="form-field">
+          <label className="form-label">
+            Beskrivelse <span style={{ fontWeight: 400, color: 'var(--text3)' }}>(valgfri)</span>
+          </label>
+          <textarea className="form-input" value={beskrivelse}
+            onChange={e => setBeskrivelse(e.target.value)}
+            rows={3} style={{ resize: 'vertical' }}
+            placeholder="Yderligere info til forældrene" />
+        </div>
+
+        {formError && <div className="error-box">{formError}</div>}
+
+        <button className="btn btn-primary" onClick={handleNextStep}>
+          Næste: Udtagelse →
+        </button>
+      </main>
+    </div>
+  )
+
+  // Trin 2 – udtagelse
+  return (
+    <div className="screen">
+      {header('Udtagelse', () => setStep(1))}
+      <main style={{ padding: '16px', maxWidth: 600, margin: '0 auto', width: '100%', flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="steps">
+          <span className="step">1 Oplysninger</span>
+          <span className="step-sep">›</span>
+          <span className="step active">2 Udtagelse</span>
+        </div>
+
+        {spillereLoad && <div className="spinner" style={{ margin: '32px auto' }} />}
+        {spillereError && <div className="error-box">{spillereError}</div>}
+
+        {spillere && (
+          <>
+            <p style={{ fontSize: 13, color: 'var(--text3)' }}>
+              {udtajetAntal} af {spillere.length} udtaget · Tryk for at fravælge
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {spillere.map(s => {
+                const er = udtaget[s.id] !== false
+                return (
+                  <div key={s.id}
+                    className={`spiller-row${er ? '' : ' fravalgt'}`}
+                    onClick={() => setUdtaget(prev => ({ ...prev, [s.id]: !prev[s.id] }))}>
+                    <div className="spiller-check">{er && <CheckIcon />}</div>
+                    <span style={{ fontSize: 14, fontWeight: 500 }}>{s.navn}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </>
+        )}
+
+        {formError && <div className="error-box">{formError}</div>}
+
+        <button className="btn btn-primary"
+          onClick={handleGem}
+          disabled={saving || !spillere || !!spillereError}>
+          {saving ? 'Gemmer…' : isEdit ? 'Gem ændringer' : 'Opret begivenhed'}
+        </button>
+      </main>
+    </div>
+  )
+}
+
+// ── BegivenhedDetailScreen ────────────────────────────────────────────────────
+
+function BegivenhedDetailScreen({ begivenhedId, user, onBack, onEdit, onDeleted }) {
+  const [data,        setData]        = useState(null)
+  const [loading,     setLoading]     = useState(true)
+  const [error,       setError]       = useState('')
+  const [deleting,    setDeleting]    = useState(false)
+  const [confirmSlet, setConfirmSlet] = useState(false)
+
+  useEffect(() => { loadDetalje() }, [begivenhedId])
+
+  async function loadDetalje() {
+    setLoading(true)
+    setError('')
+    try {
+      const idToken = await user.getIdToken()
+      const res = await fetch('/api/begivenhed-detalje.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ begivenhedId }),
+      })
+      const d = await res.json()
+      if (d.begivenhed) {
+        setData(d)
+      } else {
+        setError(d.error || 'Fejl ved hentning')
+      }
+    } catch {
+      setError('Netværksfejl')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleSlet() {
+    setDeleting(true)
+    try {
+      const idToken = await user.getIdToken()
+      const res = await fetch('/api/begivenhed-slet.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ begivenhedId }),
+      })
+      const d = await res.json()
+      if (d.ok) {
+        onDeleted()
+      } else {
+        setError(d.error || 'Slet fejlede')
+        setConfirmSlet(false)
+      }
+    } catch {
+      setError('Netværksfejl')
+      setConfirmSlet(false)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  const bev      = data?.begivenhed
+  const deltagere = data?.deltagere ?? []
+  const udtaget  = deltagere.filter(d => d.udtaget)
+  const fravalgt = deltagere.filter(d => !d.udtaget)
+
+  return (
+    <div className="screen">
+      <header style={{
+        background: 'var(--green)', color: '#fff',
+        paddingTop: 'max(13px, env(safe-area-inset-top))',
+        paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
+        display: 'flex', alignItems: 'center', gap: 12,
+      }}>
+        <button onClick={onBack} style={{
+          background: 'none', border: 'none', color: '#fff',
+          cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 4px 0 0',
+        }}>‹</button>
+        <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>
+          {bev ? bev.titel : 'Begivenhed'}
+        </span>
+        {bev && !confirmSlet && (
+          <button onClick={() => setConfirmSlet(true)} style={{
+            background: 'none', border: 'none',
+            color: 'rgba(255,255,255,.75)', cursor: 'pointer',
+            fontSize: 13, fontWeight: 500,
+          }}>Slet</button>
+        )}
+      </header>
+
+      <main style={{ padding: '16px', maxWidth: 600, margin: '0 auto', width: '100%', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {loading && <div className="spinner" style={{ margin: '40px auto' }} />}
+        {error && <div className="error-box">{error}</div>}
+
+        {confirmSlet && (
+          <div style={{
+            background: 'var(--red-soft)', border: '1px solid var(--red-border)',
+            borderRadius: 12, padding: 16,
+            display: 'flex', flexDirection: 'column', gap: 12,
+          }}>
+            <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--red)' }}>
+              Slet begivenheden permanent?
+            </p>
+            <p style={{ fontSize: 13, color: 'var(--text2)' }}>
+              Alle deltagere og svartokens fjernes. Kan ikke fortrydes.
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button className="btn btn-outline" style={{ flex: 1 }}
+                onClick={() => setConfirmSlet(false)}>Annuller</button>
+              <button className="btn btn-primary"
+                style={{ flex: 1, background: 'var(--red)' }}
+                onClick={handleSlet} disabled={deleting}>
+                {deleting ? 'Sletter…' : 'Slet'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {bev && !confirmSlet && (
+          <>
+            <div style={{
+              background: 'var(--bg)', border: '1px solid var(--border)',
+              borderRadius: 12, padding: 16,
+              display: 'flex', flexDirection: 'column', gap: 12,
+            }}>
+              <span className={`bev-type-badge bev-type-${bev.type}`}
+                style={{ alignSelf: 'flex-start' }}>
+                {bev.type}
+              </span>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 14 }}>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 700, marginBottom: 3 }}>DATO</div>
+                  <div style={{ fontWeight: 600 }}>{formatDato(bev.dato)}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 700, marginBottom: 3 }}>TIDSPUNKT</div>
+                  <div style={{ fontWeight: 600 }}>{bev.tidspunkt}</div>
+                </div>
+                {bev.modetid && (
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 700, marginBottom: 3 }}>MØDETID</div>
+                    <div style={{ fontWeight: 600 }}>{bev.modetid}</div>
+                  </div>
+                )}
+                {bev.sted && (
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 700, marginBottom: 3 }}>STED</div>
+                    <div style={{ fontWeight: 600 }}>{bev.sted}</div>
+                  </div>
+                )}
+              </div>
+              {bev.beskrivelse && (
+                <p style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.55 }}>
+                  {bev.beskrivelse}
+                </p>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text2)' }}>
+                Udtaget ({udtaget.length})
+              </h3>
+              {udtaget.map(d => (
+                <div key={d.id} className="spiller-row" style={{ cursor: 'default' }}>
+                  <div className="spiller-check"><CheckIcon /></div>
+                  <span style={{ fontSize: 14, fontWeight: 500 }}>{d.navn}</span>
+                </div>
+              ))}
+
+              {fravalgt.length > 0 && (
+                <>
+                  <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text2)', marginTop: 6 }}>
+                    Fravalgt ({fravalgt.length})
+                  </h3>
+                  {fravalgt.map(d => (
+                    <div key={d.id} className="spiller-row fravalgt" style={{ cursor: 'default' }}>
+                      <div className="spiller-check" />
+                      <span style={{ fontSize: 14, fontWeight: 500 }}>{d.navn}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+
+            <button className="btn btn-outline"
+              onClick={() => onEdit({ ...bev, deltagere })}>
+              Ret begivenhed
+            </button>
+          </>
+        )}
+      </main>
+    </div>
+  )
+}
+
+// ── Hjælpere og ikoner ────────────────────────────────────────────────────────
+
+function formatDato(dato) {
+  if (!dato) return ''
+  try {
+    return new Date(dato + 'T00:00:00').toLocaleDateString('da-DK', {
+      weekday: 'short', day: 'numeric', month: 'short',
+    })
+  } catch {
+    return dato
+  }
+}
+
+function CheckIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+      <path d="M2 6.5l3 3 6-6" stroke="currentColor" strokeWidth="2"
+        strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function ChevronIcon() {
+  return (
+    <svg style={{ color: 'var(--text3)', flexShrink: 0 }}
+      width="18" height="18" viewBox="0 0 18 18" fill="none">
+      <path d="M6.5 4.5l4.5 4.5-4.5 4.5" stroke="currentColor" strokeWidth="1.6"
+        strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
 
 function GoogleIcon() {
   return (

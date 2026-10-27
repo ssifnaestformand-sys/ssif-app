@@ -130,3 +130,184 @@ function require_role(string $uid, string $projectId, string $accessToken, array
 function base64url_dec(string $d): string {
     return base64_decode(strtr($d, '-_', '+/') . str_repeat('=', (4 - strlen($d) % 4) % 4));
 }
+
+// ── Firestore REST-hjælpere (bruges af træner-endpoints) ──────────────────────
+
+function make_fs_token(array $sa): string {
+    $now = time();
+    $h   = rtrim(strtr(base64_encode(json_encode(['alg' => 'RS256', 'typ' => 'JWT'])), '+/', '-_'), '=');
+    $p   = rtrim(strtr(base64_encode(json_encode([
+        'iss'   => $sa['client_email'],
+        'scope' => 'https://www.googleapis.com/auth/datastore',
+        'aud'   => 'https://oauth2.googleapis.com/token',
+        'iat'   => $now,
+        'exp'   => $now + 3600,
+    ])), '+/', '-_'), '=');
+    openssl_sign("$h.$p", $sig, $sa['private_key'], OPENSSL_ALGO_SHA256);
+    $jwt  = "$h.$p." . rtrim(strtr(base64_encode($sig), '+/', '-_'), '=');
+    $resp = @file_get_contents('https://oauth2.googleapis.com/token', false, stream_context_create(['http' => [
+        'method'        => 'POST',
+        'header'        => "Content-Type: application/x-www-form-urlencoded\r\n",
+        'content'       => http_build_query([
+            'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+            'assertion'  => $jwt,
+        ]),
+        'timeout'       => 10,
+        'ignore_errors' => true,
+    ]]));
+    return json_decode($resp ?: '', true)['access_token'] ?? '';
+}
+
+function decode_token_payload(string $idToken): array {
+    $parts = explode('.', $idToken);
+    if (count($parts) !== 3) return [];
+    return json_decode(base64url_dec($parts[1]), true) ?? [];
+}
+
+function fs_get(string $url, string $token): ?array {
+    $resp = @file_get_contents($url, false, stream_context_create(['http' => [
+        'method'        => 'GET',
+        'header'        => "Authorization: Bearer {$token}\r\n",
+        'timeout'       => 10,
+        'ignore_errors' => true,
+    ]]));
+    if (!$resp) return null;
+    $data = json_decode($resp, true);
+    return isset($data['fields']) ? $data : null;
+}
+
+function fs_run_query(string $projectId, string $token, array $query): array {
+    $url  = "https://firestore.googleapis.com/v1/projects/{$projectId}/databases/(default)/documents:runQuery";
+    $resp = @file_get_contents($url, false, stream_context_create(['http' => [
+        'method'        => 'POST',
+        'header'        => "Authorization: Bearer {$token}\r\nContent-Type: application/json\r\n",
+        'content'       => json_encode($query),
+        'timeout'       => 10,
+        'ignore_errors' => true,
+    ]]));
+    if (!$resp) return [];
+    return json_decode($resp, true) ?? [];
+}
+
+function fs_list(string $url, string $token, int $pageSize = 100): array {
+    $allDocs   = [];
+    $pageToken = '';
+    do {
+        $fetchUrl = $url . '?pageSize=' . $pageSize . ($pageToken ? '&pageToken=' . urlencode($pageToken) : '');
+        $resp = @file_get_contents($fetchUrl, false, stream_context_create(['http' => [
+            'method'        => 'GET',
+            'header'        => "Authorization: Bearer {$token}\r\n",
+            'timeout'       => 10,
+            'ignore_errors' => true,
+        ]]));
+        if (!$resp) break;
+        $data      = json_decode($resp, true);
+        $allDocs   = array_merge($allDocs, $data['documents'] ?? []);
+        $pageToken = $data['nextPageToken'] ?? '';
+    } while ($pageToken !== '');
+    return $allDocs;
+}
+
+function fs_commit(string $projectId, string $token, array $writes): bool {
+    $url  = "https://firestore.googleapis.com/v1/projects/{$projectId}/databases/(default)/documents:commit";
+    $resp = @file_get_contents($url, false, stream_context_create(['http' => [
+        'method'        => 'POST',
+        'header'        => "Authorization: Bearer {$token}\r\nContent-Type: application/json\r\n",
+        'content'       => json_encode(['writes' => $writes]),
+        'timeout'       => 15,
+        'ignore_errors' => true,
+    ]]));
+    if (!$resp) return false;
+    $data = json_decode($resp, true);
+    return !isset($data['error']);
+}
+
+function fs_create(string $projectId, string $token, string $collection, array $fields): ?string {
+    $url  = "https://firestore.googleapis.com/v1/projects/{$projectId}/databases/(default)/documents/{$collection}";
+    $resp = @file_get_contents($url, false, stream_context_create(['http' => [
+        'method'        => 'POST',
+        'header'        => "Authorization: Bearer {$token}\r\nContent-Type: application/json\r\n",
+        'content'       => json_encode(['fields' => $fields]),
+        'timeout'       => 10,
+        'ignore_errors' => true,
+    ]]));
+    if (!$resp) return null;
+    $data = json_decode($resp, true);
+    return isset($data['name']) ? basename($data['name']) : null;
+}
+
+// Finder alle lederHolds for brugeren på tværs af alle matchende member-profiler.
+// Returnerer ['holdId' => true, ...], eller [] hvis ingen.
+function get_leder_holds(string $email, string $conventus_id, string $projectId, string $fsToken): array {
+    $base       = "https://firestore.googleapis.com/v1/projects/{$projectId}/databases/(default)/documents";
+    $memberDocs = [];
+
+    if ($conventus_id !== '') {
+        $doc = fs_get("{$base}/members/{$conventus_id}", $fsToken);
+        if ($doc) $memberDocs[$conventus_id] = $doc['fields'];
+    }
+    if ($email !== '') {
+        $rows = fs_run_query($projectId, $fsToken, ['structuredQuery' => [
+            'from'  => [['collectionId' => 'members']],
+            'where' => ['fieldFilter' => [
+                'field' => ['fieldPath' => 'allEmails'],
+                'op'    => 'ARRAY_CONTAINS',
+                'value' => ['stringValue' => $email],
+            ]],
+        ]]);
+        foreach ($rows as $row) {
+            if (!isset($row['document']['fields'])) continue;
+            $docId = basename($row['document']['name'] ?? '');
+            if ($docId) $memberDocs[$docId] = $row['document']['fields'];
+        }
+    }
+
+    $lederHoldIds = [];
+    foreach ($memberDocs as $fields) {
+        foreach ($fields['lederHolds']['arrayValue']['values'] ?? [] as $v) {
+            $id = (string)($v['integerValue'] ?? $v['stringValue'] ?? '');
+            if ($id !== '') $lederHoldIds[$id] = true;
+        }
+    }
+    return $lederHoldIds;
+}
+
+// Standard auth-opsætning for træner-endpoints.
+// Terminerer med HTTP 401/403/500 ved fejl. Returnerer auth-kontekst.
+function trainer_auth(): array {
+    $idToken = bearer_token();
+    if (!$idToken) { http_response_code(401); echo json_encode(['error' => 'Uautoriseret']); exit; }
+
+    $saPath = __DIR__ . '/firebase-service-account.json';
+    if (!file_exists($saPath)) { http_response_code(500); echo json_encode(['error' => 'Konfigurationsfejl']); exit; }
+    $sa        = json_decode(file_get_contents($saPath), true);
+    $projectId = $sa['project_id'];
+
+    if (!verify_firebase_id_token($idToken, $projectId)) {
+        http_response_code(401); echo json_encode(['error' => 'Uautoriseret']); exit;
+    }
+
+    $payload      = decode_token_payload($idToken);
+    $uid          = uid_from_token($idToken);
+    $email_verified = $payload['email_verified'] ?? false;
+    $raw_email    = strtolower(trim((string)($payload['email'] ?? '')));
+    $conventus_id = trim((string)($payload['conventus_id'] ?? ''));
+
+    if (!$uid) { http_response_code(401); echo json_encode(['error' => 'Uautoriseret']); exit; }
+    if ($raw_email !== '' && !$email_verified) {
+        http_response_code(403); echo json_encode(['error' => 'email_not_verified']); exit;
+    }
+    $email = $email_verified ? $raw_email : '';
+
+    $fsToken = make_fs_token($sa);
+    if (!$fsToken) { http_response_code(500); echo json_encode(['error' => 'OAuth fejlede']); exit; }
+
+    return [
+        'uid'          => $uid,
+        'email'        => $email,
+        'conventus_id' => $conventus_id,
+        'fsToken'      => $fsToken,
+        'projectId'    => $projectId,
+        'base'         => "https://firestore.googleapis.com/v1/projects/{$projectId}/databases/(default)/documents",
+    ];
+}
