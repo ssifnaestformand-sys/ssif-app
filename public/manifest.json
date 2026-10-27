@@ -1,7 +1,7 @@
 {
-  "name": "SSIF – Sejs-Svejbæk IF",
-  "short_name": "SSIF",
-  "description": "Officiel app for Sejs-Svejbæk IF",
+  "name": "SSIF Træner",
+  "short_name": "SSIF Træner",
+  "description": "Trænerværktøj for Sejs-Svejbæk IF",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",

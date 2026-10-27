@@ -1,4 +1,4 @@
-const CACHE = 'ssif-v4'
+const CACHE = 'ssif-trainer-v1'
 
 self.addEventListener('install', e => {
   // Ingen precache — undgår "addAll failed"-fejl og forceert cache af HTML
