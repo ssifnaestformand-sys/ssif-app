@@ -455,8 +455,25 @@ function HoldScreen({ hold, user, onBack }) {
   const [error,        setError]        = useState('')
   const [selectedBev,  setSelectedBev]  = useState(null)
   const [editBev,      setEditBev]      = useState(null)
+  const [forbrug,      setForbrug]      = useState(null)
+  const [forbrugLoad,  setForbrugLoad]  = useState(false)
 
   useEffect(() => { loadData() }, [])
+
+  async function loadForbrug() {
+    setForbrugLoad(true)
+    try {
+      const idToken = await user.getIdToken()
+      const res = await fetch('/api/hold-sms-forbrug.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ holdId: hold.id }),
+      })
+      const data = await res.json()
+      if (!data.error) { setForbrug(data) }
+    } catch {}
+    setForbrugLoad(false)
+  }
 
   async function loadData() {
     setLoading(true)
@@ -479,6 +496,69 @@ function HoldScreen({ hold, user, onBack }) {
     } finally {
       setLoading(false)
     }
+  }
+
+  if (view === 'forbrug') {
+    return (
+      <div className="screen">
+        <header style={{
+          background: 'var(--green)', color: '#fff',
+          paddingTop: 'max(13px, env(safe-area-inset-top))',
+          paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
+          display: 'flex', alignItems: 'center', gap: 12,
+        }}>
+          <button onClick={() => setView('liste')} style={{
+            background: 'none', border: 'none', color: '#fff',
+            cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 4px 0 0',
+          }}>‹</button>
+          <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>SMS-forbrug</span>
+        </header>
+        <main style={{ padding: '16px', maxWidth: 600, margin: '0 auto', width: '100%', flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {forbrugLoad && <div className="spinner" style={{ margin: '32px auto' }} />}
+          {forbrug && (
+            <>
+              <div style={{
+                background: 'var(--bg)', border: '1px solid var(--border)',
+                borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 8,
+              }}>
+                <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text2)' }}>Totalt</h3>
+                <div style={{ display: 'flex', gap: 16, fontSize: 14 }}>
+                  <span>SMS: <strong>{forbrug.total.sms}</strong></span>
+                  <span>Mail: <strong>{forbrug.total.mail}</strong></span>
+                  <span>Ca. kr.: <strong>{forbrug.total.kroner?.toFixed(2)}</strong></span>
+                </div>
+              </div>
+              {forbrug.udsendelser.length === 0 ? (
+                <div className="empty-state"><h3>Ingen udsendelser endnu</h3></div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {forbrug.udsendelser.map((u, i) => (
+                    <div key={i} style={{
+                      background: 'var(--bg)', border: '1px solid var(--border)',
+                      borderRadius: 10, padding: '12px 14px',
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: 13, fontWeight: 700 }}>{u.titel || '—'}</span>
+                        <span style={{ fontSize: 12, color: 'var(--text3)' }}>
+                          {u.channel === 'sms' ? 'SMS' : 'Mail'}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 4 }}>
+                        {u.sentAt ? new Date(u.sentAt).toLocaleDateString('da-DK') : ''}
+                        {u.channel === 'sms' && u.kroner != null ? ` · ca. ${u.kroner?.toFixed(2)} kr.` : ''}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+          {!forbrugLoad && !forbrug && (
+            <button className="btn btn-primary" onClick={loadForbrug}>Hent forbrug</button>
+          )}
+        </main>
+      </div>
+    )
   }
 
   if (view === 'form') {
@@ -525,6 +605,11 @@ function HoldScreen({ hold, user, onBack }) {
         <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>
           {hold.titel || `Hold ${hold.id}`}
         </span>
+        <button onClick={() => { setView('forbrug'); if (!forbrug) loadForbrug() }} style={{
+          background: 'none', border: 'none',
+          color: 'rgba(255,255,255,.75)', cursor: 'pointer',
+          fontSize: 13, fontWeight: 500,
+        }}>Forbrug</button>
       </header>
 
       <main style={{ padding: '16px', maxWidth: 600, margin: '0 auto', width: '100%', flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -1041,34 +1126,14 @@ function BegivenhedDetailScreen({ begivenhedId, user, onBack, onEdit, onDeleted 
           <>
             {/* Send-dialog */}
             {showSend ? (
-              <div style={{
-                background: 'var(--bg)', border: '1px solid var(--border)',
-                borderRadius: 12, padding: 16,
-                display: 'flex', flexDirection: 'column', gap: 12,
-              }}>
-                <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>
-                  Send begivenhed til {udtaget.length} udtagne
-                </p>
-                {sendFejl && <div className="error-box">{sendFejl}</div>}
-                {sendOk ? (
-                  <div style={{
-                    background: 'var(--green-soft)', border: '1px solid var(--border)',
-                    borderRadius: 10, padding: 12, fontSize: 13, color: 'var(--green)', fontWeight: 600,
-                  }}>
-                    Sendt til {sendOk.sendt}{sendOk.fejlet > 0 ? `, ${sendOk.fejlet} fejlede` : ''} ✓
-                  </div>
-                ) : (
-                  <button className="btn btn-primary"
-                    onClick={() => handleSend('mail')} disabled={sending || udtaget.length === 0}>
-                    {sending ? 'Sender…' : 'Send mail med svarknapper'}
-                  </button>
-                )}
-                <button className="btn btn-ghost"
-                  style={{ textAlign: 'center', justifyContent: 'center' }}
-                  onClick={() => { setShowSend(false); setSendFejl(''); setSendOk(null) }}>
-                  {sendOk ? 'Luk' : 'Annuller'}
-                </button>
-              </div>
+              <SendDialog
+                antalUdtaget={udtaget.length}
+                sending={sending}
+                sendFejl={sendFejl}
+                sendOk={sendOk}
+                onSend={handleSend}
+                onLuk={() => { setShowSend(false); setSendFejl(''); setSendOk(null) }}
+              />
             ) : (
               <button className="btn btn-primary"
                 onClick={() => { setShowSend(true); setSendFejl(''); setSendOk(null) }}
@@ -1182,6 +1247,71 @@ function BegivenhedDetailScreen({ begivenhedId, user, onBack, onEdit, onDeleted 
           </>
         )}
       </main>
+    </div>
+  )
+}
+
+// ── SendDialog ────────────────────────────────────────────────────────────────
+
+const KANALER = [
+  { id: 'mail',  label: 'Mail',       icon: '✉️' },
+  { id: 'sms',   label: 'SMS',        icon: '💬' },
+  { id: 'begge', label: 'Mail + SMS', icon: '📣' },
+]
+
+function SendDialog({ antalUdtaget, sending, sendFejl, sendOk, onSend, onLuk }) {
+  const [kanal, setKanal] = useState('mail')
+
+  return (
+    <div style={{
+      background: 'var(--bg)', border: '1px solid var(--border)',
+      borderRadius: 12, padding: 16,
+      display: 'flex', flexDirection: 'column', gap: 12,
+    }}>
+      <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>
+        Send til {antalUdtaget} udtagne
+      </p>
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        {KANALER.map(k => (
+          <button key={k.id}
+            onClick={() => setKanal(k.id)}
+            style={{
+              flex: 1, padding: '10px 6px',
+              borderRadius: 10, border: '2px solid',
+              borderColor: kanal === k.id ? 'var(--green)' : 'var(--border)',
+              background: kanal === k.id ? 'var(--green-soft)' : 'var(--bg)',
+              color: kanal === k.id ? 'var(--green)' : 'var(--text2)',
+              fontSize: 13, fontWeight: 700, cursor: 'pointer',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+            }}>
+            <span style={{ fontSize: 18 }}>{k.icon}</span>
+            {k.label}
+          </button>
+        ))}
+      </div>
+
+      {sendFejl && <div className="error-box">{sendFejl}</div>}
+
+      {sendOk ? (
+        <div style={{
+          background: 'var(--green-soft)', border: '1px solid var(--border)',
+          borderRadius: 10, padding: 12, fontSize: 13, color: 'var(--green)', fontWeight: 600,
+        }}>
+          Sendt til {sendOk.sendt}{sendOk.fejlet > 0 ? ` · ${sendOk.fejlet} fejlede` : ''} ✓
+        </div>
+      ) : (
+        <button className="btn btn-primary"
+          onClick={() => onSend(kanal)} disabled={sending || antalUdtaget === 0}>
+          {sending ? 'Sender…' : `Send ${kanal === 'mail' ? 'mail' : kanal === 'sms' ? 'SMS' : 'mail + SMS'}`}
+        </button>
+      )}
+
+      <button className="btn btn-ghost"
+        style={{ textAlign: 'center', justifyContent: 'center' }}
+        onClick={onLuk}>
+        {sendOk ? 'Luk' : 'Annuller'}
+      </button>
     </div>
   )
 }

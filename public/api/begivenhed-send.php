@@ -138,6 +138,67 @@ if (in_array($kanal, ['mail', 'begge'], true)) {
     ]);
 }
 
+// ── Send SMS ──────────────────────────────────────────────────────────────────
+$smsSendt = 0; $smsFejlet = 0;
+
+if (in_array($kanal, ['sms', 'begge'], true)) {
+    $smsKey = getenv('SMS_API_KEY') ?: '';
+    if (!$smsKey) {
+        http_response_code(503);
+        echo json_encode(['error' => 'SMS_API_KEY er ikke konfigureret']);
+        exit;
+    }
+
+    // Hent telefonnumre live fra Conventus: conventus_id (string) → msisdn (int)
+    $phoneMap = hent_conventus_telefonmap(getenv('CONVENTUS_KEY') ?: '');
+
+    foreach ($udtagne as $deltager) {
+        $msisdn = $phoneMap[$deltager['id']] ?? null;
+        if (!$msisdn) continue;
+
+        $svarUrl = 'https://app.sejssvejbaek-if.dk/s/' . rawurlencode($deltager['token']);
+        $smsText = "{$titel} {$datoDk} kl. {$tidspunkt}. Svar: {$svarUrl}";
+
+        if (is_test_mode()) {
+            $msisdn  = conventus_msisdn_til_int(test_phone());
+            $smsText = "[TEST→{$deltager['navn']}] {$smsText}";
+        }
+
+        if (!$msisdn) continue;
+
+        $gwResp = @file_get_contents('https://gatewayapi.com/rest/mtsms', false, stream_context_create(['http' => [
+            'method'        => 'POST',
+            'header'        => "Authorization: Token {$smsKey}\r\nContent-Type: application/json\r\n",
+            'content'       => json_encode(['sender' => 'SSIF', 'message' => $smsText,
+                                            'recipients' => [['msisdn' => $msisdn]]]),
+            'timeout'       => 10,
+            'ignore_errors' => true,
+        ]]));
+        $gwData = json_decode($gwResp ?: '{}', true);
+        if (isset($gwData['ids']) && !isset($gwData['code'])) { $smsSendt++; } else { $smsFejlet++; }
+    }
+
+    $smsParts = sms_parts_bev($smsText ?? '');
+    $kostDkk  = round($smsSendt * $smsParts * 0.29, 2);
+    log_udsendelse($projectId, $fsToken, [
+        'channel'       => 'sms',
+        'senderUid'     => $uid,
+        'senderName'    => $senderNavn,
+        'holdId'        => $holdId,
+        'holdTitel'     => $holdTitel,
+        'begivenhedId'  => $begivenhedId,
+        'scope'         => "begivenhed:{$begivenhedId}",
+        'recipients'    => count($udtagne),
+        'sendt'         => $smsSendt,
+        'fejlet'        => $smsFejlet,
+        'parts'         => $smsParts,
+        'estimatedCost' => $kostDkk,
+        'testMode'      => is_test_mode(),
+    ]);
+    $sendt  += $smsSendt;
+    $fejlet += $smsFejlet;
+}
+
 // Opdatér status → 'udsendt' hvis mindst én kom frem
 if ($sendt > 0) {
     $now       = date('Y-m-d\TH:i:s\Z');
@@ -265,6 +326,79 @@ function smtp_send_html(string $to, string $subject, string $html): bool {
 
 function smtp_r($s): string { $o = ''; while ($l = fgets($s, 512)) { $o = $l; if (isset($l[3]) && $l[3] === ' ') break; } return $o; }
 function smtp_c($s, string $c): string { fwrite($s, $c . "\r\n"); return smtp_r($s); }
+
+// Henter alle Conventus-membres og returnerer map: conventus_id (string) → msisdn (int)
+// Telefonnumre gemmes ALDRIG — bruges kun i denne request.
+function hent_conventus_telefonmap(string $apiKey): array {
+    if (!$apiKey) return [];
+    $ctx = stream_context_create(['http' => ['timeout' => 90, 'ignore_errors' => true]]);
+    $url = 'https://www.conventus.dk/dataudv/api/adressebog/get_medlemmer.php?' . http_build_query([
+        'forening'   => '1031',
+        'key'        => $apiKey,
+        'relationer' => 'true',
+    ]);
+    $raw = @file_get_contents($url, false, $ctx);
+    if (!$raw) return [];
+    if (preg_match('/encoding=["\']ISO-8859-1["\']/i', $raw)) {
+        $raw = mb_convert_encoding($raw, 'UTF-8', 'ISO-8859-1');
+        $raw = preg_replace('/encoding=["\']ISO-8859-1["\']/i', 'encoding="UTF-8"', $raw);
+    }
+    if (strpos(ltrim($raw), '<') !== 0) return [];
+
+    libxml_use_internal_errors(true);
+    $reader = new XMLReader();
+    if (!$reader->XML($raw, 'UTF-8', LIBXML_NOERROR | LIBXML_NOWARNING)) return [];
+
+    $map = [];
+    while ($reader->read()) {
+        if ($reader->nodeType !== XMLReader::ELEMENT) continue;
+        if (strtolower($reader->localName) !== 'medlem') continue;
+        if ($reader->depth !== 2) continue;
+        $xml = $reader->readOuterXml();
+        $reader->next();
+        if (!$xml) continue;
+        $k = @simplexml_load_string($xml, 'SimpleXMLElement', LIBXML_NOERROR | LIBXML_NOWARNING);
+        if (!$k) continue;
+        if (strtolower(trim((string)($k->slettet ?? ''))) === 'true') { unset($k); continue; }
+
+        $id        = trim((string)($k->id ?? ''));
+        $mobil     = trim((string)($k->mobil ?? ''));
+        $mobilCode = trim((string)($k->mobil_dialCode ?? '45')) ?: '45';
+        $tlf       = trim((string)($k->tlf ?? ''));
+        $tlfCode   = trim((string)($k->tlf_dialCode ?? '45')) ?: '45';
+
+        if ($mobil && strtolower(trim((string)($k->off_mobil ?? 'true'))) === 'false') { unset($k); continue; }
+
+        $msisdn = $mobil ? conventus_msisdn_til_int('+' . preg_replace('/\D/', '', $mobilCode . preg_replace('/\D/', '', $mobil))) : null;
+        if (!$msisdn && $tlf) $msisdn = conventus_msisdn_til_int('+' . preg_replace('/\D/', '', $tlfCode . preg_replace('/\D/', '', $tlf)));
+
+        if ($id && $msisdn) $map[$id] = $msisdn;
+        unset($k);
+    }
+    $reader->close();
+    libxml_clear_errors();
+    return $map;
+}
+
+function conventus_msisdn_til_int(string $e164): ?int {
+    $digits = preg_replace('/\D/', '', $e164);
+    if (!$digits) return null;
+    $v = (int)$digits;
+    $len = strlen((string)$v);
+    return ($len >= 7 && $len <= 15) ? $v : null;
+}
+
+function sms_parts_bev(string $text): int {
+    if (!$text) return 1;
+    $gsm7 = '@£$¥èéùìòÇ' . "\n" . 'Øø' . "\r" . 'ÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜäöñüàÅ§¿abcdefghijklmnopqrstuvwxyz' . "\t\x0b\x0c" . '{}\\[~]|^€';
+    $ucs2 = false;
+    foreach (preg_split('//u', $text, -1, PREG_SPLIT_NO_EMPTY) as $c) {
+        if (mb_strpos($gsm7, $c, 0, 'UTF-8') === false) { $ucs2 = true; break; }
+    }
+    $len = mb_strlen($text);
+    if ($ucs2) return $len <= 70 ? 1 : (int)ceil($len / 67);
+    return $len <= 160 ? 1 : (int)ceil($len / 153);
+}
 
 function log_udsendelse(string $projectId, string $fsToken, array $data): void {
     $now    = date('Y-m-d\TH:i:s\Z');
