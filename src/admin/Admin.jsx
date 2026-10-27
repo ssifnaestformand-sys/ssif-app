@@ -18,7 +18,7 @@ import {
 import {
   collection, query, where, orderBy, limit,
   addDoc, updateDoc, deleteDoc, serverTimestamp,
-  doc, getDoc, setDoc, getDocs,
+  doc, getDoc, setDoc, getDocs, Timestamp,
 } from 'firebase/firestore'
 import './admin.css'
 
@@ -3268,6 +3268,10 @@ function KommunikationPage({ authUser, userDoc }) {
   const [logs,       setLogs]       = useState([])
   const [logsLoading,setLogsLoading]= useState(true)
   const [confirm,    setConfirm]    = useState(false)
+  const [periode,    setPeriode]    = useState(() => {
+    const n = new Date()
+    return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`
+  })
 
   useEffect(() => {
     getDocs(collection(db, 'afdelinger'))
@@ -3276,14 +3280,27 @@ function KommunikationPage({ authUser, userDoc }) {
     getDocs(collection(db, 'holds'))
       .then(s => setHolds(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (a.titel||'').localeCompare(b.titel||'','da'))))
       .catch(() => {})
-    loadLogs()
+    loadLogs(periode)
   }, [])
 
-  function loadLogs() {
-    getDocs(query(collection(db, 'kommunikation_logs'), orderBy('sentAt', 'desc'), limit(25)))
+  function loadLogs(p) {
+    const per = p ?? periode
+    const [yr, mo] = per.split('-').map(Number)
+    const start = Timestamp.fromDate(new Date(yr, mo-1, 1))
+    const end   = Timestamp.fromDate(new Date(yr, mo, 1))
+    setLogsLoading(true)
+    getDocs(query(collection(db, 'kommunikation_logs'),
+      where('sentAt', '>=', start),
+      where('sentAt', '<',  end),
+      orderBy('sentAt', 'desc'), limit(200)))
       .then(s => setLogs(s.docs.map(d => ({ id: d.id, ...d.data() }))))
       .catch(() => {})
       .finally(() => setLogsLoading(false))
+  }
+
+  function vælgPeriode(p) {
+    setPeriode(p)
+    loadLogs(p)
   }
 
   function switchChannel(ch) {
@@ -3499,17 +3516,39 @@ function KommunikationPage({ authUser, userDoc }) {
       setResult(data)
       setText(''); setEmailHtml(''); setSubject(''); setSelectedHolds(new Map()); setPickerHoldId(null)
       setManualInput(''); setPreview(null)
-      loadLogs()
+      loadLogs(periode)
     } catch (err) { setError('Netværksfejl: ' + err.message) }
     finally { setSending(false) }
   }
 
-  // Aktivitetslog stats
-  const smsLogs    = logs.filter(l => l.channel === 'sms')
-  const now        = new Date()
-  const totalSmsKr = smsLogs.reduce((s, l) => s + (l.actualCost != null ? l.actualCost : (l.estimatedCost ?? 0)), 0)
-  const monthSmsKr = smsLogs.filter(l => { const d = l.sentAt?.toDate?.(); return d && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() })
-                             .reduce((s, l) => s + (l.actualCost != null ? l.actualCost : (l.estimatedCost ?? 0)), 0)
+  // Statistik for valgt periode
+  const smsLogs     = logs.filter(l => l.channel === 'sms')
+  const totalSmsKr  = smsLogs.reduce((s, l) => s + (l.actualCost != null ? l.actualCost : (l.estimatedCost ?? 0)), 0)
+  const totalMailN  = logs.filter(l => l.channel === 'email').reduce((s, l) => s + (l.sendt ?? l.recipients ?? 0), 0)
+  const totalSmsSms = smsLogs.reduce((s, l) => s + (l.sendt ?? l.recipients ?? 0), 0)
+
+  // Hold-oversigt: aggregér pr. holdId
+  const holdForbrug = {}
+  logs.filter(l => l.holdId).forEach(l => {
+    if (!holdForbrug[l.holdId]) holdForbrug[l.holdId] = { titel: l.holdTitel || l.holdId, sms: 0, mail: 0, kr: 0 }
+    if (l.channel === 'sms') {
+      holdForbrug[l.holdId].sms += (l.sendt ?? l.recipients ?? 0)
+      holdForbrug[l.holdId].kr  += (l.actualCost != null ? l.actualCost : (l.estimatedCost ?? 0))
+    } else {
+      holdForbrug[l.holdId].mail += (l.sendt ?? l.recipients ?? 0)
+    }
+  })
+  const holdFørbrugListe = Object.values(holdForbrug).sort((a, b) => b.kr - a.kr || b.sms - a.sms)
+
+  // Periodevalg-muligheder (seneste 12 måneder)
+  const periodeOptions = Array.from({length: 12}, (_, i) => {
+    const d = new Date()
+    d.setMonth(d.getMonth() - i)
+    const yr = d.getFullYear()
+    const mo = String(d.getMonth()+1).padStart(2,'0')
+    const label = d.toLocaleDateString('da-DK', { month: 'long', year: 'numeric' })
+    return { value: `${yr}-${mo}`, label: label.charAt(0).toUpperCase() + label.slice(1) }
+  })
 
   // ── Confirm dialog tekst ───────────────────────────────────────────────────────
   const confirmBody = channel === 'sms'
@@ -3992,21 +4031,52 @@ function KommunikationPage({ authUser, userDoc }) {
         {/* ── Højre: Aktivitetslog ── */}
         <div className="card card-pad">
           {/* SMS-forbrug */}
-          <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 12 }}>SMS-forbrug</p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 18 }}>
-            {[{ label: 'I alt', val: totalSmsKr }, { label: 'Denne måned', val: monthSmsKr }].map(s => (
-              <div key={s.label} style={{ background: '#f8f9fa', borderRadius: 8, padding: '10px 12px' }}>
-                <div style={{ fontSize: 17, fontWeight: 700 }}>{s.val.toFixed(2)} kr.</div>
-                <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>{s.label}</div>
+          {/* Periodefilter */}
+          <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Periode</p>
+          <select
+            value={periode}
+            onChange={e => vælgPeriode(e.target.value)}
+            style={{ width: '100%', padding: '7px 10px', fontSize: 13, borderRadius: 8, border: '1px solid var(--sep)', background: 'white', marginBottom: 16, cursor: 'pointer' }}>
+            {periodeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+
+          {/* Totaler for perioden */}
+          <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Forbrug</p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 18 }}>
+            {[
+              { label: 'SMS kr.', val: totalSmsKr.toFixed(2) + ' kr.' },
+              { label: 'SMS stk.', val: String(totalSmsSms) },
+              { label: 'Mail stk.', val: String(totalMailN) },
+            ].map(s => (
+              <div key={s.label} style={{ background: '#f8f9fa', borderRadius: 8, padding: '9px 10px' }}>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>{s.val}</div>
+                <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>{s.label}</div>
               </div>
             ))}
           </div>
+
+          {/* Hold-oversigt */}
+          {holdFørbrugListe.length > 0 && (
+            <>
+              <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Hold</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 0, border: '1px solid var(--sep)', borderRadius: 10, overflow: 'hidden', marginBottom: 18 }}>
+                {holdFørbrugListe.map((h, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 6, padding: '8px 12px', borderBottom: '1px solid var(--sep)', fontSize: 12, alignItems: 'center', background: i % 2 === 0 ? 'white' : '#fafafa' }}>
+                    <span style={{ flex: 1, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.titel}</span>
+                    {h.mail > 0 && <span style={{ background: '#f0fdf4', color: 'var(--green)', borderRadius: 4, padding: '1px 5px', fontSize: 10, fontWeight: 700 }}>✉ {h.mail}</span>}
+                    {h.sms > 0  && <span style={{ background: '#e0f2fe', color: '#0369a1', borderRadius: 4, padding: '1px 5px', fontSize: 10, fontWeight: 700 }}>SMS {h.sms}</span>}
+                    {h.kr > 0   && <span style={{ color: '#f59e0b', fontWeight: 600, fontSize: 11 }}>{h.kr.toFixed(2)} kr.</span>}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
 
           <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>Seneste udsendelser</p>
           {logsLoading ? (
             <div className="loading-dots"><span/><span/><span/></div>
           ) : logs.length === 0 ? (
-            <p style={{ fontSize: 13, color: 'var(--text3)', textAlign: 'center', padding: '16px 0' }}>Ingen beskeder sendt endnu</p>
+            <p style={{ fontSize: 13, color: 'var(--text3)', textAlign: 'center', padding: '16px 0' }}>Ingen beskeder sendt denne periode</p>
           ) : (
             <div>
               {logs.slice(0, 10).map(l => {
@@ -4025,7 +4095,7 @@ function KommunikationPage({ authUser, userDoc }) {
                         </span>
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-                        {l.recipients ?? '?'} modtagere · {formatDate(l.sentAt)}
+                        {l.recipients ?? l.sendt ?? '?'} modtagere · {formatDate(l.sentAt)}
                         {cost && <span style={{ color: '#f59e0b', fontWeight: 600, marginLeft: 5 }}>· {cost}</span>}
                       </div>
                       {(l.failed > 0) && <div style={{ fontSize: 11, color: '#dc2626' }}>{l.failed} fejlede</div>}
