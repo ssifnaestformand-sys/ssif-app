@@ -901,6 +901,13 @@ function BegivenhedDetailScreen({ begivenhedId, user, onBack, onEdit, onDeleted 
 
   useEffect(() => { loadDetalje() }, [begivenhedId])
 
+  // Poll hvert 10. sekund når begivenheden er udsendt
+  useEffect(() => {
+    if (!data?.begivenhed || data.begivenhed.status !== 'udsendt') return
+    const id = setInterval(loadDetalje, 10000)
+    return () => clearInterval(id)
+  }, [data?.begivenhed?.status])
+
   async function loadDetalje() {
     setLoading(true)
     setError('')
@@ -1116,13 +1123,40 @@ function BegivenhedDetailScreen({ begivenhedId, user, onBack, onEdit, onDeleted 
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {/* Svar-overblik (synligt når udsendt) */}
+              {bev.status === 'udsendt' && (() => {
+                const kom     = udtaget.filter(d => d.svar === 'kommer').length
+                const ikkeKom = udtaget.filter(d => d.svar === 'kommer_ikke').length
+                const ingen   = udtaget.filter(d => !d.svar).length
+                return (
+                  <div style={{
+                    display: 'flex', gap: 8,
+                    background: 'var(--surface)', borderRadius: 10,
+                    padding: '10px 12px', fontSize: 13,
+                  }}>
+                    <span style={{ color: '#1a5c2a', fontWeight: 700 }}>✓ {kom}</span>
+                    <span style={{ color: 'var(--text3)' }}>·</span>
+                    <span style={{ color: 'var(--red)', fontWeight: 700 }}>✗ {ikkeKom}</span>
+                    <span style={{ color: 'var(--text3)' }}>·</span>
+                    <span style={{ color: 'var(--text3)', fontWeight: 600 }}>? {ingen}</span>
+                    <span style={{ color: 'var(--text3)', marginLeft: 'auto', fontSize: 12 }}>opdateres løbende</span>
+                  </div>
+                )
+              })()}
+
               <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text2)' }}>
                 Udtaget ({udtaget.length})
               </h3>
               {udtaget.map(d => (
                 <div key={d.id} className="spiller-row" style={{ cursor: 'default' }}>
                   <div className="spiller-check"><CheckIcon /></div>
-                  <span style={{ fontSize: 14, fontWeight: 500 }}>{d.navn}</span>
+                  <span style={{ fontSize: 14, fontWeight: 500, flex: 1 }}>{d.navn}</span>
+                  {d.svar === 'kommer' && (
+                    <span style={{ fontSize: 12, color: '#1a5c2a', fontWeight: 700 }}>Kommer ✓</span>
+                  )}
+                  {d.svar === 'kommer_ikke' && (
+                    <span style={{ fontSize: 12, color: 'var(--red)', fontWeight: 700 }}>Kommer ikke</span>
+                  )}
                 </div>
               ))}
 
