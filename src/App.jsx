@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import {
   onAuthStateChanged, signOut,
   signInWithPopup, GoogleAuthProvider,
-  signInWithEmailAndPassword,
   signInWithCustomToken,
 } from 'firebase/auth'
 import {
@@ -117,8 +116,6 @@ function LoginScreen() {
   const [profiles,     setProfiles]     = useState([])
   const [cEmail, setCEmail] = useState('')
   const [cPass,  setCPass]  = useState('')
-  const [eEmail, setEEmail] = useState('')
-  const [ePass,  setEPass]  = useState('')
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState('')
 
@@ -182,18 +179,6 @@ function LoginScreen() {
     }
   }
 
-  async function loginEmail() {
-    if (!eEmail || !ePass) return
-    setLoading(true); setError('')
-    try {
-      await signInWithEmailAndPassword(auth, eEmail, ePass)
-    } catch {
-      setError('Forkert email eller adgangskode.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
   if (view === 'main') return (
     <div className="screen-center">
       <div style={{ width: '100%', maxWidth: 380 }}>
@@ -218,10 +203,6 @@ function LoginScreen() {
             Kun hvis din Google-konto bruger den samme mail som i Conventus.
             Ellers brug Conventus-login.
           </p>
-          <button className="btn btn-outline" onClick={() => go('email')} disabled={loading}
-            style={{ fontSize: 14 }}>
-            Log ind med email og adgangskode
-          </button>
         </div>
         {error && <p style={{ marginTop: 14, textAlign: 'center', fontSize: 13, color: 'var(--red)' }}>{error}</p>}
       </div>
@@ -284,36 +265,6 @@ function LoginScreen() {
               </div>
             </button>
           ))}
-        </div>
-        {error && <p style={{ marginTop: 12, fontSize: 13, color: 'var(--red)' }}>{error}</p>}
-      </div>
-    </div>
-  )
-
-  if (view === 'email') return (
-    <div className="screen-center">
-      <div style={{ width: '100%', maxWidth: 380 }}>
-        <button className="btn btn-ghost" onClick={() => go('main')}>← Tilbage</button>
-        <h2 style={{ fontSize: 20, fontWeight: 800, margin: '16px 0 4px' }}>Log ind med email</h2>
-        <p style={{ fontSize: 14, color: 'var(--text3)', marginBottom: 24 }}>Brug din SSIF App-email og adgangskode.</p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div className="form-field">
-            <label className="form-label">Email</label>
-            <input className="form-input" type="email" value={eEmail}
-              onChange={e => setEEmail(e.target.value)}
-              placeholder="din@email.dk" autoComplete="username" />
-          </div>
-          <div className="form-field">
-            <label className="form-label">Adgangskode</label>
-            <input className="form-input" type="password" value={ePass}
-              onChange={e => setEPass(e.target.value)}
-              placeholder="••••••••" autoComplete="current-password"
-              onKeyDown={e => e.key === 'Enter' && loginEmail()} />
-          </div>
-          <button className="btn btn-primary" onClick={loginEmail}
-            disabled={loading || !eEmail || !ePass}>
-            {loading ? 'Logger ind…' : 'Log ind'}
-          </button>
         </div>
         {error && <p style={{ marginTop: 12, fontSize: 13, color: 'var(--red)' }}>{error}</p>}
       </div>
