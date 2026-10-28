@@ -111,7 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    vis_bekræftelse($navn, $svar, $extraSvar, $extraSpørgsmaalTekst, $bf);
+    vis_bekræftelse($navn, $svar, $extraSvar, $extraSpørgsmaalTekst, $bf, $token);
     exit;
 }
 
@@ -221,7 +221,7 @@ HTML;
     echo '</body></html>';
 }
 
-function vis_bekræftelse(string $navn, string $svar, ?string $extraSvar, string $extraSpørgsmaalTekst, array $bf): void {
+function vis_bekræftelse(string $navn, string $svar, ?string $extraSvar, string $extraSpørgsmaalTekst, array $bf, string $token): void {
     $titel   = htmlspecialchars($bf['titel']['stringValue'] ?? '');
     $navnEnc = htmlspecialchars($navn);
     if ($svar === 'kommer') {
@@ -237,6 +237,48 @@ function vis_bekræftelse(string $navn, string $svar, ?string $extraSvar, string
         $extraHtml = "<p style=\"font-size:14px;color:#4a4a4a\">{$tekstEnc}: <strong>{$svarEnc}</strong></p>";
     }
 
+    $kalenderHtml = '';
+    if ($svar === 'kommer') {
+        $rawDato   = $bf['dato']['stringValue']        ?? '';
+        $rawTid    = $bf['tidspunkt']['stringValue']   ?? '';
+        $rawSted   = $bf['sted']['stringValue']        ?? '';
+        $rawBesk   = $bf['beskrivelse']['stringValue'] ?? '';
+        $rawMøde   = $bf['modetid']['stringValue']     ?? '';
+        $typeLabel = ['kamp'=>'Kamp','stævne'=>'Stævne','event'=>'Event','møde'=>'Møde'][$bf['type']['stringValue'] ?? ''] ?? 'Begivenhed';
+
+        $icsUrl = htmlspecialchars('/s/kalender.php?token=' . rawurlencode($token));
+
+        $gcHtml = '';
+        if ($rawDato) {
+            $gcStart = str_replace('-', '', $rawDato);
+            $gcEnd   = $gcStart;
+            if ($rawTid && preg_match('/^(\d{1,2}):(\d{2})$/', $rawTid, $tm)) {
+                $gcStart .= 'T' . sprintf('%02d%02d00', (int)$tm[1], (int)$tm[2]);
+                $gcEnd    = str_replace('-', '', $rawDato) . 'T' . sprintf('%02d%02d00', ((int)$tm[1] + 2) % 24, (int)$tm[2]);
+            }
+            $gcDesc = '';
+            if ($rawMøde) $gcDesc .= "Mødetid: {$rawMøde}\n";
+            if ($rawBesk) $gcDesc .= $rawBesk;
+            $gcUrl  = htmlspecialchars('https://calendar.google.com/calendar/render?' . http_build_query([
+                'action'   => 'TEMPLATE',
+                'text'     => "{$typeLabel}: " . ($bf['titel']['stringValue'] ?? ''),
+                'dates'    => "{$gcStart}/{$gcEnd}",
+                'location' => $rawSted,
+                'details'  => $gcDesc,
+                'ctz'      => 'Europe/Copenhagen',
+            ]));
+            $gcHtml = "<a href=\"{$gcUrl}\" class=\"kal-btn kal-google\" target=\"_blank\" rel=\"noopener\">Google Kalender</a>";
+        }
+
+        $kalenderHtml = <<<KAL
+<div class="kal-boks">
+  <p class="kal-label">Tilf&oslash;j til din kalender</p>
+  <a href="{$icsUrl}" class="kal-btn">&#128197;&nbsp;iOS / Android / Outlook</a>
+  {$gcHtml}
+</div>
+KAL;
+    }
+
     header('Content-Type: text/html; charset=UTF-8');
     echo html_hoved('Svar registreret — Sejs-Svejbæk IF');
     echo <<<HTML
@@ -247,6 +289,7 @@ function vis_bekræftelse(string $navn, string $svar, ?string $extraSvar, string
     <h1>{$tekst} {$titel}</h1>
     <p style="font-size:14px;color:#4a4a4a">Hej {$navnEnc} — dit svar er gemt.</p>
     {$extraHtml}
+    {$kalenderHtml}
     <p class="footer">Sejs-Svejb&aelig;k IF</p>
   </div>
 </div>
@@ -332,6 +375,12 @@ h1{font-size:20px;font-weight:800;color:#1a1a1a;line-height:1.25}
 .bsvar.ekstra-nej{background:#fff;color:#4a4a4a;border-color:#dde5dd;text-align:center;cursor:pointer;display:flex;align-items:center;justify-content:center;user-select:none}
 .bsvar.ekstra-nej.selected{background:#555;color:#fff;border-color:#555}
 .footer{font-size:12px;color:#aaa;text-align:center;margin-top:6px}
+.kal-boks{border-top:1px solid #e5e7eb;padding-top:14px;display:flex;flex-direction:column;gap:8px;width:100%}
+.kal-label{font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.05em}
+.kal-btn{display:block;padding:12px 16px;border-radius:10px;font-size:14px;font-weight:700;text-decoration:none;text-align:center;background:#e8f5ec;color:#1a5c2a;border:2px solid #1a5c2a;transition:all .15s}
+.kal-btn:hover,.kal-btn:active{background:#1a5c2a;color:#fff}
+.kal-google{background:#fff;color:#4285f4;border-color:#4285f4}
+.kal-google:hover,.kal-google:active{background:#4285f4;color:#fff}
 </style>
 </head>
 <body>

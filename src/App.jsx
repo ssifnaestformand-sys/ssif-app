@@ -1664,18 +1664,17 @@ function SendBeskedScreen({ hold, user, onBack }) {
               )}
 
               {/* Input: tilføj ekstra */}
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <input
                   className="form-input"
-                  style={{ flex: 1, margin: 0 }}
+                  style={{ margin: 0 }}
                   type={kanal === 'mail' ? 'email' : 'tel'}
                   value={newRecipient}
                   onChange={e => { setNewRecipient(e.target.value); setRecipFejl('') }}
                   onKeyDown={e => e.key === 'Enter' && addRecipient()}
                   placeholder={kanal === 'mail' ? 'Tilføj ekstra email-adresse…' : 'Tilføj ekstra telefonnummer…'}
                 />
-                <button className="btn btn-outline" onClick={addRecipient}
-                  style={{ whiteSpace: 'nowrap' }}>
+                <button className="btn btn-outline" onClick={addRecipient}>
                   + Tilføj
                 </button>
               </div>
