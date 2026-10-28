@@ -1048,12 +1048,6 @@ function BegivenhedDetailScreen({ begivenhedId, user, onBack, onEdit, onDeleted,
     }
   }, [sendNu, loading, data])
 
-  // Poll hvert 10. sekund når begivenheden er udsendt
-  useEffect(() => {
-    if (!data?.begivenhed || data.begivenhed.status !== 'udsendt') return
-    const id = setInterval(loadDetalje, 10000)
-    return () => clearInterval(id)
-  }, [data?.begivenhed?.status])
 
   async function loadDetalje() {
     setLoading(true)
@@ -1147,6 +1141,11 @@ function BegivenhedDetailScreen({ begivenhedId, user, onBack, onEdit, onDeleted,
         <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>
           {bev ? bev.titel : 'Begivenhed'}
         </span>
+        <button onClick={loadDetalje} disabled={loading} style={{
+          background: 'none', border: 'none',
+          color: 'rgba(255,255,255,.85)', cursor: 'pointer',
+          fontSize: 13, fontWeight: 500,
+        }}>↻ Opdater</button>
         {bev && !confirmSlet && (
           <button onClick={() => setConfirmSlet(true)} style={{
             background: 'none', border: 'none',

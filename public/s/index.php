@@ -152,8 +152,8 @@ function vis_svarside(string $navn, ?string $nuvsvar, string $forudvalgt, array 
 
     $tidlSvarHtml = '';
     if ($nuvsvar) {
-        $label = $nuvsvar === 'kommer' ? 'Du har svaret "Kommer"' : 'Du har svaret "Kommer ikke"';
-        $tidlSvarHtml = "<p class=\"curr-svar\">{$label} — du kan ændre dit svar herunder.</p>";
+        $label = $nuvsvar === 'kommer' ? 'Du har svaret "Kommer" ✓' : 'Du har svaret "Kommer ikke"';
+        $tidlSvarHtml = "<p class=\"curr-svar\">{$label} — du kan ændre det herunder.</p>";
     }
 
     $extraHtml = '';
@@ -176,7 +176,10 @@ function vis_svarside(string $navn, ?string $nuvsvar, string $forudvalgt, array 
 EXT;
     }
 
-    $postUrl = '/s/' . rawurlencode($token);
+    $postUrl   = '/s/' . rawurlencode($token);
+    $svarBanner = $nuvsvar
+        ? ''
+        : '<div class="svar-kræves">&#128073; Tryk for at svare — det tager ét sekund</div>';
 
     header('Content-Type: text/html; charset=UTF-8');
     echo html_hoved('Svar på invitation — Sejs-Svejbæk IF');
@@ -189,7 +192,8 @@ EXT;
     <div class="detaljer">{$detDetaljer}</div>
     {$beskHtml}
     {$tidlSvarHtml}
-    <form method="POST" action="{$postUrl}">
+    {$svarBanner}
+    <form method="POST" action="{$postUrl}" class="cta-form">
       {$extraHtml}
       <p class="spørgsmål">Kan du komme?</p>
       <div class="btn-row">
@@ -298,7 +302,7 @@ function html_hoved(string $title): string {
 <title>{$titleEnc}</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{font-family:system-ui,-apple-system,sans-serif;background:#f4f6f4;min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:16px}
+body{font-family:system-ui,-apple-system,sans-serif;background:#f4f6f4;min-height:100dvh;display:flex;align-items:flex-start;justify-content:center;padding:16px}
 .card{width:100%;max-width:440px;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.08)}
 .topbar{background:#1a5c2a;color:#fff;padding:16px 20px;font-size:17px;font-weight:800}
 .body{padding:24px 20px;display:flex;flex-direction:column;gap:14px}
@@ -311,16 +315,18 @@ h1{font-size:20px;font-weight:800;color:#1a1a1a;line-height:1.25}
 .det strong{font-weight:600;color:#1a1a1a}
 .besk{font-size:13px;color:#4a4a4a;line-height:1.6}
 .curr-svar{font-size:13px;color:#1a5c2a;font-weight:600;background:#e8f5ec;border-radius:8px;padding:8px 12px}
-.spørgsmål{font-size:15px;font-weight:700;text-align:center;color:#1a1a1a}
+.svar-kræves{font-size:13px;font-weight:700;color:#92400e;background:#fef3c7;border:1.5px solid #fcd34d;border-radius:9px;padding:10px 14px;text-align:center}
+.cta-form{background:#f8faf8;border:2px solid #1a5c2a;border-radius:13px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.spørgsmål{font-size:17px;font-weight:800;text-align:center;color:#1a1a1a}
 .btn-row{display:flex;gap:10px}
-.bsvar{flex:1;padding:13px 0;border-radius:11px;font-size:15px;font-weight:700;cursor:pointer;border:1.5px solid transparent;transition:opacity .1s}
-.bsvar:active{opacity:.75}
-.bsvar.kommer{background:#fff;color:#1a5c2a;border-color:#dde5dd}
-.bsvar.kommer.selected{background:#1a5c2a;color:#fff;border-color:#1a5c2a}
-.bsvar.ikke{background:#fff;color:#dc2626;border-color:#fecaca}
-.bsvar.ikke.selected{background:#dc2626;color:#fff;border-color:#dc2626}
+.bsvar{flex:1;padding:16px 0;border-radius:12px;font-size:16px;font-weight:800;cursor:pointer;border:2px solid transparent;transition:all .15s;letter-spacing:.01em}
+.bsvar:active{transform:scale(.97)}
+.bsvar.kommer{background:#e8f5ec;color:#1a5c2a;border-color:#1a5c2a}
+.bsvar.kommer.selected,.bsvar.kommer:hover{background:#1a5c2a;color:#fff;border-color:#1a5c2a}
+.bsvar.ikke{background:#fff5f5;color:#dc2626;border-color:#fecaca}
+.bsvar.ikke.selected,.bsvar.ikke:hover{background:#dc2626;color:#fff;border-color:#dc2626}
 .ikon-stor{font-size:48px;line-height:1;text-align:center}
-.extra-blok{display:flex;flex-direction:column;gap:8px;padding:12px 14px;background:#f8faf8;border-radius:10px;border:1px solid #dde5dd}
+.extra-blok{display:flex;flex-direction:column;gap:8px;padding:12px 14px;background:#fff;border-radius:10px;border:1px solid #dde5dd}
 .bsvar.ekstra-ja{background:#fff;color:#1a5c2a;border-color:#dde5dd;text-align:center;cursor:pointer;display:flex;align-items:center;justify-content:center;user-select:none}
 .bsvar.ekstra-ja.selected{background:#1a5c2a;color:#fff;border-color:#1a5c2a}
 .bsvar.ekstra-nej{background:#fff;color:#4a4a4a;border-color:#dde5dd;text-align:center;cursor:pointer;display:flex;align-items:center;justify-content:center;user-select:none}
