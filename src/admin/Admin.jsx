@@ -5829,10 +5829,18 @@ function TaTraenerePage() {
       })
       setHoldMap(hm)
 
+      // Google-login: users/{google_uid}.email = 'bruger@...' — opslag via email
+      // Conventus-login: users/conventus_{id}.email = '' — opslag via UID-prefix
       const userByEmail = {}
+      const userByConventusId = {}
       uSnap.docs.forEach(d => {
-        const email = (d.data().email || '').toLowerCase()
-        if (email) userByEmail[email] = { id: d.id, ...d.data() }
+        const data  = d.data()
+        const email = (data.email || '').toLowerCase()
+        if (email) userByEmail[email] = { id: d.id, ...data }
+        if (d.id.startsWith('conventus_')) {
+          const cid = d.id.slice('conventus_'.length)
+          userByConventusId[cid] = { id: d.id, ...data }
+        }
       })
 
       setUsers(mSnap.docs
@@ -5841,7 +5849,7 @@ function TaTraenerePage() {
           const lh = (f.lederHolds || []).map(String).filter(Boolean)
           if (lh.length === 0) return null
           const emails = (f.allEmails || []).map(e => (e || '').toLowerCase()).filter(Boolean)
-          const u = emails.map(e => userByEmail[e]).find(Boolean)
+          const u = emails.map(e => userByEmail[e]).find(Boolean) || userByConventusId[d.id]
           return {
             id: u?.id || d.id,
             displayName: u?.displayName || f.name || '–',
