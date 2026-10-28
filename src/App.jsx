@@ -214,6 +214,10 @@ function LoginScreen() {
             <GoogleIcon />
             Log ind med Google
           </button>
+          <p style={{ fontSize: 12, color: 'var(--text3)', textAlign: 'center', lineHeight: 1.5, margin: '2px 0 4px' }}>
+            Kun hvis din Google-konto bruger den samme mail som i Conventus.
+            Ellers brug Conventus-login.
+          </p>
           <button className="btn btn-outline" onClick={() => go('email')} disabled={loading}
             style={{ fontSize: 14 }}>
             Log ind med email og adgangskode
