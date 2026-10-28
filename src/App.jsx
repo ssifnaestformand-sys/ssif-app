@@ -358,9 +358,8 @@ function AccessDeniedScreen({ user, onLogout }) {
         <button className="btn btn-ghost" onClick={() => { setView('main'); setError('') }}>← Tilbage</button>
         <h2 style={{ fontSize: 20, fontWeight: 800, margin: '16px 0 4px' }}>Tilknyt Conventus-konto</h2>
         <p style={{ fontSize: 14, color: 'var(--text3)', lineHeight: 1.55, marginBottom: 24 }}>
-          Log ind med Conventus for at tilknytte din Google-konto
-          {user?.email ? <> (<strong>{user.email}</strong>)</> : ''}.
-          Næste gang du logger ind med Google virker det automatisk.
+          Tilknyt din Google-konto{user?.email ? <> (<strong>{user.email}</strong>)</> : ''} til
+          din Conventus-profil. Det er et éngangstrin — bagefter logger Google ind automatisk.
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div className="form-field">

@@ -303,7 +303,12 @@ function firestore_batch_commit(string $projectId, string $token, array $members
             if (!$docId) continue;
             $fields = [];
             foreach ($member as $k => $v) $fields[$k] = to_fs($v);
-            $writes[] = ['update' => ['name' => "{$docPath}/{$docId}", 'fields' => $fields]];
+            // updateMask sikrer at felter vi IKKE skriver (fx linkedEmails) bevares.
+            // linkedEmails sættes af trainer-link-email.php og må aldrig overskrives af sync.
+            $writes[] = [
+                'update'     => ['name' => "{$docPath}/{$docId}", 'fields' => $fields],
+                'updateMask' => ['fieldPaths' => array_keys($fields)],
+            ];
         }
         if (!$writes) continue;
 

@@ -41,6 +41,7 @@ if ($conventus_id !== '') {
     if ($doc) $memberDocs[$conventus_id] = $doc['fields'];
 }
 if ($email !== '') {
+    // Opslag 1: allEmails (Conventus-primærmail fra daglig sync)
     $rows = fs_run_query($projectId, $fsToken, ['structuredQuery' => [
         'from'  => [['collectionId' => 'members']],
         'where' => ['fieldFilter' => [
@@ -53,6 +54,21 @@ if ($email !== '') {
         if (!isset($row['document']['fields'])) continue;
         $docId = basename($row['document']['name'] ?? '');
         if ($docId) $memberDocs[$docId] = $row['document']['fields'];
+    }
+
+    // Opslag 2: linkedEmails (manuelt tilknyttede Google-adresser via trainer-link-email.php)
+    $rows2 = fs_run_query($projectId, $fsToken, ['structuredQuery' => [
+        'from'  => [['collectionId' => 'members']],
+        'where' => ['fieldFilter' => [
+            'field' => ['fieldPath' => 'linkedEmails'],
+            'op'    => 'ARRAY_CONTAINS',
+            'value' => ['stringValue' => $email],
+        ]],
+    ]]);
+    foreach ($rows2 as $row) {
+        if (!isset($row['document']['fields'])) continue;
+        $docId = basename($row['document']['name'] ?? '');
+        if ($docId && !isset($memberDocs[$docId])) $memberDocs[$docId] = $row['document']['fields'];
     }
 }
 

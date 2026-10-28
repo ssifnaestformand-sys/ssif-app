@@ -143,19 +143,20 @@ if (empty($lederHolds)) {
     exit;
 }
 
-// ── Tilknyt Google-email til members/{conventusId}.allEmails ─────────────────
-$allEmailsValues = $doc['fields']['allEmails']['arrayValue']['values'] ?? [];
-$existingEmails  = array_map(fn($v) => strtolower(trim($v['stringValue'] ?? '')), $allEmailsValues);
+// ── Tilknyt Google-email til members/{conventusId}.linkedEmails ──────────────
+// Vi bruger linkedEmails (ikke allEmails) så den daglige sync ikke sletter tilknytningen.
+$linkedEmailsValues = $doc['fields']['linkedEmails']['arrayValue']['values'] ?? [];
+$existingLinked     = array_map(fn($v) => strtolower(trim($v['stringValue'] ?? '')), $linkedEmailsValues);
 
-if (!in_array($googleEmail, $existingEmails, true)) {
-    $allEmailsValues[] = ['stringValue' => $googleEmail];
+if (!in_array($googleEmail, $existingLinked, true)) {
+    $linkedEmailsValues[] = ['stringValue' => $googleEmail];
 
-    $patchUrl  = "{$base}/members/{$conventusId}?updateMask.fieldPaths=allEmails";
+    $patchUrl  = "{$base}/members/{$conventusId}?updateMask.fieldPaths=linkedEmails";
     $patchResp = @file_get_contents($patchUrl, false, stream_context_create(['http' => [
         'method'        => 'PATCH',
         'header'        => "Authorization: Bearer {$fsToken}\r\nContent-Type: application/json\r\n",
         'content'       => json_encode(['fields' => [
-            'allEmails' => ['arrayValue' => ['values' => $allEmailsValues]],
+            'linkedEmails' => ['arrayValue' => ['values' => $linkedEmailsValues]],
         ]]),
         'timeout'       => 10,
         'ignore_errors' => true,
