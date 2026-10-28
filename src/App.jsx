@@ -5,7 +5,10 @@ import {
   signInWithEmailAndPassword,
   signInWithCustomToken,
 } from 'firebase/auth'
-import { auth } from './firebase.js'
+import {
+  collection, query, where, orderBy, getDocs, addDoc, serverTimestamp,
+} from 'firebase/firestore'
+import { auth, db } from './firebase.js'
 import './trainer.css'
 
 // ── App ───────────────────────────────────────────────────────────────────────
@@ -194,11 +197,14 @@ function LoginScreen() {
   if (view === 'main') return (
     <div className="screen-center">
       <div style={{ width: '100%', maxWidth: 380 }}>
-        <div style={{ textAlign: 'center', marginBottom: 36 }}>
-          <div style={{ fontSize: 44, marginBottom: 10, lineHeight: 1 }}>⚽</div>
-          <h1 style={{ fontSize: 23, fontWeight: 800, color: 'var(--green)', marginBottom: 3 }}>SSIF Træner</h1>
-          <p style={{ fontSize: 14, color: 'var(--text3)' }}>Sejs-Svejbæk IF</p>
+        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+          <img src="/ssif-logo.png" alt="SSIF" style={{ height: 80, objectFit: 'contain', marginBottom: 14 }} />
+          <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--green)', marginBottom: 6 }}>SSIF Træner</h1>
+          <p style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.55, maxWidth: 300, margin: '0 auto' }}>
+            Opret begivenheder, udtag holdet og hold kontakten med forældrene — alt samlet ét sted.
+          </p>
         </div>
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <button className="btn btn-primary" onClick={() => go('conventus')} disabled={loading}>
             Log ind med Conventus
@@ -366,9 +372,18 @@ function UnverifiedScreen({ user, onLogout }) {
 
 // ── DashboardScreen ───────────────────────────────────────────────────────────
 
+const FEATURE_CARDS = [
+  { emoji: '📅', title: 'Begivenheder', desc: 'Opret kampe, stævner, møder og events for holdet.' },
+  { emoji: '👥', title: 'Udtag holdet', desc: 'Vælg de spillere der skal med og send invitation.' },
+  { emoji: '✅', title: 'Tilmeldinger', desc: 'Se live hvem der kommer — og hvem der melder fra.' },
+  { emoji: '💬', title: 'Send besked', desc: 'Send hurtig besked til alle holdets forældre.' },
+  { emoji: '📋', title: 'Spillerliste', desc: 'Se hvilke spillere der er tilmeldt holdet i Conventus.' },
+]
+
 function DashboardScreen({ user, displayName, holds, onLogout, onRefresh }) {
   const [refreshing,   setRefreshing]   = useState(false)
   const [selectedHold, setSelectedHold] = useState(null)
+  const [showSupport,  setShowSupport]  = useState(false)
 
   async function handleRefresh() {
     setRefreshing(true)
@@ -380,15 +395,19 @@ function DashboardScreen({ user, displayName, holds, onLogout, onRefresh }) {
     return <HoldScreen hold={selectedHold} user={user} onBack={() => setSelectedHold(null)} />
   }
 
+  if (showSupport) {
+    return <SupportScreen user={user} onBack={() => setShowSupport(false)} />
+  }
+
   return (
     <div className="screen">
       <header style={{
         background: 'var(--green)', color: '#fff',
         paddingTop: 'max(13px, env(safe-area-inset-top))',
         paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
-        display: 'flex', alignItems: 'center', gap: 12,
+        display: 'flex', alignItems: 'center', gap: 10,
       }}>
-        <span style={{ fontSize: 22, lineHeight: 1 }}>⚽</span>
+        <img src="/ssif-logo-white.png" alt="SSIF" style={{ height: 28, objectFit: 'contain', flexShrink: 0 }} />
         <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>SSIF Træner</span>
         <button onClick={handleRefresh} disabled={refreshing} style={{
           background: 'none', border: 'none',
@@ -408,10 +427,11 @@ function DashboardScreen({ user, displayName, holds, onLogout, onRefresh }) {
       </header>
 
       <main style={{ padding: '20px 16px', maxWidth: 600, margin: '0 auto', width: '100%', flex: 1 }}>
-        <p style={{ fontSize: 14, color: 'var(--text3)', marginBottom: 22 }}>
+        <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', marginBottom: 18 }}>
           Hej {displayName} 👋
         </p>
-        <h2 style={{ fontSize: 17, fontWeight: 800, marginBottom: 14 }}>Mine hold</h2>
+
+        <h2 style={{ fontSize: 17, fontWeight: 800, marginBottom: 12 }}>Mine hold</h2>
 
         {holds.length === 0 ? (
           <div className="empty-state">
@@ -441,6 +461,39 @@ function DashboardScreen({ user, displayName, holds, onLogout, onRefresh }) {
             ))}
           </div>
         )}
+
+        {/* Hvad kan du i appen? */}
+        <div style={{ marginTop: 28 }}>
+          <h2 style={{ fontSize: 15, fontWeight: 800, marginBottom: 12, color: 'var(--text2)' }}>Hvad kan du i appen?</h2>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {FEATURE_CARDS.map(f => (
+              <div key={f.title} style={{
+                background: 'var(--bg)', border: '1px solid var(--border)',
+                borderRadius: 12, padding: '12px 13px',
+              }}>
+                <div style={{ fontSize: 22, marginBottom: 6, lineHeight: 1 }}>{f.emoji}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 3 }}>{f.title}</div>
+                <div style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.45 }}>{f.desc}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Support */}
+        <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid var(--border)' }}>
+          <button onClick={() => setShowSupport(true)} style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            width: '100%', background: 'none', border: 'none',
+            padding: '10px 0', cursor: 'pointer', textAlign: 'left',
+          }}>
+            <span style={{ fontSize: 22, lineHeight: 1 }}>🙋</span>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>Hjælp og support</div>
+              <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 1 }}>Stil et spørgsmål eller se svar på ofte stillede spørgsmål</div>
+            </div>
+            <ChevronIcon />
+          </button>
+        </div>
       </main>
     </div>
   )
@@ -1801,6 +1854,151 @@ function KontingentScreen({ hold, user, onBack }) {
               </div>
             ))}
           </div>
+        )}
+      </main>
+    </div>
+  )
+}
+
+// ── SupportScreen ─────────────────────────────────────────────────────────────
+
+const SUPPORT_CATEGORIES = ['Login', 'Begivenheder', 'Udsendelse', 'Hold og spillere', 'Andet']
+
+function SupportScreen({ user, onBack }) {
+  const [faqs,     setFaqs]     = useState([])
+  const [view,     setView]     = useState('oversigt') // 'oversigt' | 'form' | 'tak'
+  const [kategori, setKategori] = useState(SUPPORT_CATEGORIES[0])
+  const [besked,   setBesked]   = useState('')
+  const [sending,  setSending]  = useState(false)
+  const [error,    setError]    = useState('')
+  const [expanded, setExpanded] = useState(null)
+
+  useEffect(() => {
+    getDocs(query(collection(db, 'support'), where('status', '==', 'faq'), orderBy('createdAt', 'desc')))
+      .then(s => setFaqs(s.docs.map(d => ({ id: d.id, ...d.data() }))))
+      .catch(() => {})
+  }, [])
+
+  async function sendSpørgsmål() {
+    if (!besked.trim()) return
+    setSending(true); setError('')
+    try {
+      await addDoc(collection(db, 'support'), {
+        question:   besked.trim(),
+        category:   kategori,
+        authorName: user.displayName || user.email || '',
+        authorEmail: user.email || '',
+        authorUid:  user.uid,
+        status:     'afventer',
+        createdAt:  serverTimestamp(),
+        source:     'trainer-app',
+      })
+      setView('tak')
+    } catch {
+      setError('Det lykkedes ikke at sende. Prøv igen.')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const Header = ({ title }) => (
+    <header style={{
+      background: 'var(--green)', color: '#fff',
+      paddingTop: 'max(13px, env(safe-area-inset-top))',
+      paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
+      display: 'flex', alignItems: 'center', gap: 12,
+    }}>
+      <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 22, lineHeight: 1, padding: '0 4px 0 0' }}>‹</button>
+      <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>{title}</span>
+    </header>
+  )
+
+  if (view === 'tak') return (
+    <div className="screen">
+      <Header title="Hjælp og support" />
+      <main style={{ padding: '40px 16px', maxWidth: 500, margin: '0 auto', width: '100%', textAlign: 'center' }}>
+        <div style={{ fontSize: 52, marginBottom: 16 }}>✅</div>
+        <h2 style={{ fontSize: 20, fontWeight: 800, marginBottom: 10 }}>Spørgsmål modtaget</h2>
+        <p style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 28 }}>
+          Din besked er sendt til SSIF-administratoren. Du vil typisk få svar inden for 1–2 dage.
+        </p>
+        <button className="btn btn-primary" onClick={onBack} style={{ maxWidth: 220, margin: '0 auto' }}>
+          Tilbage til appen
+        </button>
+      </main>
+    </div>
+  )
+
+  if (view === 'form') return (
+    <div className="screen">
+      <Header title="Stil et spørgsmål" />
+      <main style={{ padding: '20px 16px', maxWidth: 500, margin: '0 auto', width: '100%', flex: 1 }}>
+        <button className="btn btn-ghost" style={{ marginBottom: 16, padding: '4px 0' }} onClick={() => setView('oversigt')}>← Tilbage</button>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div className="form-field">
+            <label className="form-label">Kategori</label>
+            <select className="form-input" value={kategori} onChange={e => setKategori(e.target.value)}>
+              {SUPPORT_CATEGORIES.map(c => <option key={c}>{c}</option>)}
+            </select>
+          </div>
+          <div className="form-field">
+            <label className="form-label">Dit spørgsmål</label>
+            <textarea className="form-input" rows={5} style={{ resize: 'vertical' }}
+              placeholder="Beskriv hvad du har brug for hjælp til…"
+              value={besked} onChange={e => setBesked(e.target.value)} />
+          </div>
+          {error && <p style={{ fontSize: 13, color: 'var(--red)', margin: 0 }}>{error}</p>}
+          <button className="btn btn-primary" disabled={sending || !besked.trim()} onClick={sendSpørgsmål}>
+            {sending ? 'Sender…' : 'Send spørgsmål'}
+          </button>
+        </div>
+      </main>
+    </div>
+  )
+
+  return (
+    <div className="screen">
+      <Header title="Hjælp og support" />
+      <main style={{ padding: '20px 16px', maxWidth: 500, margin: '0 auto', width: '100%', flex: 1 }}>
+
+        <button className="btn btn-primary" style={{ width: '100%', marginBottom: 28 }} onClick={() => { setBesked(''); setView('form') }}>
+          🙋 Stil et spørgsmål
+        </button>
+
+        {faqs.length > 0 && (
+          <>
+            <h2 style={{ fontSize: 15, fontWeight: 800, marginBottom: 12 }}>Ofte stillede spørgsmål</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {faqs.map(faq => (
+                <div key={faq.id} style={{
+                  background: 'var(--bg)', border: '1px solid var(--border)',
+                  borderRadius: 12, overflow: 'hidden',
+                }}>
+                  <button onClick={() => setExpanded(expanded === faq.id ? null : faq.id)} style={{
+                    width: '100%', background: 'none', border: 'none', cursor: 'pointer',
+                    padding: '13px 14px', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left',
+                  }}>
+                    <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: 'var(--text)', lineHeight: 1.4 }}>
+                      {faq.question}
+                    </span>
+                    <span style={{ fontSize: 18, color: 'var(--text3)', transform: expanded === faq.id ? 'rotate(90deg)' : 'none', transition: 'transform .15s', flexShrink: 0 }}>›</span>
+                  </button>
+                  {expanded === faq.id && faq.answer && (
+                    <div style={{ padding: '0 14px 14px', fontSize: 14, color: 'var(--text2)', lineHeight: 1.6, borderTop: '1px solid var(--border)' }}>
+                      <div style={{ paddingTop: 12 }}>{faq.answer}</div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {faqs.length === 0 && (
+          <p style={{ fontSize: 14, color: 'var(--text3)', textAlign: 'center', marginTop: 16 }}>
+            Ingen FAQ-artikler endnu. Stil et spørgsmål, så svarer vi hurtigst muligt.
+          </p>
         )}
       </main>
     </div>
