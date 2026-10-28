@@ -322,69 +322,6 @@ function LoginScreen() {
 // ── AccessDeniedScreen ────────────────────────────────────────────────────────
 
 function AccessDeniedScreen({ user, onLogout }) {
-  const [view,    setView]    = useState('main')
-  const [cEmail,  setCEmail]  = useState('')
-  const [cPass,   setCPass]   = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error,   setError]   = useState('')
-
-  async function linkConventus() {
-    if (!cEmail || !cPass) return
-    setLoading(true); setError('')
-    try {
-      const idToken = await user.getIdToken()
-      const res  = await fetch('/api/trainer-link-email.php', {
-        method:  'POST',
-        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ conventusEmail: cEmail, conventusPassword: cPass }),
-      })
-      const data = await res.json()
-      if (data.status === 'ok') {
-        await signInWithCustomToken(auth, data.customToken)
-        // onAuthStateChanged → checkAccess kører automatisk med det nye token
-      } else {
-        setError(data.error || 'Tilknytning fejlede. Prøv igen.')
-      }
-    } catch {
-      setError('Netværksfejl. Prøv igen.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  if (view === 'tilknyt') return (
-    <div className="screen-center">
-      <div style={{ width: '100%', maxWidth: 380 }}>
-        <button className="btn btn-ghost" onClick={() => { setView('main'); setError('') }}>← Tilbage</button>
-        <h2 style={{ fontSize: 20, fontWeight: 800, margin: '16px 0 4px' }}>Tilknyt Conventus-konto</h2>
-        <p style={{ fontSize: 14, color: 'var(--text3)', lineHeight: 1.55, marginBottom: 24 }}>
-          Tilknyt din Google-konto{user?.email ? <> (<strong>{user.email}</strong>)</> : ''} til
-          din Conventus-profil. Det er et éngangstrin — bagefter logger Google ind automatisk.
-        </p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div className="form-field">
-            <label className="form-label">Conventus-email</label>
-            <input className="form-input" type="email" value={cEmail}
-              onChange={e => setCEmail(e.target.value)}
-              placeholder="din@email.dk" autoComplete="username" />
-          </div>
-          <div className="form-field">
-            <label className="form-label">Adgangskode</label>
-            <input className="form-input" type="password" value={cPass}
-              onChange={e => setCPass(e.target.value)}
-              placeholder="••••••••" autoComplete="current-password"
-              onKeyDown={e => e.key === 'Enter' && linkConventus()} />
-          </div>
-          <button className="btn btn-primary" onClick={linkConventus}
-            disabled={loading || !cEmail || !cPass}>
-            {loading ? 'Tilknytter…' : 'Tilknyt og log ind'}
-          </button>
-        </div>
-        {error && <p style={{ marginTop: 12, fontSize: 13, color: 'var(--red)' }}>{error}</p>}
-      </div>
-    </div>
-  )
-
   return (
     <div className="screen-center">
       <div style={{ width: '100%', maxWidth: 360, textAlign: 'center' }}>
@@ -394,19 +331,14 @@ function AccessDeniedScreen({ user, onLogout }) {
           Dette værktøj er kun for trænere og ledere i Sejs-Svejbæk IF.
         </p>
         {user?.email && (
-          <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 24 }}>
+          <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 28 }}>
             Logget ind som {user.email}
           </p>
         )}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 280, margin: '0 auto' }}>
-          <button className="btn btn-primary" onClick={onLogout}>
-            Log ud og prøv med Conventus-login
-          </button>
-          <button className="btn btn-ghost" style={{ fontSize: 13, color: 'var(--text2)', marginTop: 4 }}
-            onClick={() => setView('tilknyt')}>
-            Bruger du en anden Google-mail end din Conventus-mail? Tilknyt her →
-          </button>
-        </div>
+        <button className="btn btn-primary" onClick={onLogout}
+          style={{ maxWidth: 220, margin: '0 auto' }}>
+          Log ud
+        </button>
       </div>
     </div>
   )
