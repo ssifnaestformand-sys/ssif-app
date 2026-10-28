@@ -7075,7 +7075,7 @@ export default function AdminApp() {
       case 'ta_begivenheder':  return <TaBegivenhederPage />
       case 'ta_trænere':       return <TaTraenerePage />
       case 'ta_kommunikation': return <TaKommunikationPage />
-      case 'traener_app':      return <TraenerAppPage    authUser={authUser} userDoc={userDoc} />
+      case 'traener_app':      return <TraenerAppPage    userDoc={userDoc} />
       case 'dashboard':    return <DashboardPage    userDoc={userDoc} />
       case 'messages':     return <MessagesPage      userDoc={userDoc} authUser={authUser} />
       case 'news':         return <NewsPage          userDoc={userDoc} authUser={authUser} />

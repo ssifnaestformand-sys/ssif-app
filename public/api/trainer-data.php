@@ -72,25 +72,37 @@ if ($email !== '') {
     }
 }
 
-if (empty($memberDocs)) {
-    echo json_encode(['error' => 'no_trainer_access']); exit;
-}
-
-// ── Saml lederHolds og displayName fra alle docs ──────────────────────────────
+// ── Saml lederHolds og displayName ────────────────────────────────────────────
 $lederHoldIds = [];
 $displayName  = '';
-foreach ($memberDocs as $fields) {
-    if ($displayName === '') {
-        $displayName = $fields['name']['stringValue'] ?? '';
-    }
-    foreach ($fields['lederHolds']['arrayValue']['values'] ?? [] as $v) {
-        $id = (string)($v['integerValue'] ?? $v['stringValue'] ?? '');
-        if ($id !== '') $lederHoldIds[$id] = true;
+
+if (!empty($memberDocs)) {
+    foreach ($memberDocs as $fields) {
+        if ($displayName === '') {
+            $displayName = $fields['name']['stringValue'] ?? '';
+        }
+        foreach ($fields['lederHolds']['arrayValue']['values'] ?? [] as $v) {
+            $id = (string)($v['integerValue'] ?? $v['stringValue'] ?? '');
+            if ($id !== '') $lederHoldIds[$id] = true;
+        }
     }
 }
 
 if (empty($lederHoldIds)) {
-    echo json_encode(['error' => 'no_trainer_access']); exit;
+    // Fallback: tjek users/{uid} for rolle og lederHolds (sat via backoffice eller tidligere login)
+    $existingDoc        = fs_get("{$base}/users/{$uid}", $fsToken);
+    $existingRole       = $existingDoc['fields']['role']['stringValue'] ?? '';
+    $existingHoldValues = $existingDoc['fields']['lederHolds']['arrayValue']['values'] ?? [];
+    foreach ($existingHoldValues as $v) {
+        $id = (string)($v['stringValue'] ?? $v['integerValue'] ?? '');
+        if ($id !== '') $lederHoldIds[$id] = true;
+    }
+    if (empty($lederHoldIds) || !in_array($existingRole, ['admin', 'trainer'], true)) {
+        echo json_encode(['error' => 'no_trainer_access']); exit;
+    }
+    if ($displayName === '') {
+        $displayName = $existingDoc['fields']['displayName']['stringValue'] ?? '';
+    }
 }
 
 // ── Hent holds ────────────────────────────────────────────────────────────────
