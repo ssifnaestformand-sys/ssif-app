@@ -1410,70 +1410,129 @@ function SendDialog({ antalUdtaget, sending, sendFejl, sendOk, onSend, onLuk }) 
 // ── SendBeskedScreen ──────────────────────────────────────────────────────────
 
 function SendBeskedScreen({ hold, user, onBack }) {
-  const [kanal,    setKanal]    = useState('mail')
-  const [emne,     setEmne]     = useState('')
-  const [besked,   setBesked]   = useState('')
-  const [sending,  setSending]  = useState(false)
-  const [fejl,     setFejl]     = useState('')
-  const [resultat, setResultat] = useState(null)
+  const [kanal,        setKanal]        = useState('mail')
+  const [emne,         setEmne]         = useState('')
+  const [besked,       setBesked]       = useState('')
+  const [members,      setMembers]      = useState(null)
+  const [membersLoad,  setMembersLoad]  = useState(true)
+  const [extraEmails,  setExtraEmails]  = useState([])
+  const [extraPhones,  setExtraPhones]  = useState([])
+  const [newRecipient, setNewRecipient] = useState('')
+  const [recipFejl,    setRecipFejl]    = useState('')
+  const [sending,      setSending]      = useState(false)
+  const [fejl,         setFejl]         = useState('')
+  const [resultat,     setResultat]     = useState(null)
 
-  const smsOnly = kanal === 'sms'
+  useEffect(() => {
+    (async () => {
+      try {
+        const idToken = await user.getIdToken()
+        const res  = await fetch('/api/hold-spillere.php', {
+          method:  'POST',
+          headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ holdId: hold.id }),
+        })
+        const data = await res.json()
+        setMembers(Array.isArray(data) ? data : [])
+      } catch { setMembers([]) }
+      finally { setMembersLoad(false) }
+    })()
+  }, [])
+
+  function addRecipient() {
+    const v = newRecipient.trim()
+    if (!v) return
+    setRecipFejl('')
+    if (kanal === 'mail') {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) {
+        setRecipFejl('Ugyldig email-adresse.')
+        return
+      }
+      if (!extraEmails.includes(v)) setExtraEmails(prev => [...prev, v])
+    } else {
+      const cleaned = v.replace(/[\s\-()]/g, '')
+      if (!/^\+?\d{8,15}$/.test(cleaned)) {
+        setRecipFejl('Ugyldigt nummer. Brug fx 12345678 eller +4512345678.')
+        return
+      }
+      if (!extraPhones.includes(cleaned)) setExtraPhones(prev => [...prev, cleaned])
+    }
+    setNewRecipient('')
+  }
+
+  function removeExtra(type, val) {
+    if (type === 'email') setExtraEmails(prev => prev.filter(e => e !== val))
+    else                  setExtraPhones(prev => prev.filter(p => p !== val))
+  }
+
+  const extras        = kanal === 'mail' ? extraEmails : extraPhones
+  const totalModtagere = (members?.length ?? 0) + extras.length
+  const parts          = smsParts(besked)
+  const kostPerStk     = (parts * 0.29).toFixed(2)
+  const kostIAlt       = (parts * 0.29 * totalModtagere).toFixed(2)
 
   async function handleSend() {
     const b = besked.trim()
     const e = emne.trim()
     if (!b) { setFejl('Skriv en besked.'); return }
-    if (!smsOnly && !e) { setFejl('Udfyld emne til mailen.'); return }
-    setSending(true)
-    setFejl('')
+    if (kanal === 'mail' && !e) { setFejl('Udfyld emne til mailen.'); return }
+    setSending(true); setFejl('')
     try {
       const idToken = await user.getIdToken()
       const res  = await fetch('/api/send-besked.php', {
         method:  'POST',
         headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ holdId: hold.id, kanal, emne: e, besked: b }),
+        body:    JSON.stringify({
+          holdId: hold.id, kanal,
+          emne: e, besked: b,
+          extraEmails: kanal === 'mail' ? extraEmails : [],
+          extraPhones: kanal === 'sms'  ? extraPhones : [],
+        }),
       })
       const data = await res.json()
-      if (data.ok) { setResultat(data) } else { setFejl(data.error || 'Udsendelse fejlede') }
+      if (data.ok) setResultat(data)
+      else setFejl(data.error || 'Udsendelse fejlede')
     } catch { setFejl('Netværksfejl') }
-    finally   { setSending(false) }
+    finally  { setSending(false) }
+  }
+
+  const hdrStyle = {
+    background: 'var(--green)', color: '#fff',
+    paddingTop: 'max(13px, env(safe-area-inset-top))',
+    paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
+    display: 'flex', alignItems: 'center', gap: 12,
+  }
+  const backBtn = {
+    background: 'none', border: 'none', color: '#fff',
+    cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 4px 0 0',
   }
 
   return (
     <div className="screen">
-      <header style={{
-        background: 'var(--green)', color: '#fff',
-        paddingTop: 'max(13px, env(safe-area-inset-top))',
-        paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
-        display: 'flex', alignItems: 'center', gap: 12,
-      }}>
-        <button onClick={onBack} style={{
-          background: 'none', border: 'none', color: '#fff',
-          cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 4px 0 0',
-        }}>‹</button>
-        <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>
-          Send besked
-        </span>
+      <header style={hdrStyle}>
+        <button onClick={onBack} style={backBtn}>‹</button>
+        <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>Send besked</span>
         <span style={{ fontSize: 13, color: 'rgba(255,255,255,.7)' }}>
           {hold.titel || `Hold ${hold.id}`}
         </span>
       </header>
 
-      <main style={{ padding: '16px', maxWidth: 600, margin: '0 auto', width: '100%', flex: 1, display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <main style={{ padding: '16px', maxWidth: 600, margin: '0 auto', width: '100%', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
+
         {resultat ? (
           <>
             <div style={{
               background: 'var(--green-soft)', border: '1px solid var(--border)',
-              borderRadius: 12, padding: 24,
+              borderRadius: 12, padding: 28,
               display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
             }}>
-              <span style={{ fontSize: 28 }}>✓</span>
+              <span style={{ fontSize: 32 }}>✓</span>
               <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--green)', margin: 0 }}>
-                Sendt til {resultat.sendt}
+                Sendt til {resultat.sendt} {kanal === 'sms' ? 'numre' : 'adresser'}
               </p>
               {resultat.fejlet > 0 && (
                 <p style={{ fontSize: 13, color: 'var(--text3)', margin: 0 }}>
-                  {resultat.fejlet} kunne ikke sendes
+                  {resultat.fejlet} kunne ikke leveres
                 </p>
               )}
             </div>
@@ -1481,45 +1540,147 @@ function SendBeskedScreen({ hold, user, onBack }) {
           </>
         ) : (
           <>
-            <div>
-              <label className="form-label" style={{ marginBottom: 8, display: 'block' }}>Kanal</label>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {KANALER.map(k => (
-                  <button key={k.id} onClick={() => setKanal(k.id)} style={{
-                    flex: 1, padding: '10px 6px', borderRadius: 10, border: '2px solid',
+            {/* ── Kanal: kun Mail / SMS ─── */}
+            <div style={{ display: 'flex', gap: 8 }}>
+              {KANALER.filter(k => k.id !== 'begge').map(k => (
+                <button key={k.id}
+                  onClick={() => { setKanal(k.id); setNewRecipient(''); setRecipFejl('') }}
+                  style={{
+                    flex: 1, padding: '12px 8px', borderRadius: 10, border: '2px solid',
                     borderColor: kanal === k.id ? 'var(--green)' : 'var(--border)',
                     background:  kanal === k.id ? 'var(--green-soft)' : 'var(--bg)',
                     color:       kanal === k.id ? 'var(--green)' : 'var(--text2)',
-                    fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                    fontSize: 14, fontWeight: 700, cursor: 'pointer',
                     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
                   }}>
-                    <span style={{ fontSize: 18 }}>{k.icon}</span>
-                    {k.label}
-                  </button>
-                ))}
-              </div>
+                  <span style={{ fontSize: 22 }}>{k.icon}</span>
+                  {k.label}
+                </button>
+              ))}
             </div>
 
-            {!smsOnly && (
+            {/* ── Mail-felter ─── */}
+            {kanal === 'mail' && (
+              <>
+                <div>
+                  <label className="form-label">Emne</label>
+                  <input className="form-input" type="text" value={emne}
+                    onChange={e => setEmne(e.target.value)}
+                    placeholder="Fx: Aflyst træning fredag d. 3. nov." />
+                </div>
+                <div>
+                  <label className="form-label">Besked</label>
+                  <textarea className="form-input" rows={6} value={besked}
+                    onChange={e => setBesked(e.target.value)}
+                    placeholder="Skriv din besked her…"
+                    style={{ resize: 'vertical', minHeight: 120 }} />
+                </div>
+              </>
+            )}
+
+            {/* ── SMS-felt + omkostningsboks ─── */}
+            {kanal === 'sms' && (
               <div>
-                <label className="form-label">Emne</label>
-                <input className="form-input" type="text" value={emne}
-                  onChange={e => setEmne(e.target.value)}
-                  placeholder="Fx: Aflyst træning fredag d. 3. nov." />
+                <label className="form-label">Besked</label>
+                <textarea className="form-input" rows={4} value={besked}
+                  onChange={e => setBesked(e.target.value)}
+                  placeholder="Skriv din SMS-tekst her…"
+                  style={{ resize: 'vertical', minHeight: 90 }} />
+                <div style={{
+                  marginTop: 8,
+                  background: 'var(--surface)', border: '1px solid var(--border)',
+                  borderRadius: 8, padding: '10px 14px',
+                  display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', fontSize: 13,
+                }}>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)', marginBottom: 2 }}>TEGN</div>
+                    <div style={{ fontWeight: 700 }}>{besked.length || 0}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)', marginBottom: 2 }}>SMS-DELE PR. MODTAGER</div>
+                    <div style={{ fontWeight: 700 }}>{parts}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)', marginBottom: 2 }}>PRIS PR. MODTAGER</div>
+                    <div style={{ fontWeight: 700 }}>ca. {kostPerStk} kr.</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)', marginBottom: 2 }}>SAMLET ({totalModtagere} modtagere)</div>
+                    <div style={{ fontWeight: 700, color: totalModtagere > 0 ? 'var(--green)' : 'var(--text3)' }}>
+                      ca. {kostIAlt} kr.
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
-            <div>
-              <label className="form-label">Besked</label>
-              <textarea className="form-input" rows={5} value={besked}
-                onChange={e => setBesked(e.target.value)}
-                placeholder="Skriv din besked her…"
-                style={{ resize: 'vertical', minHeight: 100 }} />
-              {kanal !== 'mail' && (
-                <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: 5 }}>
-                  {besked.length} tegn
-                  {besked.length > 160 && ` · ca. ${Math.ceil(besked.length / 153)} SMS-dele`}
+            {/* ── Modtagerliste ─── */}
+            <div style={{
+              background: 'var(--surface)', border: '1px solid var(--border)',
+              borderRadius: 12, padding: 14, display: 'flex', flexDirection: 'column', gap: 10,
+            }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>
+                Modtagere ({totalModtagere})
+              </h3>
+
+              {membersLoad && <div className="spinner" style={{ margin: '8px auto' }} />}
+
+              {!membersLoad && members?.length === 0 && (
+                <p style={{ fontSize: 13, color: 'var(--text3)', margin: 0 }}>
+                  Ingen registrerede holdmedlemmer i databasen.
                 </p>
+              )}
+
+              {!membersLoad && members && members.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {members.map(m => (
+                    <span key={m.id} style={{
+                      background: 'var(--bg)', border: '1px solid var(--border)',
+                      borderRadius: 20, padding: '4px 10px', fontSize: 13,
+                    }}>
+                      {m.navn}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Ekstra modtagere (grøn baggrund) */}
+              {extras.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {extras.map(r => (
+                    <div key={r} style={{
+                      display: 'flex', alignItems: 'center', gap: 8,
+                      background: 'var(--green-soft)', borderRadius: 8,
+                      padding: '6px 10px',
+                    }}>
+                      <span style={{ flex: 1, fontSize: 13, wordBreak: 'break-all' }}>{r}</span>
+                      <button onClick={() => removeExtra(kanal === 'mail' ? 'email' : 'phone', r)} style={{
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        fontSize: 18, color: 'var(--text3)', lineHeight: 1, padding: 0, flexShrink: 0,
+                      }}>×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Input: tilføj ekstra */}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  className="form-input"
+                  style={{ flex: 1, margin: 0 }}
+                  type={kanal === 'mail' ? 'email' : 'tel'}
+                  value={newRecipient}
+                  onChange={e => { setNewRecipient(e.target.value); setRecipFejl('') }}
+                  onKeyDown={e => e.key === 'Enter' && addRecipient()}
+                  placeholder={kanal === 'mail' ? 'Tilføj ekstra email-adresse…' : 'Tilføj ekstra telefonnummer…'}
+                />
+                <button className="btn btn-outline" onClick={addRecipient}
+                  style={{ whiteSpace: 'nowrap' }}>
+                  + Tilføj
+                </button>
+              </div>
+              {recipFejl && (
+                <p style={{ fontSize: 12, color: 'var(--red)', margin: 0 }}>{recipFejl}</p>
               )}
             </div>
 
@@ -1527,15 +1688,11 @@ function SendBeskedScreen({ hold, user, onBack }) {
 
             <button className="btn btn-primary"
               onClick={handleSend}
-              disabled={sending || !besked.trim() || (!smsOnly && !emne.trim())}>
+              disabled={sending || !besked.trim() || (kanal === 'mail' && !emne.trim()) || totalModtagere === 0}>
               {sending
                 ? 'Sender…'
-                : `Send ${kanal === 'mail' ? 'mail' : kanal === 'sms' ? 'SMS' : 'mail + SMS'} til holdet`}
+                : `Send ${kanal === 'mail' ? 'mail' : 'SMS'} til ${totalModtagere} ${kanal === 'mail' ? 'adresser' : 'numre'}`}
             </button>
-
-            <p style={{ fontSize: 12, color: 'var(--text3)', textAlign: 'center', margin: 0 }}>
-              Sendes til alle aktive medlemmer på holdet. Ingen svarknapper.
-            </p>
           </>
         )}
       </main>
@@ -1544,6 +1701,15 @@ function SendBeskedScreen({ hold, user, onBack }) {
 }
 
 // ── Hjælpere og ikoner ────────────────────────────────────────────────────────
+
+function smsParts(text) {
+  if (!text) return 1
+  const gsm7 = new Set([...'@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜäöñüàÅ§¿abcdefghijklmnopqrstuvwxyz\t\x0b\x0c{}\\[~]|^€'])
+  const ucs2 = [...text].some(c => !gsm7.has(c))
+  const len  = [...text].length
+  if (ucs2) return len <= 70  ? 1 : Math.ceil(len / 67)
+  return          len <= 160 ? 1 : Math.ceil(len / 153)
+}
 
 function formatDato(dato) {
   if (!dato) return ''

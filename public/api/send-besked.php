@@ -32,16 +32,19 @@ $projectId    = $auth['projectId'];
 $base         = $auth['base'];
 
 // ── Input ─────────────────────────────────────────────────────────────────────
-$body   = json_decode(file_get_contents('php://input'), true) ?? [];
-$holdId = trim((string)($body['holdId'] ?? ''));
-$kanal  = trim((string)($body['kanal']  ?? 'mail'));
-$emne   = trim((string)($body['emne']   ?? ''));
-$besked = trim((string)($body['besked'] ?? ''));
+$body        = json_decode(file_get_contents('php://input'), true) ?? [];
+$holdId      = trim((string)($body['holdId'] ?? ''));
+$kanal       = trim((string)($body['kanal']  ?? 'mail'));
+$emne        = trim((string)($body['emne']   ?? ''));
+$besked      = trim((string)($body['besked'] ?? ''));
+$extraEmails = array_values(array_filter(array_map('trim', (array)($body['extraEmails'] ?? [])),
+    fn($e) => filter_var($e, FILTER_VALIDATE_EMAIL)));
+$extraPhones = array_values(array_filter(array_map(fn($p) => parse_extra_phone(trim($p)), (array)($body['extraPhones'] ?? []))));
 
-if (!$holdId) { http_response_code(400); echo json_encode(['error' => 'holdId mangler']);  exit; }
-if (!$besked) { http_response_code(400); echo json_encode(['error' => 'Besked mangler']);  exit; }
-if (!in_array($kanal, ['mail', 'sms', 'begge'], true)) {
-    http_response_code(400); echo json_encode(['error' => 'Ugyldig kanal']); exit;
+if (!$holdId) { http_response_code(400); echo json_encode(['error' => 'holdId mangler']); exit; }
+if (!$besked) { http_response_code(400); echo json_encode(['error' => 'Besked mangler']); exit; }
+if (!in_array($kanal, ['mail', 'sms'], true)) {
+    http_response_code(400); echo json_encode(['error' => 'Ugyldig kanal (mail eller sms)']); exit;
 }
 
 // ── Adgangscheck ──────────────────────────────────────────────────────────────
@@ -101,8 +104,9 @@ foreach ([['stringValue' => $holdId], ctype_digit($holdId) ? ['integerValue' => 
 $sendt = 0; $fejlet = 0;
 
 // ── Send mail ─────────────────────────────────────────────────────────────────
-if (in_array($kanal, ['mail', 'begge'], true)) {
+if ($kanal === 'mail') {
     $subjectBase = $emne ?: "Besked fra {$senderNavn} — {$holdTitel}";
+
     foreach ($members as $m) {
         $to   = '';
         $navn = $m['fields']['name']['stringValue'] ?? '';
@@ -113,36 +117,33 @@ if (in_array($kanal, ['mail', 'begge'], true)) {
         if (!$to) { $fejlet++; continue; }
         $subj = $tc['testMode'] ? "[TEST → {$navn}] {$subjectBase}" : $subjectBase;
         $to   = $tc['testMode'] ? $tc['testEmail'] : $to;
-        if (smtp_send_html($to, $subj, byg_besked_html($navn, $senderNavn, $holdTitel, $besked))) {
-            $sendt++;
-        } else {
-            $fejlet++;
-        }
+        if (smtp_send_html($to, $subj, byg_besked_html($navn, $senderNavn, $holdTitel, $besked))) $sendt++; else $fejlet++;
     }
+    // Ekstra e-mail-adresser (manuelt tilføjet)
+    foreach ($extraEmails as $to) {
+        $subj = $tc['testMode'] ? "[TEST] {$subjectBase}" : $subjectBase;
+        $to   = $tc['testMode'] ? $tc['testEmail'] : $to;
+        if (smtp_send_html($to, $subj, byg_besked_html('', $senderNavn, $holdTitel, $besked))) $sendt++; else $fejlet++;
+    }
+
     log_udsendelse($projectId, $fsToken, [
-        'channel'      => 'email',
-        'senderUid'    => $uid,
-        'senderName'   => $senderNavn,
-        'holdId'       => $holdId,
-        'holdTitel'    => $holdTitel,
-        'begivenhedId' => '',
-        'scope'        => 'besked',
-        'recipients'   => count($members),
-        'sendt'        => $sendt,
-        'fejlet'       => $fejlet,
-        'testMode'     => $tc['testMode'],
+        'channel' => 'email', 'senderUid' => $uid, 'senderName' => $senderNavn,
+        'holdId' => $holdId, 'holdTitel' => $holdTitel, 'begivenhedId' => '',
+        'scope' => 'besked', 'recipients' => count($members) + count($extraEmails),
+        'sendt' => $sendt, 'fejlet' => $fejlet, 'testMode' => $tc['testMode'],
     ]);
 }
 
 // ── Send SMS ──────────────────────────────────────────────────────────────────
 $smsSendt = 0; $smsFejlet = 0;
-if (in_array($kanal, ['sms', 'begge'], true)) {
+if ($kanal === 'sms') {
     $smsKey = getenv('SMS_API_KEY') ?: '';
     if (!$smsKey) { http_response_code(503); echo json_encode(['error' => 'SMS_API_KEY mangler']); exit; }
 
     $phoneMap = hent_conventus_telefonmap(getenv('CONVENTUS_KEY') ?: '');
     $smsParts = sms_parts_bev($besked);
 
+    // Hold-medlemmer via Conventus-telefonmappen
     foreach ($members as $m) {
         $msisdn   = $phoneMap[$m['id']] ?? null;
         if (!$msisdn) continue;
@@ -153,36 +154,52 @@ if (in_array($kanal, ['sms', 'begge'], true)) {
         }
         if (!$msisdn) continue;
         $gw = @file_get_contents('https://gatewayapi.com/rest/mtsms', false, stream_context_create(['http' => [
-            'method'        => 'POST',
-            'header'        => "Authorization: Token {$smsKey}\r\nContent-Type: application/json\r\n",
-            'content'       => json_encode(['sender' => 'SSIF', 'message' => $sendText,
-                                            'recipients' => [['msisdn' => $msisdn]]]),
-            'timeout'       => 10,
-            'ignore_errors' => true,
+            'method' => 'POST',
+            'header' => "Authorization: Token {$smsKey}\r\nContent-Type: application/json\r\n",
+            'content' => json_encode(['sender' => 'SSIF', 'message' => $sendText, 'recipients' => [['msisdn' => $msisdn]]]),
+            'timeout' => 10, 'ignore_errors' => true,
         ]]));
         $gd = json_decode($gw ?: '{}', true);
-        if (isset($gd['ids']) && !isset($gd['code'])) { $smsSendt++; } else { $smsFejlet++; }
+        if (isset($gd['ids']) && !isset($gd['code'])) $smsSendt++; else $smsFejlet++;
     }
+    // Ekstra numre (manuelt tilføjet — aldrig gemt)
+    foreach ($extraPhones as $msisdn) {
+        $sendText = $besked;
+        if ($tc['testMode']) { $msisdn = conventus_msisdn_til_int($tc['testPhone']); $sendText = "[TEST] {$besked}"; }
+        if (!$msisdn) continue;
+        $gw = @file_get_contents('https://gatewayapi.com/rest/mtsms', false, stream_context_create(['http' => [
+            'method' => 'POST',
+            'header' => "Authorization: Token {$smsKey}\r\nContent-Type: application/json\r\n",
+            'content' => json_encode(['sender' => 'SSIF', 'message' => $sendText, 'recipients' => [['msisdn' => $msisdn]]]),
+            'timeout' => 10, 'ignore_errors' => true,
+        ]]));
+        $gd = json_decode($gw ?: '{}', true);
+        if (isset($gd['ids']) && !isset($gd['code'])) $smsSendt++; else $smsFejlet++;
+    }
+
     log_udsendelse($projectId, $fsToken, [
-        'channel'       => 'sms',
-        'senderUid'     => $uid,
-        'senderName'    => $senderNavn,
-        'holdId'        => $holdId,
-        'holdTitel'     => $holdTitel,
-        'begivenhedId'  => '',
-        'scope'         => 'besked',
-        'recipients'    => count($members),
-        'sendt'         => $smsSendt,
-        'fejlet'        => $smsFejlet,
-        'parts'         => $smsParts,
-        'estimatedCost' => round($smsSendt * $smsParts * 0.29, 2),
-        'testMode'      => $tc['testMode'],
+        'channel' => 'sms', 'senderUid' => $uid, 'senderName' => $senderNavn,
+        'holdId' => $holdId, 'holdTitel' => $holdTitel, 'begivenhedId' => '',
+        'scope' => 'besked', 'recipients' => count($members) + count($extraPhones),
+        'sendt' => $smsSendt, 'fejlet' => $smsFejlet,
+        'parts' => $smsParts, 'estimatedCost' => round($smsSendt * $smsParts * 0.29, 2),
+        'testMode' => $tc['testMode'],
     ]);
     $sendt  += $smsSendt;
     $fejlet += $smsFejlet;
 }
 
 echo json_encode(['ok' => true, 'sendt' => $sendt, 'fejlet' => $fejlet]);
+
+// ── Hjælpere ──────────────────────────────────────────────────────────────────
+
+function parse_extra_phone(string $raw): ?int {
+    $clean = preg_replace('/[\s\-\(\)]/', '', $raw);
+    if (preg_match('/^\+\d{8,15}$/', $clean))  return conventus_msisdn_til_int($clean);
+    if (preg_match('/^00\d{8,13}$/', $clean))   return conventus_msisdn_til_int('+' . substr($clean, 2));
+    if (preg_match('/^\d{8}$/', $clean))        return conventus_msisdn_til_int('+45' . $clean);
+    return null;
+}
 
 // ── Mail-template ─────────────────────────────────────────────────────────────
 function byg_besked_html(string $modtagerNavn, string $afsenderNavn, string $holdNavn, string $besked): string {
