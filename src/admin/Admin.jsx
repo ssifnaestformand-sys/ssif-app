@@ -5813,6 +5813,7 @@ function TaTraenerePage() {
   const [loading,   setLoading]   = useState(true)
   const [search,    setSearch]    = useState('')
   const [drillHold, setDrillHold] = useState(null) // { id, name }
+  const [sort,      setSort]      = useState({ col: 'name', dir: 'asc' })
 
   useEffect(() => {
     Promise.all([
@@ -5828,14 +5829,12 @@ function TaTraenerePage() {
       })
       setHoldMap(hm)
 
-      // Byg email → users-doc (inkl. admins og trænere)
       const userByEmail = {}
       uSnap.docs.forEach(d => {
         const email = (d.data().email || '').toLowerCase()
         if (email) userByEmail[email] = { id: d.id, ...d.data() }
       })
 
-      // Members er den autoritative kilde — isLeder=true dækker alle, inkl. admin-rolle
       setUsers(mSnap.docs
         .map(d => {
           const f = d.data()
@@ -5851,8 +5850,7 @@ function TaTraenerePage() {
             lastSeen: u?.lastSeen || null,
           }
         })
-        .filter(Boolean)
-        .sort((a, b) => (a.displayName || '').localeCompare(b.displayName || '', 'da')))
+        .filter(Boolean))
     }).catch(() => {}).finally(() => setLoading(false))
   }, [])
 
@@ -5867,15 +5865,50 @@ function TaTraenerePage() {
     return d.toLocaleDateString('da-DK', { day: '2-digit', month: 'short', year: 'numeric' })
   }
 
+  function tsVal(ts) {
+    if (!ts) return 0
+    return (ts.toDate ? ts.toDate() : new Date(ts)).getTime()
+  }
+
+  function toggleSort(col) {
+    setSort(s => s.col === col ? { col, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: 'asc' })
+  }
+
+  function SortTh({ col, children }) {
+    const active = sort.col === col
+    return (
+      <th onClick={() => toggleSort(col)}
+        style={{ cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
+        {children}
+        <span style={{ marginLeft: 5, opacity: active ? 1 : 0.25, fontSize: 11 }}>
+          {active && sort.dir === 'desc' ? '▼' : '▲'}
+        </span>
+      </th>
+    )
+  }
+
   const q = search.trim().toLowerCase()
-  const filtered = users.filter(u => {
-    if (!q) return true
-    if ((u.displayName || '').toLowerCase().includes(q)) return true
-    if ((u.email || '').toLowerCase().includes(q)) return true
-    return trainerHolds(u).some(h => h.name.toLowerCase().includes(q))
-  })
+  const filtered = users
+    .filter(u => {
+      if (!q) return true
+      if ((u.displayName || '').toLowerCase().includes(q)) return true
+      if ((u.email || '').toLowerCase().includes(q)) return true
+      return trainerHolds(u).some(h => h.name.toLowerCase().includes(q))
+    })
+    .sort((a, b) => {
+      let cmp = 0
+      if (sort.col === 'name')  cmp = (a.displayName || '').localeCompare(b.displayName || '', 'da')
+      if (sort.col === 'email') cmp = (a.email || '').localeCompare(b.email || '', 'da')
+      if (sort.col === 'holds') cmp = a.lederHolds.length - b.lederHolds.length
+      if (sort.col === 'seen')  cmp = tsVal(a.lastSeen) - tsVal(b.lastSeen)
+      return sort.dir === 'asc' ? cmp : -cmp
+    })
 
   if (loading) return <div className="page-header"><div className="spinner" /></div>
+
+  if (drillHold) {
+    return <TaHoldDrill holdId={drillHold.id} holdName={drillHold.name} onClose={() => setDrillHold(null)} />
+  }
 
   return (
     <>
@@ -5896,10 +5929,10 @@ function TaTraenerePage() {
           <table>
             <thead>
               <tr>
-                <th>Navn</th>
-                <th>E-mail</th>
-                <th>Hold (leder) — klik for aktivitet</th>
-                <th>Sidst logget ind</th>
+                <SortTh col="name">Navn</SortTh>
+                <SortTh col="email">E-mail</SortTh>
+                <SortTh col="holds">Hold (leder)</SortTh>
+                <SortTh col="seen">Sidst logget ind</SortTh>
               </tr>
             </thead>
             <tbody>
@@ -5913,8 +5946,8 @@ function TaTraenerePage() {
                       {holds.length === 0 ? <span style={{ color: 'var(--text3)' }}>–</span> : (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                           {holds.map(h => (
-                            <span key={h.id} onClick={() => setDrillHold(drillHold?.id === h.id ? null : h)}
-                              style={{ background: drillHold?.id === h.id ? 'var(--green)' : 'var(--green-soft)', color: drillHold?.id === h.id ? '#fff' : 'var(--green)', borderRadius: 4, padding: '2px 7px', fontSize: 11, fontWeight: 600, cursor: 'pointer', userSelect: 'none' }}>
+                            <span key={h.id} onClick={() => setDrillHold(h)}
+                              style={{ background: 'var(--green-soft)', color: 'var(--green)', borderRadius: 4, padding: '2px 7px', fontSize: 11, fontWeight: 600, cursor: 'pointer', userSelect: 'none' }}>
                               {h.name}
                             </span>
                           ))}
@@ -5929,10 +5962,6 @@ function TaTraenerePage() {
           </table>
         </div>
       </div>
-
-      {drillHold && (
-        <TaHoldDrill holdId={drillHold.id} holdName={drillHold.name} onClose={() => setDrillHold(null)} />
-      )}
     </>
   )
 }
@@ -5968,10 +5997,16 @@ function TaHoldDrill({ holdId, holdName, onClose }) {
   const BEV_COLORS = { kamp: ['#dcfce7','#166534'], stævne: ['#dbeafe','#1e40af'], event: ['#fef3c7','#92400e'], møde: ['#f3e8ff','#6b21a8'] }
 
   return (
-    <div className="card" style={{ marginTop: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{holdName} — aktivitet</h3>
-        <button className="btn btn-ghost" onClick={onClose} style={{ fontSize: 12, padding: '4px 10px' }}>Luk ✕</button>
+    <>
+      <div className="page-header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button className="btn btn-ghost" onClick={onClose} style={{ padding: '4px 0', fontSize: 14 }}>← Tilbage</button>
+          <h1 className="page-title" style={{ margin: 0 }}>{holdName}</h1>
+        </div>
+      </div>
+    <div className="card" style={{ marginTop: 0 }}>
+      <div style={{ marginBottom: 16 }}>
+        <span style={{ fontSize: 13, color: 'var(--text2)' }}>Aktivitetsoversigt</span>
       </div>
 
       {loading && <div className="spinner" />}
@@ -6031,6 +6066,7 @@ function TaHoldDrill({ holdId, holdName, onClose }) {
         </div>
       )}
     </div>
+    </>
   )
 }
 
