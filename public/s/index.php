@@ -112,7 +112,7 @@ if ($tilkendegivelseId) {
             'method'        => 'PATCH',
             'header'        => "Authorization: Bearer {$fsToken}\r\nContent-Type: application/json\r\n",
             'content'       => json_encode(['fields' => [
-                'svar'        => ['mapValue' => ['fields' => $svarFields]],
+                'svar'        => ['mapValue' => ['fields' => $svarFields ?: (object)[]]],
                 'opdateretAt' => ['timestampValue' => $now],
             ]]),
             'timeout'       => 10,

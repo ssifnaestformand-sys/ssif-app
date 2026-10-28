@@ -105,7 +105,7 @@ if ($tId === null) {
             'fields' => [
                 'navn'      => ['stringValue' => trim((string)($d['navn'] ?? ''))],
                 'svarToken' => ['stringValue' => $token],
-                'svar'      => ['mapValue'    => ['fields' => []]],
+                'svar'      => ['mapValue'    => ['fields' => (object)[]]],
                 'opdateretAt' => ['nullValue'  => null],
             ],
         ]];
@@ -173,7 +173,7 @@ if ($tId === null) {
             'fields' => [
                 'navn'        => ['stringValue' => trim((string)($d['navn'] ?? ''))],
                 'svarToken'   => ['stringValue' => $token],
-                'svar'        => $ex['svar'] ?? ['mapValue' => ['fields' => []]],
+                'svar'        => $ex['svar'] ?? ['mapValue' => ['fields' => (object)[]]],
                 'opdateretAt' => $ex['opdateretAt'] ?? ['nullValue' => null],
             ],
         ]];
