@@ -5806,9 +5806,18 @@ function HoldsAdminPage({ authUser }) {
   const [collapsed,     setCollapsed]     = useState(new Set())
   const [holdSearch,    setHoldSearch]    = useState('')
   const [memberSearch,  setMemberSearch]  = useState('')
-  const [togglingAktiv, setTogglingAktiv] = useState(false)
-  const [syncing,       setSyncing]       = useState(null)
-  const [syncResult,    setSyncResult]    = useState(null)
+  const [togglingAktiv,  setTogglingAktiv]  = useState(false)
+  const [syncing,        setSyncing]        = useState(null)
+  const [syncResult,     setSyncResult]     = useState(null)
+  const [syncingHold,    setSyncingHold]    = useState(false)
+  const [syncHoldResult, setSyncHoldResult] = useState(null)
+
+  // Holder selectedHold opdateret, når holds-arrayet genindlæses (fx efter global sync)
+  useEffect(() => {
+    if (!selectedHold) return
+    const refreshed = holds.find(h => h.id === selectedHold.id)
+    if (refreshed) setSelectedHold(refreshed)
+  }, [holds])
 
   function loadAll() {
     setLoading(true)
@@ -5897,6 +5906,31 @@ function HoldsAdminPage({ authUser }) {
     } catch(err) {
       setSyncResult({ ok: false, msg: err.message })
     } finally { setSyncing(null) }
+  }
+
+  async function syncSingleHold() {
+    if (!selectedHold || syncingHold) return
+    setSyncingHold(true)
+    setSyncHoldResult(null)
+    try {
+      const idToken = await authUser.getIdToken()
+      const res  = await fetch('https://app.sejssvejbaek-if.dk/api/sync-hold.php', {
+        method:  'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ conventus_id: parseInt(selectedHold.id, 10) }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setSyncHoldResult({ ok: false, msg: data.error || 'Fejl' }); return }
+      // Opdatér lokalt med friske Conventus-data (admin-felter bevares i holdene)
+      const updated = { ...selectedHold, ...data.hold }
+      setSelectedHold(updated)
+      setHolds(prev => prev.map(h => h.id === selectedHold.id ? updated : h))
+      setSyncHoldResult({ ok: true, msg: 'Opdateret fra Conventus' })
+    } catch(err) {
+      setSyncHoldResult({ ok: false, msg: err.message })
+    } finally {
+      setSyncingHold(false)
+    }
   }
 
   function toggleAfd(id) {
@@ -6041,14 +6075,29 @@ function HoldsAdminPage({ authUser }) {
                   Conventus ID: {selectedHold.id}
                 </div>
               </div>
-              {!membersLoad && (
-                <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)', lineHeight: 1 }}>{members.length}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text2)' }}>
-                    {trainers.length > 0 ? `${trainers.length} tr · ` : ''}{spillere.length} spl
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+                {!membersLoad && (
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)', lineHeight: 1 }}>{members.length}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text2)' }}>
+                      {trainers.length > 0 ? `${trainers.length} tr · ` : ''}{spillere.length} spl
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={syncSingleHold}
+                  disabled={syncingHold}
+                  title="Hent dette holds data fra Conventus"
+                >
+                  {syncingHold ? 'Synker…' : '↻ Sync hold'}
+                </button>
+                {syncHoldResult && (
+                  <span style={{ fontSize: 11, color: syncHoldResult.ok ? '#1a5c2a' : '#c0392b' }}>
+                    {syncHoldResult.msg}
+                  </span>
+                )}
+              </div>
             </div>
 
             <div style={{ padding: '16px 18px' }}>
