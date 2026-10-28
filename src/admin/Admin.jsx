@@ -5830,7 +5830,8 @@ function TaTraenerePage() {
       setUsers(uSnap.docs
         .map(d => ({ id: d.id, ...d.data() }))
         // Vis kun trænere der rent faktisk har logget ind i trænerappen
-        .filter(u => u.lastSeen != null)
+        // lederHolds skrives kun af trainer-data.php ved succesfuldt træner-login
+        .filter(u => Array.isArray(u.lederHolds) && u.lederHolds.length > 0)
         .sort((a, b) => (a.displayName || '').localeCompare(b.displayName || '', 'da')))
     }).catch(() => {}).finally(() => setLoading(false))
   }, [])
