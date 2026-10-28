@@ -5818,8 +5818,8 @@ function TaTraenerePage() {
     Promise.all([
       getDocs(query(collection(db, 'users'), where('role', '==', 'trainer'))),
       getDocs(collection(db, 'holds')),
-    ]).then(([uSnap, hSnap]) => {
-      // Indeksér på både d.id og conventus_id-feltet, så opslag virker uanset lagring
+      getDocs(collection(db, 'members')),
+    ]).then(([uSnap, hSnap, mSnap]) => {
       const hm = {}
       hSnap.docs.forEach(d => {
         const titel = d.data().titel || d.id
@@ -5827,11 +5827,28 @@ function TaTraenerePage() {
         if (d.data().conventus_id != null) hm[String(d.data().conventus_id)] = titel
       })
       setHoldMap(hm)
+
+      // Byg email → lederHolds fra members (autoritative kilde fra Conventus)
+      const memberLhByEmail = {}
+      mSnap.docs.forEach(d => {
+        const f = d.data()
+        const lh = (f.lederHolds || []).map(String).filter(Boolean)
+        if (lh.length === 0) return
+        ;(f.allEmails || []).forEach(e => { if (e) memberLhByEmail[e.toLowerCase()] = lh })
+      })
+
       setUsers(uSnap.docs
-        .map(d => ({ id: d.id, ...d.data() }))
-        // Vis kun trænere der rent faktisk har logget ind i trænerappen
-        // lederHolds skrives kun af trainer-data.php ved succesfuldt træner-login
-        .filter(u => Array.isArray(u.lederHolds) && u.lederHolds.length > 0)
+        .map(d => {
+          const u = { id: d.id, ...d.data() }
+          // Brug lederHolds fra users-doc hvis sat (trainer-data.php deployet)
+          if (Array.isArray(u.lederHolds) && u.lederHolds.length > 0) return u
+          // Fallback: slå op i members via email
+          const email = (u.email || '').toLowerCase()
+          const memberLh = email ? memberLhByEmail[email] : null
+          if (memberLh) return { ...u, lederHolds: memberLh }
+          return null
+        })
+        .filter(Boolean)
         .sort((a, b) => (a.displayName || '').localeCompare(b.displayName || '', 'da')))
     }).catch(() => {}).finally(() => setLoading(false))
   }, [])

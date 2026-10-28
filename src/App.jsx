@@ -322,6 +322,70 @@ function LoginScreen() {
 // ── AccessDeniedScreen ────────────────────────────────────────────────────────
 
 function AccessDeniedScreen({ user, onLogout }) {
+  const [view,    setView]    = useState('main')
+  const [cEmail,  setCEmail]  = useState('')
+  const [cPass,   setCPass]   = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error,   setError]   = useState('')
+
+  async function linkConventus() {
+    if (!cEmail || !cPass) return
+    setLoading(true); setError('')
+    try {
+      const idToken = await user.getIdToken()
+      const res  = await fetch('/api/trainer-link-email.php', {
+        method:  'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ conventusEmail: cEmail, conventusPassword: cPass }),
+      })
+      const data = await res.json()
+      if (data.status === 'ok') {
+        await signInWithCustomToken(auth, data.customToken)
+        // onAuthStateChanged → checkAccess kører automatisk med det nye token
+      } else {
+        setError(data.error || 'Tilknytning fejlede. Prøv igen.')
+      }
+    } catch {
+      setError('Netværksfejl. Prøv igen.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (view === 'tilknyt') return (
+    <div className="screen-center">
+      <div style={{ width: '100%', maxWidth: 380 }}>
+        <button className="btn btn-ghost" onClick={() => { setView('main'); setError('') }}>← Tilbage</button>
+        <h2 style={{ fontSize: 20, fontWeight: 800, margin: '16px 0 4px' }}>Tilknyt Conventus-konto</h2>
+        <p style={{ fontSize: 14, color: 'var(--text3)', lineHeight: 1.55, marginBottom: 24 }}>
+          Log ind med Conventus for at tilknytte din Google-konto
+          {user?.email ? <> (<strong>{user.email}</strong>)</> : ''}.
+          Næste gang du logger ind med Google virker det automatisk.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div className="form-field">
+            <label className="form-label">Conventus-email</label>
+            <input className="form-input" type="email" value={cEmail}
+              onChange={e => setCEmail(e.target.value)}
+              placeholder="din@email.dk" autoComplete="username" />
+          </div>
+          <div className="form-field">
+            <label className="form-label">Adgangskode</label>
+            <input className="form-input" type="password" value={cPass}
+              onChange={e => setCPass(e.target.value)}
+              placeholder="••••••••" autoComplete="current-password"
+              onKeyDown={e => e.key === 'Enter' && linkConventus()} />
+          </div>
+          <button className="btn btn-primary" onClick={linkConventus}
+            disabled={loading || !cEmail || !cPass}>
+            {loading ? 'Tilknytter…' : 'Tilknyt og log ind'}
+          </button>
+        </div>
+        {error && <p style={{ marginTop: 12, fontSize: 13, color: 'var(--red)' }}>{error}</p>}
+      </div>
+    </div>
+  )
+
   return (
     <div className="screen-center">
       <div style={{ width: '100%', maxWidth: 360, textAlign: 'center' }}>
@@ -335,12 +399,17 @@ function AccessDeniedScreen({ user, onLogout }) {
             Logget ind som {user.email}
           </p>
         )}
-        <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 28 }}>
-          Kontakt en administrator, hvis du mener det er en fejl.
+        <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 24 }}>
+          Har du logget ind med Google med en anden email end din Conventus-email?
         </p>
-        <button className="btn btn-primary" onClick={onLogout} style={{ maxWidth: 220, margin: '0 auto' }}>
-          Log ud
-        </button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 280, margin: '0 auto' }}>
+          <button className="btn btn-primary" onClick={() => setView('tilknyt')}>
+            Tilknyt Conventus-konto
+          </button>
+          <button className="btn btn-outline" onClick={onLogout}>
+            Log ud
+          </button>
+        </div>
       </div>
     </div>
   )

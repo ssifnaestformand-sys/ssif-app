@@ -95,9 +95,9 @@ usort($holds, fn($a, $b) => strcoll($a['titel'], $b['titel']));
 
 // ── Opdatér users/{uid} – registrerer login og gemmer hold-tilknytning ─────────
 // Bruges af backoffice til at se hvilke trænere der har logget ind og hvilke hold de leder.
-$now    = date('Y-m-d\TH:i:s\Z');
+// role='admin' overskrives aldrig — kun trainer-specifikke felter opdateres for admin-konti.
+$now     = date('Y-m-d\TH:i:s\Z');
 $uFields = [
-    'role'         => ['stringValue' => 'trainer'],
     'displayName'  => ['stringValue' => $displayName],
     'email'        => ['stringValue' => $email],
     'conventus_id' => ['stringValue' => $conventus_id],
@@ -107,6 +107,12 @@ $uFields = [
         array_keys($lederHoldIds)
     ))]],
 ];
+// Tilføj kun role='trainer' hvis eksisterende doc ikke allerede har role='admin'
+$existingDoc  = fs_get("{$base}/users/{$uid}", $fsToken);
+$existingRole = $existingDoc['fields']['role']['stringValue'] ?? '';
+if ($existingRole !== 'admin') {
+    $uFields['role'] = ['stringValue' => 'trainer'];
+}
 $mask = implode('&', array_map(fn($k) => 'updateMask.fieldPaths=' . urlencode($k), array_keys($uFields)));
 @file_get_contents("{$base}/users/{$uid}?{$mask}", false, stream_context_create(['http' => [
     'method'        => 'PATCH',
