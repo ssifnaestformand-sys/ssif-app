@@ -50,8 +50,12 @@ $conventusId = (int)($body['conventus_id'] ?? $_POST['conventus_id'] ?? 0);
 if ($conventusId <= 0) { http_response_code(400); echo json_encode(['error' => 'conventus_id mangler eller ugyldig']); exit; }
 
 // ── 1. Hent holdet fra Firestore (for afdeling_id + hold_type) ───────────────
-$base    = "projects/{$projectId}/databases/(default)/documents";
-$holdDoc = fs_get("{$base}/holds/{$conventusId}", $fsToken);
+// $docBase bruges af fs_patch_doc (som selv prepender https://firestore.googleapis.com/v1/)
+// $fsBase  bruges af fs_get (som bruger URL'en direkte via file_get_contents)
+$docBase = "projects/{$projectId}/databases/(default)/documents";
+$fsBase  = "https://firestore.googleapis.com/v1/{$docBase}";
+
+$holdDoc = fs_get("{$fsBase}/holds/{$conventusId}", $fsToken);
 if (!$holdDoc) { http_response_code(404); echo json_encode(['error' => "Hold {$conventusId} ikke fundet i Firestore"]); exit; }
 
 $f           = $holdDoc['fields'] ?? [];
@@ -116,7 +120,7 @@ foreach ($holdKeys as $k) {
     $fsFields[$k] = to_fs_val($k === 'sidst_synkroniseret' ? $now : ($data[$k] ?? ''));
 }
 $mask    = implode('&', array_map(fn($k) => 'updateMask.fieldPaths=' . urlencode($k), $holdKeys));
-$docPath = "{$base}/holds/{$conventusId}?{$mask}";
+$docPath = "{$docBase}/holds/{$conventusId}?{$mask}";
 $ok      = fs_patch_doc($fsToken, $docPath, $fsFields);
 
 if (!$ok) {
