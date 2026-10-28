@@ -93,5 +93,28 @@ foreach (array_keys($lederHoldIds) as $holdId) {
 
 usort($holds, fn($a, $b) => strcoll($a['titel'], $b['titel']));
 
+// ── Opdatér users/{uid} – registrerer login og gemmer hold-tilknytning ─────────
+// Bruges af backoffice til at se hvilke trænere der har logget ind og hvilke hold de leder.
+$now    = date('Y-m-d\TH:i:s\Z');
+$uFields = [
+    'role'         => ['stringValue' => 'trainer'],
+    'displayName'  => ['stringValue' => $displayName],
+    'email'        => ['stringValue' => $email],
+    'conventus_id' => ['stringValue' => $conventus_id],
+    'lastSeen'     => ['timestampValue' => $now],
+    'lederHolds'   => ['arrayValue' => ['values' => array_values(array_map(
+        fn($id) => ['stringValue' => $id],
+        array_keys($lederHoldIds)
+    ))]],
+];
+$mask = implode('&', array_map(fn($k) => 'updateMask.fieldPaths=' . urlencode($k), array_keys($uFields)));
+@file_get_contents("{$base}/users/{$uid}?{$mask}", false, stream_context_create(['http' => [
+    'method'        => 'PATCH',
+    'header'        => "Authorization: Bearer {$fsToken}\r\nContent-Type: application/json\r\n",
+    'content'       => json_encode(['fields' => $uFields]),
+    'timeout'       => 5,
+    'ignore_errors' => true,
+]]));
+
 $tc = trainer_app_config($base, $fsToken);
 echo json_encode(['name' => $displayName, 'holds' => $holds, 'testMode' => $tc['testMode']]);

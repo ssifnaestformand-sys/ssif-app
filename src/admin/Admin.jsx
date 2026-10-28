@@ -5649,6 +5649,7 @@ function TaBegivenhederPage() {
   const [bevs,         setBevs]         = useState([])
   const [holds,        setHolds]        = useState({})
   const [loading,      setLoading]      = useState(true)
+  const [loadError,    setLoadError]    = useState('')
   const [holdFilter,   setHoldFilter]   = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [expanded,     setExpanded]     = useState(null)
@@ -5664,7 +5665,9 @@ function TaBegivenhederPage() {
       hSnap.forEach(d => { h[d.id] = d.data().titel || d.id })
       setHolds(h)
       setBevs(bSnap.docs.map(d => ({ id: d.id, ...d.data() })))
-    }).catch(() => {}).finally(() => setLoading(false))
+    }).catch(e => {
+      setLoadError(`Firestore fejl: ${e?.code || e?.message || 'permission-denied'} — er firestore.rules deployet?`)
+    }).finally(() => setLoading(false))
   }, [])
 
   async function toggleExpand(bevId) {
@@ -5685,6 +5688,12 @@ function TaBegivenhederPage() {
     .filter(b => !statusFilter || b.status === statusFilter)
 
   if (loading) return <div className="page-header"><div className="spinner" /></div>
+  if (loadError) return (
+    <div className="page-header" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 8 }}>
+      <h1 className="page-title">Begivenheder</h1>
+      <p style={{ fontSize: 13, color: 'var(--red)', margin: 0 }}>{loadError}</p>
+    </div>
+  )
 
   return (
     <>
@@ -5861,8 +5870,7 @@ function TaTraenerePage() {
                 <th>Navn</th>
                 <th>E-mail</th>
                 <th>Hold (leder) — klik for aktivitet</th>
-                <th>Sidst set</th>
-                <th>Konventus-ID</th>
+                <th>Sidst logget ind</th>
               </tr>
             </thead>
             <tbody>
@@ -5885,7 +5893,6 @@ function TaTraenerePage() {
                       )}
                     </td>
                     <td style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>{fmt(u.lastSeen)}</td>
-                    <td style={{ fontSize: 12, color: 'var(--text3)' }}>{u.conventus_id || '–'}</td>
                   </tr>
                 )
               })}
