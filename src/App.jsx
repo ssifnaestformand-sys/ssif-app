@@ -572,6 +572,10 @@ function HoldScreen({ hold, user, onBack }) {
     )
   }
 
+  if (view === 'kontingent') {
+    return <KontingentScreen hold={hold} user={user} onBack={() => setView('liste')} />
+  }
+
   if (view === 'form') {
     return (
       <BegivenhedFormScreen
@@ -618,6 +622,11 @@ function HoldScreen({ hold, user, onBack }) {
         <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>
           {hold.titel || `Hold ${hold.id}`}
         </span>
+        <button onClick={() => setView('kontingent')} style={{
+          background: 'none', border: 'none',
+          color: 'rgba(255,255,255,.75)', cursor: 'pointer',
+          fontSize: 13, fontWeight: 500,
+        }}>Spillere</button>
         <button onClick={() => { setView('forbrug'); if (!forbrug) loadForbrug() }} style={{
           background: 'none', border: 'none',
           color: 'rgba(255,255,255,.75)', cursor: 'pointer',
@@ -1693,6 +1702,105 @@ function SendBeskedScreen({ hold, user, onBack }) {
                 : `Send ${kanal === 'mail' ? 'mail' : 'SMS'} til ${totalModtagere} ${kanal === 'mail' ? 'adresser' : 'numre'}`}
             </button>
           </>
+        )}
+      </main>
+    </div>
+  )
+}
+
+// ── KontingentScreen ──────────────────────────────────────────────────────────
+
+function KontingentScreen({ hold, user, onBack }) {
+  const [spillere, setSpillere] = useState(null)
+  const [loading,  setLoading]  = useState(true)
+  const [fejl,     setFejl]     = useState('')
+
+  useEffect(() => { hent() }, [])
+
+  async function hent() {
+    setLoading(true)
+    setFejl('')
+    try {
+      const idToken = await user.getIdToken()
+      const res = await fetch('/api/hold-spillere.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ holdId: hold.id }),
+      })
+      const data = await res.json()
+      if (Array.isArray(data)) {
+        setSpillere(data)
+      } else {
+        setFejl(data.error || 'Ukendt fejl')
+      }
+    } catch {
+      setFejl('Netværksfejl')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="screen">
+      <header style={{
+        background: 'var(--green)', color: '#fff',
+        paddingTop: 'max(13px, env(safe-area-inset-top))',
+        paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
+        display: 'flex', alignItems: 'center', gap: 12,
+      }}>
+        <button onClick={onBack} style={{
+          background: 'none', border: 'none', color: '#fff',
+          cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 4px 0 0',
+        }}>‹</button>
+        <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>
+          Spillere — {hold.titel || `Hold ${hold.id}`}
+        </span>
+        {spillere && (
+          <span style={{ fontSize: 13, color: 'rgba(255,255,255,.75)', fontWeight: 500 }}>
+            {spillere.length} stk.
+          </span>
+        )}
+      </header>
+
+      <main style={{ padding: '16px', maxWidth: 600, margin: '0 auto', width: '100%', flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <p style={{ fontSize: 13, color: 'var(--text3)', margin: 0 }}>
+          Spillere tilmeldt holdet i Conventus (daglig sync). Tilmeldt = betalt kontingent.
+        </p>
+
+        {loading && <div className="spinner" style={{ margin: '32px auto' }} />}
+        {fejl && <div className="error-box">{fejl}</div>}
+
+        {spillere && spillere.length === 0 && (
+          <div className="empty-state">
+            <h3>Ingen spillere fundet</h3>
+            <p>Holdet har ingen tilmeldte i Conventus.</p>
+          </div>
+        )}
+
+        {spillere && spillere.length > 0 && (
+          <div style={{
+            background: 'var(--bg)', border: '1px solid var(--border)',
+            borderRadius: 12, overflow: 'hidden',
+          }}>
+            {spillere.map((s, i) => (
+              <div key={s.id} style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                padding: '10px 14px',
+                borderBottom: i < spillere.length - 1 ? '1px solid var(--border)' : 'none',
+                fontSize: 14,
+              }}>
+                <span style={{
+                  width: 28, height: 28, borderRadius: '50%',
+                  background: 'var(--green-soft)', color: 'var(--green)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 11, fontWeight: 800, flexShrink: 0,
+                }}>
+                  {s.navn.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()}
+                </span>
+                <span style={{ flex: 1, fontWeight: 500 }}>{s.navn}</span>
+              </div>
+            ))}
+          </div>
         )}
       </main>
     </div>
