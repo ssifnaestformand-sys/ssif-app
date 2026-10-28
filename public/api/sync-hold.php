@@ -20,6 +20,18 @@ header('Access-Control-Allow-Methods: POST, OPTIONS');
 header('Access-Control-Allow-Headers: Authorization, Content-Type');
 set_cors_headers();
 
+set_time_limit(60);
+ignore_user_abort(true);
+
+// Sikrer at PHP-fatal-fejl altid returnerer JSON frem for tom body
+register_shutdown_function(function () {
+    $e = error_get_last();
+    if ($e && in_array($e['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR])) {
+        if (!headers_sent()) { http_response_code(500); header('Content-Type: application/json; charset=utf-8'); }
+        echo json_encode(['error' => 'PHP fatal: ' . $e['message']]);
+    }
+});
+
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(200); exit; }
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405); echo json_encode(['error' => 'Kun POST']); exit;
@@ -64,8 +76,8 @@ $hold_type   = $f['hold_type']['stringValue']    ?: 'hold';
 
 // ── 2. Søg holdet i Conventus ─────────────────────────────────────────────────
 // Søgestrategi: prøv afdeling+type, så afdeling+anden-type, så globalt – stop ved fund.
-const FORENING = '1031';
-const BASE_URL = 'https://www.conventus.dk/dataudv/api/adressebog/';
+$cvForening = '1031';
+$cvBaseUrl  = 'https://www.conventus.dk/dataudv/api/adressebog/';
 $ctx = stream_context_create(['http' => ['timeout' => 20, 'ignore_errors' => true]]);
 
 $searches = [];
@@ -81,10 +93,10 @@ $foundAfd = $afdeling_id;
 $foundType = $hold_type;
 
 foreach ($searches as $s) {
-    $params = ['forening' => FORENING, 'key' => $apiKey, 'type' => $s['type']];
+    $params = ['forening' => $cvForening, 'key' => $apiKey, 'type' => $s['type']];
     if ($s['afdeling']) $params['afdeling'] = $s['afdeling'];
 
-    $raw = @file_get_contents(BASE_URL . 'get_grupper.php?' . http_build_query($params), false, $ctx);
+    $raw = @file_get_contents($cvBaseUrl . 'get_grupper.php?' . http_build_query($params), false, $ctx);
     if (!$raw) continue;
 
     if (preg_match('/encoding=["\']ISO-8859-1["\']/i', $raw)) {
@@ -130,7 +142,7 @@ if (!$ok) {
 }
 
 // ── 4. Returnér de opdaterede felter ─────────────────────────────────────────
-echo json_encode([
+$payload = [
     'ok'   => true,
     'hold' => [
         'titel'               => $found['titel'],
@@ -143,7 +155,16 @@ echo json_encode([
         'sidst_synkroniseret' => $now,
     ],
     'synced' => $now,
-], JSON_UNESCAPED_UNICODE);
+];
+$out = json_encode($payload, JSON_UNESCAPED_UNICODE);
+if ($out === false) {
+    // Fallback ved ugyldig UTF-8: erstat strenge med mb_convert_encoding
+    array_walk_recursive($payload, function (&$v) {
+        if (is_string($v)) $v = mb_convert_encoding($v, 'UTF-8', 'UTF-8');
+    });
+    $out = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+}
+echo $out ?: json_encode(['error' => 'json_encode fejlede: ' . json_last_error_msg()]);
 
 // ── Hjælpefunktioner ─────────────────────────────────────────────────────────
 

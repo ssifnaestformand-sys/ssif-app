@@ -5919,7 +5919,9 @@ function HoldsAdminPage({ authUser }) {
         headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
         body:    JSON.stringify({ conventus_id: parseInt(selectedHold.id, 10) }),
       })
-      const data = await res.json()
+      let data
+      try { data = await res.json() }
+      catch { setSyncHoldResult({ ok: false, msg: `Serverfejl (HTTP ${res.status} — tomt svar)` }); return }
       if (!res.ok) { setSyncHoldResult({ ok: false, msg: data.error || 'Fejl' }); return }
       // Opdatér lokalt med friske Conventus-data (admin-felter bevares i holdene)
       const updated = { ...selectedHold, ...data.hold }
