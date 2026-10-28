@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, Fragment } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from 'react'
 import DOMPurify from 'dompurify'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
@@ -5795,112 +5795,293 @@ function TaBegivenhederPage() {
 // ─── Træner app: Hold & spillere ──────────────────────────────────────────────
 
 function TaHoldsPage() {
+  const [afdelinger,     setAfdelinger]     = useState([])
   const [holds,          setHolds]          = useState([])
   const [loading,        setLoading]        = useState(true)
   const [selectedHold,   setSelectedHold]   = useState(null)
   const [members,        setMembers]        = useState([])
   const [membersLoading, setMembersLoading] = useState(false)
-  const [memberCount,    setMemberCount]    = useState({})
+  const [collapsed,      setCollapsed]      = useState(new Set())
+  const [holdSearch,     setHoldSearch]     = useState('')
+  const [memberSearch,   setMemberSearch]   = useState('')
 
   useEffect(() => {
-    getDocs(query(collection(db, 'holds'), orderBy('titel')))
-      .then(snap => setHolds(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
-      .catch(() => {})
-      .finally(() => setLoading(false))
+    Promise.all([
+      getDocs(collection(db, 'afdelinger')),
+      getDocs(query(collection(db, 'holds'), orderBy('titel'))),
+    ]).then(([aSnap, hSnap]) => {
+      setAfdelinger(
+        aSnap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => (a.navn || '').localeCompare(b.navn || '', 'da'))
+      )
+      setHolds(hSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+    }).catch(() => {}).finally(() => setLoading(false))
   }, [])
 
-  async function selectHold(holdId) {
-    if (selectedHold === holdId) { setSelectedHold(null); setMembers([]); return }
-    setSelectedHold(holdId)
+  // Grupper hold under afdelinger, filtrer på søgning
+  const holdsByAfd = useMemo(() => {
+    const q = holdSearch.toLowerCase()
+    const map = {}
+    for (const h of holds) {
+      if (q && !(h.titel || '').toLowerCase().includes(q)) continue
+      const key = h.afdeling_id || '__ingen__'
+      if (!map[key]) map[key] = []
+      map[key].push(h)
+    }
+    return map
+  }, [holds, holdSearch])
+
+  // Sorteret afdeling-liste — kun dem med hold efter filtrering
+  const afdList = useMemo(() => {
+    const known = afdelinger.filter(a => holdsByAfd[a.id])
+    const rest  = holdsByAfd['__ingen__'] ? [{ id: '__ingen__', navn: 'Uden afdeling' }] : []
+    return [...known, ...rest]
+  }, [afdelinger, holdsByAfd])
+
+  async function selectHold(hold) {
+    if (selectedHold?.id === hold.id) { setSelectedHold(null); setMembers([]); return }
+    setSelectedHold(hold)
     setMembersLoading(true)
     setMembers([])
+    setMemberSearch('')
     try {
       const snap = await getDocs(
-        query(collection(db, 'members'), where('holdIds', 'array-contains', holdId))
+        query(collection(db, 'members'), where('holdIds', 'array-contains', hold.id))
       )
-      const list = snap.docs
-        .map(d => ({ id: d.id, ...d.data() }))
-        .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'da'))
-      setMembers(list)
-      setMemberCount(p => ({...p, [holdId]: list.length}))
+      setMembers(
+        snap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'da'))
+      )
     } catch(e) {}
     setMembersLoading(false)
   }
 
+  function toggleAfd(id) {
+    setCollapsed(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
   if (loading) return <div className="page-header"><div className="spinner" /></div>
 
-  const trainers = members.filter(m => (m.lederHolds || []).some(id => String(id) === String(selectedHold)))
-  const spillere = members.filter(m => !(m.lederHolds || []).some(id => String(id) === String(selectedHold)))
+  const isLederOf = id => (m) => (m.lederHolds || []).some(x => String(x) === String(id))
+  const trainers     = members.filter(isLederOf(selectedHold?.id))
+  const spillere     = members.filter(m => !isLederOf(selectedHold?.id)(m))
+  const mq           = memberSearch.toLowerCase()
+  const visSpillere  = mq ? spillere.filter(m => (m.name || '').toLowerCase().includes(mq)) : spillere
 
   return (
     <>
       <div className="page-header">
         <h1 className="page-title">Hold & spillere</h1>
-        <span style={{ fontSize: 13, color: 'var(--text2)' }}>{holds.length} hold</span>
+        <span style={{ fontSize: 13, color: 'var(--text2)' }}>
+          {afdelinger.length} afdelinger · {holds.length} hold
+        </span>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: selectedHold ? '1fr 1.2fr' : '1fr', gap: 16, alignItems: 'start' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {holds.length === 0 && <EmptyState icon="users" text="Ingen synkroniserede hold" />}
-          {holds.map(hold => {
-            const active = selectedHold === hold.id
-            const cnt    = memberCount[hold.id]
+      <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 16, alignItems: 'start' }}>
+
+        {/* ── Venstre: afdeling-træ ──────────────────────────────── */}
+        <div>
+          <input
+            className="form-input"
+            placeholder="Søg hold…"
+            value={holdSearch}
+            onChange={e => setHoldSearch(e.target.value)}
+            style={{ marginBottom: 10 }}
+          />
+
+          {afdList.length === 0 && (
+            <p style={{ fontSize: 13, color: 'var(--text2)', textAlign: 'center', padding: '16px 0' }}>
+              {holdSearch ? `Ingen hold matcher "${holdSearch}"` : 'Ingen hold fundet'}
+            </p>
+          )}
+
+          {afdList.map(afd => {
+            const afdHolds  = holdsByAfd[afd.id] || []
+            const isCollapsed = collapsed.has(afd.id)
             return (
-              <button key={hold.id}
-                style={{ background: active ? '#e8f5ec' : 'var(--card)',
-                  border: `1.5px solid ${active ? '#1a5c2a' : 'var(--border)'}`,
-                  borderRadius: 10, padding: '12px 14px', cursor: 'pointer',
-                  textAlign: 'left', display: 'flex', alignItems: 'center', gap: 10 }}
-                onClick={() => selectHold(hold.id)}
-              >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>{hold.titel || hold.id}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>
-                    ID: {hold.id}{cnt != null ? ` · ${cnt} spillere` : ''}
+              <div key={afd.id} style={{ marginBottom: 4 }}>
+                {/* Afdeling-header */}
+                <button
+                  onClick={() => toggleAfd(afd.id)}
+                  style={{ width: '100%', background: 'var(--bg)', border: 'none',
+                    borderBottom: '2px solid var(--border)', cursor: 'pointer',
+                    padding: '7px 10px', display: 'flex', alignItems: 'center',
+                    justifyContent: 'space-between', textAlign: 'left', borderRadius: '6px 6px 0 0' }}
+                >
+                  <span style={{ fontWeight: 700, fontSize: 11, color: 'var(--text2)',
+                    textTransform: 'uppercase', letterSpacing: 0.6 }}>
+                    {afd.navn}
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ fontSize: 11, color: 'var(--text2)', fontWeight: 600 }}>
+                      {afdHolds.length}
+                    </span>
+                    <svg width="11" height="11" viewBox="0 0 12 12" fill="none"
+                      style={{ transition: 'transform .15s', transform: isCollapsed ? 'rotate(-90deg)' : 'none',
+                        color: 'var(--text2)' }}>
+                      <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                    </svg>
                   </div>
-                </div>
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"
-                  style={{ color: active ? '#1a5c2a' : 'var(--text2)', flexShrink: 0, transition: 'transform .15s', transform: active ? 'rotate(90deg)' : 'none' }}>
-                  <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
-              </button>
+                </button>
+
+                {!isCollapsed && (
+                  <div style={{ paddingBottom: 6, borderLeft: '2px solid var(--border)',
+                    marginLeft: 10, paddingLeft: 6 }}>
+                    {afdHolds.map(hold => {
+                      const sel     = selectedHold?.id === hold.id
+                      const inaktiv = hold.aktiv === false
+                      return (
+                        <button key={hold.id}
+                          onClick={() => selectHold(hold)}
+                          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 6,
+                            background: sel ? '#e8f5ec' : 'transparent',
+                            border: `1px solid ${sel ? '#1a5c2a' : 'transparent'}`,
+                            borderRadius: 7, padding: '6px 8px', cursor: 'pointer',
+                            textAlign: 'left', marginBottom: 1,
+                            opacity: inaktiv ? 0.45 : 1 }}
+                        >
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: sel ? 700 : 400,
+                              color: sel ? '#1a5c2a' : 'var(--text)',
+                              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {hold.titel || hold.id}
+                            </div>
+                          </div>
+                          {inaktiv && (
+                            <span style={{ fontSize: 10, color: '#999', fontWeight: 700,
+                              flexShrink: 0 }}>OFF</span>
+                          )}
+                          {sel && (
+                            <svg width="10" height="10" viewBox="0 0 16 16" fill="none"
+                              style={{ color: '#1a5c2a', flexShrink: 0 }}>
+                              <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                            </svg>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
             )
           })}
         </div>
 
-        {selectedHold && (
-          <div className="card" style={{ padding: 16 }}>
-            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12, color: 'var(--text)' }}>
-              {holds.find(h => h.id === selectedHold)?.titel || selectedHold}
-            </div>
-            {membersLoading && <div className="spinner" style={{ margin: '16px auto' }} />}
-            {!membersLoading && members.length === 0 && (
-              <p style={{ fontSize: 13, color: 'var(--text2)', margin: 0 }}>Ingen spillere synkroniseret på dette hold.</p>
-            )}
-            {!membersLoading && trainers.length > 0 && (
-              <>
-                <div style={{ fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', marginBottom: 6 }}>Trænere / ledere</div>
-                {trainers.map(m => (
-                  <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8,
-                    padding: '7px 10px', marginBottom: 4, borderRadius: 8,
-                    background: '#f0f7f1', border: '1px solid #dde5dd', fontSize: 13 }}>
-                    <span style={{ flex: 1, fontWeight: 600 }}>{m.name}</span>
-                    <span style={{ fontSize: 11, color: '#1a5c2a', fontWeight: 700 }}>Træner</span>
-                  </div>
-                ))}
-                <div style={{ fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', margin: '12px 0 6px' }}>
-                  Spillere ({spillere.length})
+        {/* ── Højre: detailpanel ─────────────────────────────────── */}
+        {!selectedHold ? (
+          <div className="card" style={{ padding: '40px 24px', textAlign: 'center' }}>
+            <Icon name="users" size={36} color="#d1d5db" />
+            <p style={{ color: 'var(--text2)', fontSize: 14, marginTop: 12 }}>
+              Vælg et hold for at se spillere og trænere
+            </p>
+          </div>
+        ) : (
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            {/* Hold-header */}
+            <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)',
+              background: 'var(--bg)', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 800, fontSize: 16, color: 'var(--text)', marginBottom: 3 }}>
+                  {selectedHold.titel}
+                  {selectedHold.aktiv === false && (
+                    <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#c0392b',
+                      background: '#fff0f0', borderRadius: 5, padding: '2px 6px' }}>INAKTIV</span>
+                  )}
                 </div>
-              </>
-            )}
-            {!membersLoading && spillere.map(m => (
-              <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8,
-                padding: '7px 10px', marginBottom: 4, borderRadius: 8,
-                background: 'var(--bg)', border: '1px solid var(--border)', fontSize: 13 }}>
-                <span style={{ flex: 1 }}>{m.name}</span>
-                <span style={{ fontSize: 11, color: 'var(--text2)' }}>{(m.allEmails || [])[0] || '—'}</span>
+                <div style={{ fontSize: 12, color: 'var(--text2)' }}>
+                  ID: {selectedHold.id}
+                  {selectedHold.aktivitet_titel ? ` · ${selectedHold.aktivitet_titel}` : ''}
+                  {selectedHold.periode_fra ? ` · ${selectedHold.periode_fra}–${selectedHold.periode_til || ''}` : ''}
+                </div>
               </div>
-            ))}
+              {!membersLoading && (
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text)', lineHeight: 1 }}>
+                    {members.length}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text2)' }}>
+                    {trainers.length > 0 ? `${trainers.length} tr · ` : ''}{spillere.length} spl
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div style={{ padding: '16px 18px' }}>
+              {membersLoading && <div className="spinner" style={{ margin: '32px auto' }} />}
+
+              {!membersLoading && members.length === 0 && (
+                <p style={{ color: 'var(--text2)', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>
+                  Ingen synkroniserede spillere på dette hold.
+                </p>
+              )}
+
+              {/* Trænere */}
+              {!membersLoading && trainers.length > 0 && (
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#888',
+                    textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
+                    Trænere & ledere ({trainers.length})
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {trainers.map(m => (
+                      <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10,
+                        padding: '8px 12px', borderRadius: 8,
+                        background: '#f0f7f1', border: '1px solid #d5e8d8', fontSize: 13 }}>
+                        <span style={{ flex: 1, fontWeight: 600 }}>{m.name}</span>
+                        <span style={{ fontSize: 12, color: '#1a5c2a', fontWeight: 700 }}>Træner</span>
+                        <span style={{ fontSize: 12, color: 'var(--text2)' }}>
+                          {(m.allEmails || [])[0] || ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Spillere */}
+              {!membersLoading && spillere.length > 0 && (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center',
+                    justifyContent: 'space-between', marginBottom: 8 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#888',
+                      textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                      Spillere ({spillere.length})
+                    </div>
+                    <input
+                      className="form-input"
+                      placeholder="Filtrer navn…"
+                      value={memberSearch}
+                      onChange={e => setMemberSearch(e.target.value)}
+                      style={{ width: 150, padding: '4px 8px', fontSize: 12 }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {visSpillere.map(m => (
+                      <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10,
+                        padding: '7px 12px', borderRadius: 8,
+                        background: 'var(--bg)', border: '1px solid var(--border)', fontSize: 13 }}>
+                        <span style={{ flex: 1 }}>{m.name}</span>
+                        <span style={{ fontSize: 12, color: 'var(--text2)' }}>
+                          {(m.allEmails || [])[0] || ''}
+                        </span>
+                      </div>
+                    ))}
+                    {visSpillere.length === 0 && memberSearch && (
+                      <p style={{ fontSize: 13, color: 'var(--text2)', textAlign: 'center',
+                        padding: '12px 0', margin: 0 }}>
+                        Ingen spillere matcher "{memberSearch}"
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
