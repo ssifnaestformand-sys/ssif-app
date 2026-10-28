@@ -395,19 +395,17 @@ function AccessDeniedScreen({ user, onLogout }) {
           Dette værktøj er kun for trænere og ledere i Sejs-Svejbæk IF.
         </p>
         {user?.email && (
-          <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 6 }}>
+          <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 24 }}>
             Logget ind som {user.email}
           </p>
         )}
-        <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 24 }}>
-          Har du logget ind med Google med en anden email end din Conventus-email?
-        </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 280, margin: '0 auto' }}>
-          <button className="btn btn-primary" onClick={() => setView('tilknyt')}>
-            Tilknyt Conventus-konto
+          <button className="btn btn-primary" onClick={onLogout}>
+            Log ud og prøv med Conventus-login
           </button>
-          <button className="btn btn-outline" onClick={onLogout}>
-            Log ud
+          <button className="btn btn-ghost" style={{ fontSize: 13, color: 'var(--text2)', marginTop: 4 }}
+            onClick={() => setView('tilknyt')}>
+            Bruger du en anden Google-mail end din Conventus-mail? Tilknyt her →
           </button>
         </div>
       </div>

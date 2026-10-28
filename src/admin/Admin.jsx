@@ -5816,10 +5816,10 @@ function TaTraenerePage() {
 
   useEffect(() => {
     Promise.all([
-      getDocs(query(collection(db, 'users'), where('role', '==', 'trainer'))),
+      getDocs(query(collection(db, 'members'), where('isLeder', '==', true))),
       getDocs(collection(db, 'holds')),
-      getDocs(collection(db, 'members')),
-    ]).then(([uSnap, hSnap, mSnap]) => {
+      getDocs(collection(db, 'users')),
+    ]).then(([mSnap, hSnap, uSnap]) => {
       const hm = {}
       hSnap.docs.forEach(d => {
         const titel = d.data().titel || d.id
@@ -5828,25 +5828,28 @@ function TaTraenerePage() {
       })
       setHoldMap(hm)
 
-      // Byg email → lederHolds fra members (autoritative kilde fra Conventus)
-      const memberLhByEmail = {}
-      mSnap.docs.forEach(d => {
-        const f = d.data()
-        const lh = (f.lederHolds || []).map(String).filter(Boolean)
-        if (lh.length === 0) return
-        ;(f.allEmails || []).forEach(e => { if (e) memberLhByEmail[e.toLowerCase()] = lh })
+      // Byg email → users-doc (inkl. admins og trænere)
+      const userByEmail = {}
+      uSnap.docs.forEach(d => {
+        const email = (d.data().email || '').toLowerCase()
+        if (email) userByEmail[email] = { id: d.id, ...d.data() }
       })
 
-      setUsers(uSnap.docs
+      // Members er den autoritative kilde — isLeder=true dækker alle, inkl. admin-rolle
+      setUsers(mSnap.docs
         .map(d => {
-          const u = { id: d.id, ...d.data() }
-          // Brug lederHolds fra users-doc hvis sat (trainer-data.php deployet)
-          if (Array.isArray(u.lederHolds) && u.lederHolds.length > 0) return u
-          // Fallback: slå op i members via email
-          const email = (u.email || '').toLowerCase()
-          const memberLh = email ? memberLhByEmail[email] : null
-          if (memberLh) return { ...u, lederHolds: memberLh }
-          return null
+          const f = d.data()
+          const lh = (f.lederHolds || []).map(String).filter(Boolean)
+          if (lh.length === 0) return null
+          const emails = (f.allEmails || []).map(e => (e || '').toLowerCase()).filter(Boolean)
+          const u = emails.map(e => userByEmail[e]).find(Boolean)
+          return {
+            id: u?.id || d.id,
+            displayName: u?.displayName || f.name || '–',
+            email: u?.email || emails[0] || '',
+            lederHolds: lh,
+            lastSeen: u?.lastSeen || null,
+          }
         })
         .filter(Boolean)
         .sort((a, b) => (a.displayName || '').localeCompare(b.displayName || '', 'da')))
