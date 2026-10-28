@@ -313,8 +313,10 @@ function InvitationRequiredPage({ user }) {
 // Single source of truth for all grantable pages. Used by Sidebar + UsersPage.
 
 const BACKOFFICE_PAGES = [
-  { group: 'Træner app',    id: 'ta_begivenheder', label: 'Begivenheder',   icon: 'calendar' },
-  { group: 'Træner app',    id: 'traener_app',     label: 'Indstillinger',  icon: 'phone'    },
+  { group: 'Træner app',    id: 'ta_begivenheder',  label: 'Begivenheder',      icon: 'calendar' },
+  { group: 'Træner app',    id: 'ta_trænere',       label: 'Trænere',           icon: 'users'    },
+  { group: 'Træner app',    id: 'ta_kommunikation', label: 'Kommunikation',     icon: 'sms'      },
+  { group: 'Træner app',    id: 'traener_app',      label: 'Indstillinger',     icon: 'phone'    },
   { group: 'Arkiv',         id: 'dashboard',       label: 'Dashboard',      icon: 'home'     },
   { group: 'Arkiv',         id: 'news',            label: 'Nyheder',        icon: 'news'     },
   { group: 'Arkiv',         id: 'events',          label: 'Begivenheder',   icon: 'calendar' },
@@ -5794,6 +5796,241 @@ function TaBegivenhederPage() {
   )
 }
 
+// ─── Træner app: Trænere ─────────────────────────────────────────────────────
+
+function TaTraenerePage() {
+  const [users,   setUsers]   = useState([])
+  const [holdMap, setHoldMap] = useState({})
+  const [loading, setLoading] = useState(true)
+  const [search,  setSearch]  = useState('')
+
+  useEffect(() => {
+    Promise.all([
+      getDocs(query(collection(db, 'users'), where('role', '==', 'trainer'))),
+      getDocs(collection(db, 'holds')),
+    ]).then(([uSnap, hSnap]) => {
+      const hm = {}
+      hSnap.docs.forEach(d => { hm[String(d.data().conventus_id || d.id)] = d.data().titel || d.id })
+      setHoldMap(hm)
+      setUsers(uSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (a.displayName || '').localeCompare(b.displayName || '', 'da')))
+    }).catch(() => {}).finally(() => setLoading(false))
+  }, [])
+
+  function trainerHolds(u) {
+    const ids = [...new Set([
+      ...(u.lederHolds || []).map(String),
+      ...(u.holdIds    || []).map(String),
+    ])]
+    return ids.map(id => holdMap[id] || `Hold ${id}`)
+  }
+
+  function fmt(ts) {
+    if (!ts) return '–'
+    const d = ts.toDate ? ts.toDate() : new Date(ts)
+    return d.toLocaleDateString('da-DK', { day: '2-digit', month: 'short', year: 'numeric' })
+  }
+
+  const q = search.trim().toLowerCase()
+  const filtered = users.filter(u => {
+    if (!q) return true
+    if ((u.displayName || '').toLowerCase().includes(q)) return true
+    if ((u.email || '').toLowerCase().includes(q)) return true
+    return trainerHolds(u).some(h => h.toLowerCase().includes(q))
+  })
+
+  if (loading) return <div className="page-header"><div className="spinner" /></div>
+
+  return (
+    <>
+      <div className="page-header">
+        <h1 className="page-title">Trænere</h1>
+        <span style={{ fontSize: 13, color: 'var(--text2)' }}>{users.length} trænere</span>
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <input className="form-input" style={{ maxWidth: 300 }} placeholder="Søg navn, e-mail eller hold…"
+          value={search} onChange={e => setSearch(e.target.value)} />
+      </div>
+
+      {filtered.length === 0 && <EmptyState icon="users" text="Ingen trænere matcher søgningen" />}
+
+      <div className="card">
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Navn</th>
+                <th>E-mail</th>
+                <th>Hold (leder)</th>
+                <th>Sidst set</th>
+                <th>Konventus-ID</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(u => {
+                const holds = trainerHolds(u)
+                return (
+                  <tr key={u.id}>
+                    <td style={{ fontWeight: 600, fontSize: 13 }}>{u.displayName || '–'}</td>
+                    <td style={{ fontSize: 12, color: 'var(--text2)' }}>{u.email || '–'}</td>
+                    <td style={{ fontSize: 12 }}>
+                      {holds.length === 0 ? <span style={{ color: 'var(--text3)' }}>–</span> : (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                          {holds.map(h => (
+                            <span key={h} style={{ background: 'var(--green-soft)', color: 'var(--green)', borderRadius: 4, padding: '2px 7px', fontSize: 11, fontWeight: 600 }}>{h}</span>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                    <td style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>{fmt(u.lastSeen)}</td>
+                    <td style={{ fontSize: 12, color: 'var(--text3)' }}>{u.conventus_id || '–'}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  )
+}
+
+// ─── Træner app: Kommunikationshistorik ──────────────────────────────────────
+
+function TaKommunikationPage() {
+  const [logs,        setLogs]        = useState([])
+  const [holdMap,     setHoldMap]     = useState({})
+  const [loading,     setLoading]     = useState(true)
+  const [periode,     setPeriode]     = useState(() => {
+    const n = new Date()
+    return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`
+  })
+
+  const periodeOptions = Array.from({ length: 12 }, (_, i) => {
+    const d = new Date(); d.setMonth(d.getMonth() - i)
+    const yr = d.getFullYear(); const mo = String(d.getMonth()+1).padStart(2,'0')
+    const label = d.toLocaleDateString('da-DK', { month: 'long', year: 'numeric' })
+    return { value: `${yr}-${mo}`, label: label.charAt(0).toUpperCase() + label.slice(1) }
+  })
+
+  useEffect(() => {
+    getDocs(collection(db, 'holds')).then(s => {
+      const hm = {}
+      s.docs.forEach(d => { hm[String(d.data().conventus_id || d.id)] = d.data().titel || d.id })
+      setHoldMap(hm)
+    }).catch(() => {})
+  }, [])
+
+  useEffect(() => { loadLogs() }, [periode])
+
+  function loadLogs() {
+    const [yr, mo] = periode.split('-').map(Number)
+    const start = Timestamp.fromDate(new Date(yr, mo-1, 1))
+    const end   = Timestamp.fromDate(new Date(yr, mo, 1))
+    setLoading(true)
+    getDocs(query(collection(db, 'kommunikation_logs'),
+      where('sentAt', '>=', start), where('sentAt', '<', end),
+      orderBy('sentAt', 'desc'), limit(500)))
+      .then(s => {
+        // Filtrer til kun træner-app logs (scope starter med 'begivenhed:' eller er 'besked')
+        const all = s.docs.map(d => ({ id: d.id, ...d.data() }))
+        setLogs(all.filter(l => l.scope === 'besked' || (l.scope || '').startsWith('begivenhed:')))
+      })
+      .catch(() => {}).finally(() => setLoading(false))
+  }
+
+  function fmt(ts) {
+    if (!ts) return '–'
+    const d = ts.toDate ? ts.toDate() : new Date(ts)
+    return d.toLocaleDateString('da-DK', { day: '2-digit', month: 'short' }) + ' ' +
+           d.toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' })
+  }
+
+  // Aggregér totaler
+  const totalMail = logs.filter(l => l.channel === 'email').reduce((s, l) => s + (l.sendt ?? l.recipients ?? 0), 0)
+  const totalSms  = logs.filter(l => l.channel === 'sms').reduce((s, l) => s + (l.sendt ?? l.recipients ?? 0), 0)
+  const totalKr   = logs.filter(l => l.channel === 'sms').reduce((s, l) => s + (l.estimatedCost ?? 0), 0)
+
+  return (
+    <>
+      <div className="page-header">
+        <h1 className="page-title">Kommunikation</h1>
+        <select className="form-select" style={{ width: 'auto' }}
+          value={periode} onChange={e => setPeriode(e.target.value)}>
+          {periodeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      </div>
+
+      {/* Totaler */}
+      <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+        {[
+          { label: 'Mails sendt',  value: totalMail,              color: 'var(--green)' },
+          { label: 'SMS sendt',    value: totalSms,               color: '#0369a1' },
+          { label: 'SMS-udgift',   value: `~${totalKr.toFixed(2)} kr.`, color: '#b45309' },
+          { label: 'Udsendelser',  value: logs.length,            color: 'var(--text2)' },
+        ].map(({ label, value, color }) => (
+          <div key={label} className="card" style={{ padding: '12px 18px', flex: '1 1 120px', minWidth: 110 }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color }}>{value}</div>
+            <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>{label}</div>
+          </div>
+        ))}
+      </div>
+
+      {loading && <div className="spinner" />}
+
+      {!loading && logs.length === 0 && (
+        <EmptyState icon="sms" text="Ingen udsendelser fra trænerappen denne periode" />
+      )}
+
+      {!loading && logs.length > 0 && (
+        <div className="card">
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Tidspunkt</th>
+                  <th>Træner</th>
+                  <th>Hold</th>
+                  <th>Kanal</th>
+                  <th>Type</th>
+                  <th style={{ textAlign: 'right' }}>Sendt</th>
+                  <th style={{ textAlign: 'right' }}>Pris</th>
+                </tr>
+              </thead>
+              <tbody>
+                {logs.map(l => {
+                  const isSms  = l.channel === 'sms'
+                  const type   = l.scope === 'besked' ? 'Besked' : 'Begivenhed'
+                  const holdNavn = l.holdTitel || holdMap[String(l.holdId)] || l.holdId || '–'
+                  const kr     = isSms && l.estimatedCost != null ? `~${l.estimatedCost.toFixed(2)} kr.` : '–'
+                  return (
+                    <tr key={l.id}>
+                      <td style={{ fontSize: 12, whiteSpace: 'nowrap', color: 'var(--text2)' }}>{fmt(l.sentAt)}</td>
+                      <td style={{ fontSize: 13, fontWeight: 500 }}>{l.senderName || '–'}</td>
+                      <td style={{ fontSize: 12, color: 'var(--text2)' }}>{holdNavn}</td>
+                      <td>
+                        <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, fontWeight: 700,
+                          background: isSms ? '#e0f2fe' : '#f0fdf4',
+                          color: isSms ? '#0369a1' : 'var(--green)' }}>
+                          {isSms ? 'SMS' : 'Email'}
+                        </span>
+                      </td>
+                      <td style={{ fontSize: 12, color: 'var(--text2)' }}>{type}</td>
+                      <td style={{ fontSize: 13, textAlign: 'right' }}>{l.sendt ?? l.recipients ?? '–'}</td>
+                      <td style={{ fontSize: 12, textAlign: 'right', fontWeight: 600, color: '#b45309' }}>{kr}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
 // ─── Administration: Hold (global master-view) ────────────────────────────────
 
 function HoldsAdminPage({ authUser }) {
@@ -6544,8 +6781,10 @@ function TaHoldsPage() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PAGE_TITLES = {
-  ta_begivenheder: 'Begivenheder',
-  traener_app:     'Indstillinger',
+  ta_begivenheder:  'Begivenheder',
+  ta_trænere:       'Trænere',
+  ta_kommunikation: 'Kommunikation',
+  traener_app:      'Indstillinger',
   holds_admin:     'Hold',
   dashboard:       'Dashboard',
   messages:        'Beskeder',
@@ -6650,8 +6889,10 @@ export default function AdminApp() {
       return <EmptyState icon="shield" text="Du har ikke adgang til denne side" />
     }
     switch (page) {
-      case 'ta_begivenheder': return <TaBegivenhederPage />
-      case 'traener_app':     return <TraenerAppPage    authUser={authUser} userDoc={userDoc} />
+      case 'ta_begivenheder':  return <TaBegivenhederPage />
+      case 'ta_trænere':       return <TaTraenerePage />
+      case 'ta_kommunikation': return <TaKommunikationPage />
+      case 'traener_app':      return <TraenerAppPage    authUser={authUser} userDoc={userDoc} />
       case 'dashboard':    return <DashboardPage    userDoc={userDoc} />
       case 'messages':     return <MessagesPage      userDoc={userDoc} authUser={authUser} />
       case 'news':         return <NewsPage          userDoc={userDoc} authUser={authUser} />
