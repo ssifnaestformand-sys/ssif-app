@@ -455,6 +455,7 @@ function HoldScreen({ hold, user, onBack }) {
   const [error,        setError]        = useState('')
   const [selectedBev,  setSelectedBev]  = useState(null)
   const [editBev,      setEditBev]      = useState(null)
+  const [sendNu,       setSendNu]       = useState(false)
   const [forbrug,      setForbrug]      = useState(null)
   const [forbrugLoad,  setForbrugLoad]  = useState(false)
 
@@ -572,7 +573,7 @@ function HoldScreen({ hold, user, onBack }) {
           if (editBev) { setView('detalje') } else { setView('liste') }
           setEditBev(null)
         }}
-        onSaved={() => { setView('liste'); setEditBev(null); loadData() }}
+        onSaved={(id) => { setSelectedBev({ id }); setView('detalje'); setSendNu(!editBev); setEditBev(null); loadData(); }}
         onDeleted={() => { setView('liste'); setEditBev(null); setSelectedBev(null); loadData() }}
       />
     )
@@ -583,7 +584,9 @@ function HoldScreen({ hold, user, onBack }) {
       <BegivenhedDetailScreen
         begivenhedId={selectedBev.id}
         user={user}
-        onBack={() => { setView('liste'); setSelectedBev(null) }}
+        sendNu={sendNu}
+        onSendNuHandled={() => setSendNu(false)}
+        onBack={() => { setView('liste'); setSelectedBev(null); setSendNu(false) }}
         onEdit={bevMedDeltagere => { setEditBev(bevMedDeltagere); setView('form') }}
         onDeleted={() => { setView('liste'); setSelectedBev(null); loadData() }}
       />
@@ -1024,7 +1027,7 @@ function BegivenhedFormScreen({ hold, begivenhed, user, onBack, onSaved, onDelet
 
 // ── BegivenhedDetailScreen ────────────────────────────────────────────────────
 
-function BegivenhedDetailScreen({ begivenhedId, user, onBack, onEdit, onDeleted }) {
+function BegivenhedDetailScreen({ begivenhedId, user, onBack, onEdit, onDeleted, sendNu, onSendNuHandled }) {
   const [data,        setData]        = useState(null)
   const [loading,     setLoading]     = useState(true)
   const [error,       setError]       = useState('')
@@ -1036,6 +1039,14 @@ function BegivenhedDetailScreen({ begivenhedId, user, onBack, onEdit, onDeleted 
   const [sendOk,      setSendOk]      = useState(null)
 
   useEffect(() => { loadDetalje() }, [begivenhedId])
+
+  // Auto-åbn send-dialog ved ny oprettelse
+  useEffect(() => {
+    if (sendNu && !loading && data) {
+      setShowSend(true)
+      onSendNuHandled?.()
+    }
+  }, [sendNu, loading, data])
 
   // Poll hvert 10. sekund når begivenheden er udsendt
   useEffect(() => {
