@@ -313,19 +313,20 @@ function InvitationRequiredPage({ user }) {
 // Single source of truth for all grantable pages. Used by Sidebar + UsersPage.
 
 const BACKOFFICE_PAGES = [
-  { group: 'App',           id: 'dashboard',     label: 'Dashboard',      icon: 'home'     },
-  { group: 'App',           id: 'news',          label: 'Nyheder',        icon: 'news'     },
-  { group: 'App',           id: 'events',        label: 'Begivenheder',   icon: 'calendar' },
-  { group: 'App',           id: 'banners',       label: 'Forsidebanners', icon: 'star'     },
-  { group: 'App',           id: 'teams',         label: 'Hold',           icon: 'users'    },
-  { group: 'App',           id: 'messages',      label: 'Beskeder',       icon: 'message'  },
-  { group: 'App',           id: 'appusers',      label: 'App-brugere',    icon: 'eye'      },
-  { group: 'App',           id: 'support',       label: 'Support',        icon: 'message'  },
+  { group: 'Træner app',    id: 'traener_app',   label: 'Træner app',     icon: 'phone'    },
+  { group: 'Arkiv',         id: 'dashboard',     label: 'Dashboard',      icon: 'home'     },
+  { group: 'Arkiv',         id: 'news',          label: 'Nyheder',        icon: 'news'     },
+  { group: 'Arkiv',         id: 'events',        label: 'Begivenheder',   icon: 'calendar' },
+  { group: 'Arkiv',         id: 'banners',       label: 'Forsidebanners', icon: 'star'     },
+  { group: 'Arkiv',         id: 'teams',         label: 'Hold',           icon: 'users'    },
+  { group: 'Arkiv',         id: 'messages',      label: 'Beskeder',       icon: 'message'  },
+  { group: 'Arkiv',         id: 'appusers',      label: 'App-brugere',    icon: 'eye'      },
+  { group: 'Arkiv',         id: 'support',       label: 'Support',        icon: 'message'  },
   { group: 'Kommunikation', id: 'kommunikation', label: 'Kommunikation',  icon: 'sms'      },
   { group: 'Infoskærme',    id: 'infoscreens',   label: 'Infoskærme',     icon: 'monitor'  },
 ]
 
-const PAGE_GROUP_ORDER = ['App', 'Kommunikation', 'Infoskærme']
+const PAGE_GROUP_ORDER = ['Træner app', 'Arkiv', 'Kommunikation', 'Infoskærme']
 
 // Admins get everything. Trainers with no permissions array get all pages (legacy).
 // Trainers with an explicit permissions array get only listed pages.
@@ -340,6 +341,7 @@ function hasPageAccess(userDoc, pageId) {
 
 function Sidebar({ page, setPage, userDoc, user, onLogout }) {
   const isAdmin = userDoc?.role === 'admin'
+  const [collapsedGroups, setCollapsedGroups] = useState(new Set(['Arkiv']))
 
   const groups = [
     ...PAGE_GROUP_ORDER
@@ -351,6 +353,14 @@ function Sidebar({ page, setPage, userDoc, user, onLogout }) {
     ...(isAdmin ? [{ label: 'Administration', items: [{ id: 'users', label: 'Adgang', icon: 'shield' }] }] : []),
   ]
 
+  function toggleGroup(label) {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev)
+      next.has(label) ? next.delete(label) : next.add(label)
+      return next
+    })
+  }
+
   return (
     <aside className="sidebar">
       <div className="sidebar-logo">
@@ -358,21 +368,36 @@ function Sidebar({ page, setPage, userDoc, user, onLogout }) {
         <div className="sidebar-logo-sub">Backoffice · Sejs-Svejbæk IF</div>
       </div>
       <nav className="sidebar-nav">
-        {groups.map(group => (
-          <div key={group.label} className="nav-group">
-            <div className="nav-section">{group.label}</div>
-            {group.items.map(item => (
-              <button
-                key={item.id}
-                className={`nav-item ${page === item.id ? 'active' : ''}`}
-                onClick={() => setPage(item.id)}
+        {groups.map(group => {
+          const collapsible = group.label === 'Arkiv'
+          const collapsed   = collapsible && collapsedGroups.has(group.label)
+          return (
+            <div key={group.label} className="nav-group">
+              <div
+                className={`nav-section ${collapsible ? 'nav-section-collapsible' : ''}`}
+                onClick={collapsible ? () => toggleGroup(group.label) : undefined}
+                style={collapsible ? { cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between' } : {}}
               >
-                <Icon name={item.icon} size={16} color="currentColor" />
-                {item.label}
-              </button>
-            ))}
-          </div>
-        ))}
+                <span>{group.label === 'Arkiv' ? 'Arkiv — gammel app' : group.label}</span>
+                {collapsible && (
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ transition: 'transform .2s', transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>
+                    <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                )}
+              </div>
+              {!collapsed && group.items.map(item => (
+                <button
+                  key={item.id}
+                  className={`nav-item ${page === item.id ? 'active' : ''}`}
+                  onClick={() => setPage(item.id)}
+                >
+                  <Icon name={item.icon} size={16} color="currentColor" />
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          )
+        })}
       </nav>
       <div className="sidebar-footer">
         <div className="sidebar-user">
@@ -5508,7 +5533,112 @@ function InfoScreensPage({ authUser }) {
 }
 
 
+// ─── Træner app ───────────────────────────────────────────────────────────────
+
+function TraenerAppPage() {
+  const [testMode,  setTestMode]  = useState(false)
+  const [testEmail, setTestEmail] = useState('')
+  const [testPhone, setTestPhone] = useState('')
+  const [loading,   setLoading]   = useState(true)
+  const [saving,    setSaving]    = useState(false)
+  const [feedback,  setFeedback]  = useState(null) // { ok: bool, msg: string }
+
+  useEffect(() => {
+    getDoc(doc(db, 'settings', 'trainer_app'))
+      .then(snap => {
+        if (snap.exists()) {
+          const d = snap.data()
+          setTestMode(d.testMode ?? false)
+          setTestEmail(d.testEmail ?? '')
+          setTestPhone(d.testPhone ?? '')
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  async function handleSave(e) {
+    e.preventDefault()
+    setSaving(true)
+    setFeedback(null)
+    try {
+      await setDoc(doc(db, 'settings', 'trainer_app'), { testMode, testEmail, testPhone }, { merge: true })
+      setFeedback({ ok: true, msg: 'Gemt.' })
+    } catch (err) {
+      setFeedback({ ok: false, msg: `Fejl: ${err.message}` })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) return <div className="page-header"><p>Indlæser…</p></div>
+
+  return (
+    <>
+      <div className="page-header">
+        <h1 className="page-title">Træner app</h1>
+      </div>
+
+      <div className="card" style={{ maxWidth: 480 }}>
+        <div className="card-header"><strong>Tilstand</strong></div>
+        <form onSubmit={handleSave} style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div>
+            <label className="form-label">Udsendelsestilstand</label>
+            <select
+              className="form-select"
+              value={testMode ? 'test' : 'produktion'}
+              onChange={e => setTestMode(e.target.value === 'test')}
+            >
+              <option value="produktion">Produktion — sender til rigtige modtagere</option>
+              <option value="test">Test — sender kun til testmodtager</option>
+            </select>
+          </div>
+
+          {testMode && (
+            <>
+              <div>
+                <label className="form-label">Testmodtager — e-mail</label>
+                <input
+                  type="email"
+                  className="form-input"
+                  value={testEmail}
+                  onChange={e => setTestEmail(e.target.value)}
+                  placeholder="din@email.dk"
+                />
+              </div>
+              <div>
+                <label className="form-label">Testmodtager — telefon (inkl. landekode, fx 4512345678)</label>
+                <input
+                  type="tel"
+                  className="form-input"
+                  value={testPhone}
+                  onChange={e => setTestPhone(e.target.value)}
+                  placeholder="4512345678"
+                />
+              </div>
+            </>
+          )}
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? 'Gemmer…' : 'Gem'}
+            </button>
+            {feedback && (
+              <span style={{ color: feedback.ok ? '#1a5c2a' : '#c0392b', fontSize: 13 }}>
+                {feedback.msg}
+              </span>
+            )}
+          </div>
+        </form>
+      </div>
+    </>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 const PAGE_TITLES = {
+  traener_app:  'Træner app',
   dashboard:    'Dashboard',
   messages:     'Beskeder',
   news:         'Nyheder',
@@ -5610,6 +5740,7 @@ export default function AdminApp() {
       return <EmptyState icon="shield" text="Du har ikke adgang til denne side" />
     }
     switch (page) {
+      case 'traener_app':  return <TraenerAppPage    authUser={authUser} userDoc={userDoc} />
       case 'dashboard':    return <DashboardPage    userDoc={userDoc} />
       case 'messages':     return <MessagesPage      userDoc={userDoc} authUser={authUser} />
       case 'news':         return <NewsPage          userDoc={userDoc} authUser={authUser} />

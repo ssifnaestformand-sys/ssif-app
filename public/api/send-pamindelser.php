@@ -41,11 +41,13 @@ $base         = "https://firestore.googleapis.com/v1/projects/{$projectId}/datab
 $resourceBase = "projects/{$projectId}/databases/(default)/documents";
 $now          = date('Y-m-d\TH:i:s\Z');
 
+$tc = trainer_app_config($base, $fsToken);
+
 // Testtilstand-validering
-if (is_test_mode()) {
-    if (test_email() === '' || test_phone() === '') {
+if ($tc['testMode']) {
+    if ($tc['testEmail'] === '' || $tc['testPhone'] === '') {
         http_response_code(500);
-        echo json_encode(['error' => 'Testtilstand er aktiv men TEST_EMAIL/TEST_PHONE er ikke konfigureret']);
+        echo json_encode(['error' => 'Testtilstand er aktiv men testmail/testtelefon er ikke konfigureret i backoffice']);
         exit;
     }
 }
@@ -141,10 +143,10 @@ foreach ($rows as $row) {
             }
             if (!$to) continue;
 
-            $subject = is_test_mode()
+            $subject = $tc['testMode']
                 ? "[TEST → {$deltager['navn']}] Påmindelse: {$titel}"
                 : "Påmindelse — du mangler at svare på {$titel}";
-            if (is_test_mode()) $to = test_email();
+            if ($tc['testMode']) $to = $tc['testEmail'];
 
             $html = byg_mail_html($deltager['navn'], $type, $titel, $datoDk, $tidBev, $modetid, $sted, $beskrivelse, $deltager['token']);
             if (smtp_send_html($to, $subject, $html)) { $sendt++; } else { $fejlet++; }
@@ -161,7 +163,7 @@ foreach ($rows as $row) {
             'recipients'   => count($ikkesvaret),
             'sendt'        => $sendt,
             'fejlet'       => $fejlet,
-            'testMode'     => is_test_mode(),
+            'testMode'     => $tc['testMode'],
         ]);
     }
 
@@ -173,12 +175,12 @@ foreach ($rows as $row) {
 
         foreach ($ikkesvaret as $deltager) {
             $msisdn = $phoneMap[$deltager['id']] ?? null;
-            if (is_test_mode()) $msisdn = conventus_msisdn_til_int(test_phone());
+            if ($tc['testMode']) $msisdn = conventus_msisdn_til_int($tc['testPhone']);
             if (!$msisdn) continue;
 
             $svarUrl = 'https://app.sejssvejbaek-if.dk/s/' . rawurlencode($deltager['token']);
             $smsText = "Påmindelse: {$titel} {$datoDk} kl. {$tidBev}. Svar: {$svarUrl}";
-            if (is_test_mode()) $smsText = "[TEST→{$deltager['navn']}] {$smsText}";
+            if ($tc['testMode']) $smsText = "[TEST→{$deltager['navn']}] {$smsText}";
 
             $gwResp = @file_get_contents('https://gatewayapi.com/rest/mtsms', false, stream_context_create(['http' => [
                 'method'        => 'POST',
@@ -207,7 +209,7 @@ foreach ($rows as $row) {
             'fejlet'        => $smsFejlet,
             'parts'         => $smsParts,
             'estimatedCost' => $kostDkk,
-            'testMode'      => is_test_mode(),
+            'testMode'      => $tc['testMode'],
         ]);
         $sendt  += $smsSendt;
         $fejlet += $smsFejlet;

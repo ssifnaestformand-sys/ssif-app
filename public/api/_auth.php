@@ -272,11 +272,26 @@ function get_leder_holds(string $email, string $conventus_id, string $projectId,
     return $lederHoldIds;
 }
 
-// ── Testtilstand-hjælpere ─────────────────────────────────────────────────────
+// ── Testtilstand-konfiguration fra Firestore (settings/trainer_app) ───────────
+// Konfigureres fra backoffice — ikke via env-vars.
 
-function is_test_mode(): bool { return getenv('TEST_MODE') === '1'; }
-function test_email(): string { return getenv('TEST_EMAIL') ?: ''; }
-function test_phone(): string { return getenv('TEST_PHONE') ?: ''; }
+function trainer_app_config(string $base, string $fsToken): array {
+    static $cache = null;
+    if ($cache !== null) return $cache;
+    $doc = fs_get("{$base}/settings/trainer_app", $fsToken);
+    $f   = $doc['fields'] ?? [];
+    $cache = [
+        'testMode'  => (bool)($f['testMode']['booleanValue'] ?? false),
+        'testEmail' => $f['testEmail']['stringValue'] ?? '',
+        'testPhone' => $f['testPhone']['stringValue'] ?? '',
+    ];
+    return $cache;
+}
+
+// Stubs bevaret så evt. direkte kald ikke bryder compilering.
+function is_test_mode(): bool { return false; }
+function test_email(): string { return ''; }
+function test_phone(): string { return ''; }
 
 // Standard auth-opsætning for træner-endpoints.
 // Terminerer med HTTP 401/403/500 ved fejl. Returnerer auth-kontekst.

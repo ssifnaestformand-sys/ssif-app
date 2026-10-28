@@ -39,16 +39,18 @@ $kanal        = trim((string)($body['kanal'] ?? 'mail'));
 if (!$begivenhedId) { http_response_code(400); echo json_encode(['error' => 'begivenhedId mangler']); exit; }
 if (!in_array($kanal, ['mail', 'sms', 'begge'], true)) { http_response_code(400); echo json_encode(['error' => 'Ugyldig kanal']); exit; }
 
+$tc = trainer_app_config($base, $fsToken);
+
 // Testtilstand-validering: fejl hvis testmodtager mangler
-if (is_test_mode()) {
-    if (in_array($kanal, ['mail', 'begge'], true) && test_email() === '') {
+if ($tc['testMode']) {
+    if (in_array($kanal, ['mail', 'begge'], true) && $tc['testEmail'] === '') {
         http_response_code(500);
-        echo json_encode(['error' => 'Testtilstand er aktiv men TEST_EMAIL er ikke konfigureret']);
+        echo json_encode(['error' => 'Testtilstand er aktiv men testmail er ikke konfigureret i backoffice']);
         exit;
     }
-    if (in_array($kanal, ['sms', 'begge'], true) && test_phone() === '') {
+    if (in_array($kanal, ['sms', 'begge'], true) && $tc['testPhone'] === '') {
         http_response_code(500);
-        echo json_encode(['error' => 'Testtilstand er aktiv men TEST_PHONE er ikke konfigureret']);
+        echo json_encode(['error' => 'Testtilstand er aktiv men testtelefon er ikke konfigureret i backoffice']);
         exit;
     }
 }
@@ -112,8 +114,8 @@ if (in_array($kanal, ['mail', 'begge'], true)) {
         }
         if (!$to) continue;
 
-        if (is_test_mode()) {
-            $to      = test_email();
+        if ($tc['testMode']) {
+            $to      = $tc['testEmail'];
             $subject = "[TEST → {$deltager['navn']}] Du er udtaget til {$titel}";
         } else {
             $subject = "Du er udtaget til {$titel} — Sejs-Svejbæk IF";
@@ -135,7 +137,7 @@ if (in_array($kanal, ['mail', 'begge'], true)) {
         'recipients'   => count($udtagne),
         'sendt'        => $sendt,
         'fejlet'       => $fejlet,
-        'testMode'     => is_test_mode(),
+        'testMode'     => $tc['testMode'],
     ]);
 }
 
@@ -160,8 +162,8 @@ if (in_array($kanal, ['sms', 'begge'], true)) {
         $svarUrl = 'https://app.sejssvejbaek-if.dk/s/' . rawurlencode($deltager['token']);
         $smsText = "{$titel} {$datoDk} kl. {$tidspunkt}. Svar: {$svarUrl}";
 
-        if (is_test_mode()) {
-            $msisdn  = conventus_msisdn_til_int(test_phone());
+        if ($tc['testMode']) {
+            $msisdn  = conventus_msisdn_til_int($tc['testPhone']);
             $smsText = "[TEST→{$deltager['navn']}] {$smsText}";
         }
 
@@ -194,7 +196,7 @@ if (in_array($kanal, ['sms', 'begge'], true)) {
         'fejlet'        => $smsFejlet,
         'parts'         => $smsParts,
         'estimatedCost' => $kostDkk,
-        'testMode'      => is_test_mode(),
+        'testMode'      => $tc['testMode'],
     ]);
     $sendt  += $smsSendt;
     $fejlet += $smsFejlet;
