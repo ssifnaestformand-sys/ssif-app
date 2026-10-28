@@ -5799,10 +5799,11 @@ function TaBegivenhederPage() {
 // ─── Træner app: Trænere ─────────────────────────────────────────────────────
 
 function TaTraenerePage() {
-  const [users,   setUsers]   = useState([])
-  const [holdMap, setHoldMap] = useState({})
-  const [loading, setLoading] = useState(true)
-  const [search,  setSearch]  = useState('')
+  const [users,     setUsers]     = useState([])
+  const [holdMap,   setHoldMap]   = useState({})
+  const [loading,   setLoading]   = useState(true)
+  const [search,    setSearch]    = useState('')
+  const [drillHold, setDrillHold] = useState(null) // { id, name }
 
   useEffect(() => {
     Promise.all([
@@ -5818,11 +5819,8 @@ function TaTraenerePage() {
   }, [])
 
   function trainerHolds(u) {
-    const ids = [...new Set([
-      ...(u.lederHolds || []).map(String),
-      ...(u.holdIds    || []).map(String),
-    ])]
-    return ids.map(id => holdMap[id] || `Hold ${id}`)
+    return [...new Set((u.lederHolds || []).map(String))]
+      .map(id => ({ id, name: holdMap[id] || `Hold ${id}` }))
   }
 
   function fmt(ts) {
@@ -5836,7 +5834,7 @@ function TaTraenerePage() {
     if (!q) return true
     if ((u.displayName || '').toLowerCase().includes(q)) return true
     if ((u.email || '').toLowerCase().includes(q)) return true
-    return trainerHolds(u).some(h => h.toLowerCase().includes(q))
+    return trainerHolds(u).some(h => h.name.toLowerCase().includes(q))
   })
 
   if (loading) return <div className="page-header"><div className="spinner" /></div>
@@ -5862,7 +5860,7 @@ function TaTraenerePage() {
               <tr>
                 <th>Navn</th>
                 <th>E-mail</th>
-                <th>Hold (leder)</th>
+                <th>Hold (leder) — klik for aktivitet</th>
                 <th>Sidst set</th>
                 <th>Konventus-ID</th>
               </tr>
@@ -5878,7 +5876,10 @@ function TaTraenerePage() {
                       {holds.length === 0 ? <span style={{ color: 'var(--text3)' }}>–</span> : (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                           {holds.map(h => (
-                            <span key={h} style={{ background: 'var(--green-soft)', color: 'var(--green)', borderRadius: 4, padding: '2px 7px', fontSize: 11, fontWeight: 600 }}>{h}</span>
+                            <span key={h.id} onClick={() => setDrillHold(drillHold?.id === h.id ? null : h)}
+                              style={{ background: drillHold?.id === h.id ? 'var(--green)' : 'var(--green-soft)', color: drillHold?.id === h.id ? '#fff' : 'var(--green)', borderRadius: 4, padding: '2px 7px', fontSize: 11, fontWeight: 600, cursor: 'pointer', userSelect: 'none' }}>
+                              {h.name}
+                            </span>
                           ))}
                         </div>
                       )}
@@ -5892,7 +5893,108 @@ function TaTraenerePage() {
           </table>
         </div>
       </div>
+
+      {drillHold && (
+        <TaHoldDrill holdId={drillHold.id} holdName={drillHold.name} onClose={() => setDrillHold(null)} />
+      )}
     </>
+  )
+}
+
+function TaHoldDrill({ holdId, holdName, onClose }) {
+  const [bevs,    setBevs]    = useState([])
+  const [logs,    setLogs]    = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    setLoading(true)
+    Promise.all([
+      getDocs(query(collection(db, 'begivenheder'), where('holdId', '==', holdId), orderBy('dato', 'desc'), limit(20))),
+      getDocs(query(collection(db, 'kommunikation_logs'), where('holdId', '==', holdId), orderBy('sentAt', 'desc'), limit(30))),
+    ]).then(([bSnap, lSnap]) => {
+      setBevs(bSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+      setLogs(lSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+    }).catch(() => {}).finally(() => setLoading(false))
+  }, [holdId])
+
+  const MONTHS = ['jan','feb','mar','apr','maj','jun','jul','aug','sep','okt','nov','dec']
+  function fmtTs(ts) {
+    if (!ts) return '–'
+    const d = ts.toDate ? ts.toDate() : new Date(ts)
+    return d.toLocaleDateString('da-DK', { day: '2-digit', month: 'short', year: 'numeric' })
+  }
+  function fmtDatoStr(s) {
+    if (!s) return '–'
+    const [y, m, d] = s.split('-')
+    return `${+d}. ${MONTHS[(+m) - 1] || m} ${y}`
+  }
+
+  const BEV_COLORS = { kamp: ['#dcfce7','#166534'], stævne: ['#dbeafe','#1e40af'], event: ['#fef3c7','#92400e'], møde: ['#f3e8ff','#6b21a8'] }
+
+  return (
+    <div className="card" style={{ marginTop: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{holdName} — aktivitet</h3>
+        <button className="btn btn-ghost" onClick={onClose} style={{ fontSize: 12, padding: '4px 10px' }}>Luk ✕</button>
+      </div>
+
+      {loading && <div className="spinner" />}
+
+      {!loading && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+          <div>
+            <h4 style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--text2)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+              Begivenheder ({bevs.length})
+            </h4>
+            {bevs.length === 0
+              ? <p style={{ fontSize: 12, color: 'var(--text3)', margin: 0 }}>Ingen begivenheder</p>
+              : <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {bevs.map(b => {
+                    const [bg, fg] = BEV_COLORS[b.type] || ['#f0f0f0','#555']
+                    return (
+                      <div key={b.id} style={{ fontSize: 12, padding: '8px 10px', background: 'var(--bg2)', borderRadius: 6 }}>
+                        <div style={{ fontWeight: 600 }}>{b.titel || '–'}</div>
+                        <div style={{ color: 'var(--text2)', marginTop: 2 }}>
+                          {fmtDatoStr(b.dato)}{b.tidspunkt ? ` kl. ${b.tidspunkt}` : ''}
+                        </div>
+                        <div style={{ marginTop: 4, display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 3, background: bg, color: fg }}>{b.type || '–'}</span>
+                          {b.status && <span style={{ fontSize: 11, color: 'var(--text3)' }}>{b.status}</span>}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+            }
+          </div>
+
+          <div>
+            <h4 style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--text2)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+              Kommunikation ({logs.length})
+            </h4>
+            {logs.length === 0
+              ? <p style={{ fontSize: 12, color: 'var(--text3)', margin: 0 }}>Ingen udsendelser</p>
+              : <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {logs.map(l => (
+                    <div key={l.id} style={{ fontSize: 12, padding: '8px 10px', background: 'var(--bg2)', borderRadius: 6 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <span style={{ fontWeight: 600 }}>{l.channel === 'email' ? '✉ Mail' : '💬 SMS'}</span>
+                        <span style={{ color: 'var(--text3)', fontSize: 11 }}>{fmtTs(l.sentAt)}</span>
+                      </div>
+                      <div style={{ color: 'var(--text2)', marginTop: 2 }}>
+                        {l.senderName || '–'} · {l.sendt ?? 0} sendt
+                      </div>
+                      <div style={{ color: 'var(--text3)', fontSize: 11, marginTop: 2 }}>
+                        {l.scope === 'besked' ? 'Besked' : 'Udtagnelse'}{l.testMode ? ' (TEST)' : ''}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+            }
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 

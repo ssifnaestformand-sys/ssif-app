@@ -162,6 +162,19 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ── Begivenheder (trænerværktøj) ─────────────────────────────────────────
+    // Skrives og læses af trænere via PHP (service account, bypasser regler).
+    // Admin-backoffice bruger JS SDK og skal have eksplicit adgang.
+    match /begivenheder/{bevId} {
+      allow read:  if isTrainerOrAdmin();
+      allow write: if false; // kun via PHP-service account
+    }
+
+    match /begivenheder/{bevId}/deltagere/{deltId} {
+      allow read:  if isTrainerOrAdmin();
+      allow write: if false; // kun via PHP-service account
+    }
+
     // ── Kommunikations-log (SMS/email-udsendelser) ───────────────────────────
     // Skrives udelukkende af send-sms.php / send-bulk-email.php via
     // service account (bypasser disse regler). Kun admin kan læse i backoffice.
