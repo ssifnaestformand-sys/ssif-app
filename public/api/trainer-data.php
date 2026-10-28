@@ -41,7 +41,6 @@ if ($conventus_id !== '') {
     if ($doc) $memberDocs[$conventus_id] = $doc['fields'];
 }
 if ($email !== '') {
-    // Opslag 1: allEmails (Conventus-primærmail fra daglig sync)
     $rows = fs_run_query($projectId, $fsToken, ['structuredQuery' => [
         'from'  => [['collectionId' => 'members']],
         'where' => ['fieldFilter' => [
@@ -55,54 +54,27 @@ if ($email !== '') {
         $docId = basename($row['document']['name'] ?? '');
         if ($docId) $memberDocs[$docId] = $row['document']['fields'];
     }
-
-    // Opslag 2: linkedEmails (manuelt tilknyttede Google-adresser via trainer-link-email.php)
-    $rows2 = fs_run_query($projectId, $fsToken, ['structuredQuery' => [
-        'from'  => [['collectionId' => 'members']],
-        'where' => ['fieldFilter' => [
-            'field' => ['fieldPath' => 'linkedEmails'],
-            'op'    => 'ARRAY_CONTAINS',
-            'value' => ['stringValue' => $email],
-        ]],
-    ]]);
-    foreach ($rows2 as $row) {
-        if (!isset($row['document']['fields'])) continue;
-        $docId = basename($row['document']['name'] ?? '');
-        if ($docId && !isset($memberDocs[$docId])) $memberDocs[$docId] = $row['document']['fields'];
-    }
 }
 
-// ── Saml lederHolds og displayName ────────────────────────────────────────────
+if (empty($memberDocs)) {
+    echo json_encode(['error' => 'no_trainer_access']); exit;
+}
+
+// ── Saml lederHolds og displayName fra alle docs ──────────────────────────────
 $lederHoldIds = [];
 $displayName  = '';
-
-if (!empty($memberDocs)) {
-    foreach ($memberDocs as $fields) {
-        if ($displayName === '') {
-            $displayName = $fields['name']['stringValue'] ?? '';
-        }
-        foreach ($fields['lederHolds']['arrayValue']['values'] ?? [] as $v) {
-            $id = (string)($v['integerValue'] ?? $v['stringValue'] ?? '');
-            if ($id !== '') $lederHoldIds[$id] = true;
-        }
+foreach ($memberDocs as $fields) {
+    if ($displayName === '') {
+        $displayName = $fields['name']['stringValue'] ?? '';
+    }
+    foreach ($fields['lederHolds']['arrayValue']['values'] ?? [] as $v) {
+        $id = (string)($v['integerValue'] ?? $v['stringValue'] ?? '');
+        if ($id !== '') $lederHoldIds[$id] = true;
     }
 }
 
 if (empty($lederHoldIds)) {
-    // Fallback: tjek users/{uid} for rolle og lederHolds (sat via backoffice eller tidligere login)
-    $existingDoc        = fs_get("{$base}/users/{$uid}", $fsToken);
-    $existingRole       = $existingDoc['fields']['role']['stringValue'] ?? '';
-    $existingHoldValues = $existingDoc['fields']['lederHolds']['arrayValue']['values'] ?? [];
-    foreach ($existingHoldValues as $v) {
-        $id = (string)($v['stringValue'] ?? $v['integerValue'] ?? '');
-        if ($id !== '') $lederHoldIds[$id] = true;
-    }
-    if (empty($lederHoldIds) || !in_array($existingRole, ['admin', 'trainer'], true)) {
-        echo json_encode(['error' => 'no_trainer_access']); exit;
-    }
-    if ($displayName === '') {
-        $displayName = $existingDoc['fields']['displayName']['stringValue'] ?? '';
-    }
+    echo json_encode(['error' => 'no_trainer_access']); exit;
 }
 
 // ── Hent holds ────────────────────────────────────────────────────────────────
