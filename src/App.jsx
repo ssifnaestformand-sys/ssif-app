@@ -562,6 +562,16 @@ function HoldScreen({ hold, user, onBack }) {
     )
   }
 
+  if (view === 'send-besked') {
+    return (
+      <SendBeskedScreen
+        hold={hold}
+        user={user}
+        onBack={() => setView('liste')}
+      />
+    )
+  }
+
   if (view === 'form') {
     return (
       <BegivenhedFormScreen
@@ -619,9 +629,16 @@ function HoldScreen({ hold, user, onBack }) {
         {hold.afdeling && (
           <p style={{ fontSize: 13, color: 'var(--text3)' }}>{hold.afdeling}</p>
         )}
-        <button className="btn btn-primary" onClick={() => { setEditBev(null); setView('form') }}>
-          + Opret begivenhed
-        </button>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button className="btn btn-primary" style={{ flex: 1 }}
+            onClick={() => { setEditBev(null); setView('form') }}>
+            + Opret begivenhed
+          </button>
+          <button className="btn btn-outline" style={{ flex: 1 }}
+            onClick={() => setView('send-besked')}>
+            ✉ Send besked
+          </button>
+        </div>
 
         {loading && <div className="spinner" style={{ margin: '32px auto' }} />}
         {error && <div className="error-box">{error}</div>}
@@ -1386,6 +1403,142 @@ function SendDialog({ antalUdtaget, sending, sendFejl, sendOk, onSend, onLuk }) 
         onClick={onLuk}>
         {sendOk ? 'Luk' : 'Annuller'}
       </button>
+    </div>
+  )
+}
+
+// ── SendBeskedScreen ──────────────────────────────────────────────────────────
+
+function SendBeskedScreen({ hold, user, onBack }) {
+  const [kanal,    setKanal]    = useState('mail')
+  const [emne,     setEmne]     = useState('')
+  const [besked,   setBesked]   = useState('')
+  const [sending,  setSending]  = useState(false)
+  const [fejl,     setFejl]     = useState('')
+  const [resultat, setResultat] = useState(null)
+
+  const smsOnly = kanal === 'sms'
+
+  async function handleSend() {
+    const b = besked.trim()
+    const e = emne.trim()
+    if (!b) { setFejl('Skriv en besked.'); return }
+    if (!smsOnly && !e) { setFejl('Udfyld emne til mailen.'); return }
+    setSending(true)
+    setFejl('')
+    try {
+      const idToken = await user.getIdToken()
+      const res  = await fetch('/api/send-besked.php', {
+        method:  'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ holdId: hold.id, kanal, emne: e, besked: b }),
+      })
+      const data = await res.json()
+      if (data.ok) { setResultat(data) } else { setFejl(data.error || 'Udsendelse fejlede') }
+    } catch { setFejl('Netværksfejl') }
+    finally   { setSending(false) }
+  }
+
+  return (
+    <div className="screen">
+      <header style={{
+        background: 'var(--green)', color: '#fff',
+        paddingTop: 'max(13px, env(safe-area-inset-top))',
+        paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
+        display: 'flex', alignItems: 'center', gap: 12,
+      }}>
+        <button onClick={onBack} style={{
+          background: 'none', border: 'none', color: '#fff',
+          cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 4px 0 0',
+        }}>‹</button>
+        <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>
+          Send besked
+        </span>
+        <span style={{ fontSize: 13, color: 'rgba(255,255,255,.7)' }}>
+          {hold.titel || `Hold ${hold.id}`}
+        </span>
+      </header>
+
+      <main style={{ padding: '16px', maxWidth: 600, margin: '0 auto', width: '100%', flex: 1, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {resultat ? (
+          <>
+            <div style={{
+              background: 'var(--green-soft)', border: '1px solid var(--border)',
+              borderRadius: 12, padding: 24,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+            }}>
+              <span style={{ fontSize: 28 }}>✓</span>
+              <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--green)', margin: 0 }}>
+                Sendt til {resultat.sendt}
+              </p>
+              {resultat.fejlet > 0 && (
+                <p style={{ fontSize: 13, color: 'var(--text3)', margin: 0 }}>
+                  {resultat.fejlet} kunne ikke sendes
+                </p>
+              )}
+            </div>
+            <button className="btn btn-primary" onClick={onBack}>Tilbage til holdet</button>
+          </>
+        ) : (
+          <>
+            <div>
+              <label className="form-label" style={{ marginBottom: 8, display: 'block' }}>Kanal</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {KANALER.map(k => (
+                  <button key={k.id} onClick={() => setKanal(k.id)} style={{
+                    flex: 1, padding: '10px 6px', borderRadius: 10, border: '2px solid',
+                    borderColor: kanal === k.id ? 'var(--green)' : 'var(--border)',
+                    background:  kanal === k.id ? 'var(--green-soft)' : 'var(--bg)',
+                    color:       kanal === k.id ? 'var(--green)' : 'var(--text2)',
+                    fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                  }}>
+                    <span style={{ fontSize: 18 }}>{k.icon}</span>
+                    {k.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {!smsOnly && (
+              <div>
+                <label className="form-label">Emne</label>
+                <input className="form-input" type="text" value={emne}
+                  onChange={e => setEmne(e.target.value)}
+                  placeholder="Fx: Aflyst træning fredag d. 3. nov." />
+              </div>
+            )}
+
+            <div>
+              <label className="form-label">Besked</label>
+              <textarea className="form-input" rows={5} value={besked}
+                onChange={e => setBesked(e.target.value)}
+                placeholder="Skriv din besked her…"
+                style={{ resize: 'vertical', minHeight: 100 }} />
+              {kanal !== 'mail' && (
+                <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: 5 }}>
+                  {besked.length} tegn
+                  {besked.length > 160 && ` · ca. ${Math.ceil(besked.length / 153)} SMS-dele`}
+                </p>
+              )}
+            </div>
+
+            {fejl && <div className="error-box">{fejl}</div>}
+
+            <button className="btn btn-primary"
+              onClick={handleSend}
+              disabled={sending || !besked.trim() || (!smsOnly && !emne.trim())}>
+              {sending
+                ? 'Sender…'
+                : `Send ${kanal === 'mail' ? 'mail' : kanal === 'sms' ? 'SMS' : 'mail + SMS'} til holdet`}
+            </button>
+
+            <p style={{ fontSize: 12, color: 'var(--text3)', textAlign: 'center', margin: 0 }}>
+              Sendes til alle aktive medlemmer på holdet. Ingen svarknapper.
+            </p>
+          </>
+        )}
+      </main>
     </div>
   )
 }
