@@ -511,6 +511,8 @@ function HoldScreen({ hold, user, onBack }) {
   const [sendNu,       setSendNu]       = useState(false)
   const [forbrug,      setForbrug]      = useState(null)
   const [forbrugLoad,  setForbrugLoad]  = useState(false)
+  const [selectedTilk, setSelectedTilk] = useState(null)
+  const [fordelData,   setFordelData]   = useState(null)
 
   useEffect(() => { loadData() }, [])
 
@@ -660,6 +662,56 @@ function HoldScreen({ hold, user, onBack }) {
     )
   }
 
+  if (view === 'tilkendegivelse-liste') {
+    return (
+      <TilkendegivelseListeScreen
+        hold={hold}
+        user={user}
+        onBack={() => setView('liste')}
+        onNy={() => { setSelectedTilk(null); setView('tilkendegivelse-form') }}
+        onOpen={t => { setSelectedTilk(t); setView('tilkendegivelse-detalje') }}
+      />
+    )
+  }
+
+  if (view === 'tilkendegivelse-form') {
+    return (
+      <TilkendegivelseFormScreen
+        hold={hold}
+        tilkendegivelse={selectedTilk}
+        user={user}
+        onBack={() => setView(selectedTilk ? 'tilkendegivelse-detalje' : 'tilkendegivelse-liste')}
+        onSaved={t => { setSelectedTilk(t); setView('tilkendegivelse-detalje') }}
+      />
+    )
+  }
+
+  if (view === 'tilkendegivelse-detalje' && selectedTilk) {
+    return (
+      <TilkendegivelseDetailScreen
+        tilkendegivelse={selectedTilk}
+        hold={hold}
+        user={user}
+        onBack={() => setView('tilkendegivelse-liste')}
+        onEdit={() => setView('tilkendegivelse-form')}
+        onFordel={(data) => { setFordelData(data); setView('fordel') }}
+        onDeleted={() => { setSelectedTilk(null); setView('tilkendegivelse-liste') }}
+      />
+    )
+  }
+
+  if (view === 'fordel' && fordelData) {
+    return (
+      <FordelScreen
+        hold={hold}
+        user={user}
+        fordelData={fordelData}
+        onBack={() => setView('tilkendegivelse-detalje')}
+        onSendt={() => { setFordelData(null); setView('tilkendegivelse-liste') }}
+      />
+    )
+  }
+
   return (
     <div className="screen">
       <header style={{
@@ -701,6 +753,10 @@ function HoldScreen({ hold, user, onBack }) {
             ✉ Send besked
           </button>
         </div>
+        <button className="btn btn-outline" style={{ width: '100%' }}
+          onClick={() => setView('tilkendegivelse-liste')}>
+          📊 Tilkendegivelse
+        </button>
 
         {loading && <div className="spinner" style={{ margin: '32px auto' }} />}
         {error && <div className="error-box">{error}</div>}
@@ -2000,6 +2056,761 @@ function SupportScreen({ user, onBack }) {
             Ingen FAQ-artikler endnu. Stil et spørgsmål, så svarer vi hurtigst muligt.
           </p>
         )}
+      </main>
+    </div>
+  )
+}
+
+// ── TilkendegivelseListeScreen ────────────────────────────────────────────────
+
+function TilkendegivelseListeScreen({ hold, user, onBack, onNy, onOpen }) {
+  const [liste,   setListe]   = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error,   setError]   = useState('')
+
+  useEffect(() => { load() }, [])
+
+  async function load() {
+    setLoading(true); setError('')
+    try {
+      const idToken = await user.getIdToken()
+      const res  = await fetch('/api/tilkendegivelse-liste.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ holdId: hold.id }),
+      })
+      const data = await res.json()
+      if (Array.isArray(data)) setListe(data)
+      else setError(data.error || 'Fejl ved hentning')
+    } catch { setError('Netværksfejl') }
+    finally { setLoading(false) }
+  }
+
+  return (
+    <div className="screen">
+      <header style={{
+        background: 'var(--green)', color: '#fff',
+        paddingTop: 'max(13px, env(safe-area-inset-top))',
+        paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
+        display: 'flex', alignItems: 'center', gap: 12,
+      }}>
+        <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 4px 0 0' }}>‹</button>
+        <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>Tilkendegivelser</span>
+      </header>
+      <main style={{ padding: '16px', maxWidth: 600, margin: '0 auto', width: '100%', flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <button className="btn btn-primary" onClick={onNy}>+ Opret ny tilkendegivelse</button>
+        {loading && <div className="spinner" style={{ margin: '32px auto' }} />}
+        {error && <div className="error-box">{error}</div>}
+        {!loading && !error && liste?.length === 0 && (
+          <div className="empty-state">
+            <h3>Ingen tilkendegivelser endnu</h3>
+            <p>Opret en for at spørge holdet, hvornår de kan spille.</p>
+          </div>
+        )}
+        {liste?.map(t => {
+          const datoer = t.datoer || []
+          const første = datoer[0]?.dato || ''
+          const sidste = datoer[datoer.length - 1]?.dato || ''
+          const datoBadge = datoer.length === 1
+            ? formatDato(første)
+            : `${formatDato(første)} → ${formatDato(sidste)}`
+          const statusFarve = { kladde: '#888', udsendt: '#1a5c2a', lukket: '#666' }[t.status] || '#888'
+          const statusLabel = { kladde: 'Kladde', udsendt: 'Udsendt', lukket: 'Lukket' }[t.status] || t.status
+          return (
+            <div key={t.id} className="bev-card" onClick={() => onOpen(t)}>
+              <span style={{ fontSize: 22, lineHeight: 1 }}>📊</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>{t.titel}</div>
+                <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>{datoBadge}</div>
+                <span style={{ fontSize: 11, fontWeight: 700, color: statusFarve }}>{statusLabel}</span>
+              </div>
+              <ChevronIcon />
+            </div>
+          )
+        })}
+      </main>
+    </div>
+  )
+}
+
+// ── TilkendegivelseFormScreen ──────────────────────────────────────────────────
+
+function TilkendegivelseFormScreen({ hold, tilkendegivelse, user, onBack, onSaved }) {
+  const isEdit = tilkendegivelse !== null
+
+  const [step,      setStep]      = useState(1)
+  const [titel,     setTitel]     = useState(tilkendegivelse?.titel || '')
+  const [besked,    setBesked]    = useState(tilkendegivelse?.besked || '')
+  const [svarfrist, setSvarfrist] = useState(tilkendegivelse?.svarfrist || '')
+  const [datoer,    setDatoer]    = useState(
+    tilkendegivelse?.datoer?.length
+      ? tilkendegivelse.datoer
+      : [{ dato: '', tidspunkt: '', modetid: '', sted: '' }]
+  )
+
+  const [spillere,     setSpillere]     = useState(null)
+  const [udtaget,      setUdtaget]      = useState({})
+  const [spillereLoad, setSpillereLoad] = useState(false)
+  const [spillereErr,  setSpillereErr]  = useState('')
+
+  const [saving,    setSaving]    = useState(false)
+  const [formError, setFormError] = useState('')
+
+  async function loadSpillere() {
+    if (spillere !== null) return
+    setSpillereLoad(true); setSpillereErr('')
+    try {
+      const idToken = await user.getIdToken()
+      const res  = await fetch('/api/hold-spillere.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ holdId: hold.id }),
+      })
+      const data = await res.json()
+      if (Array.isArray(data)) {
+        setSpillere(data)
+        const u = {}
+        data.forEach(s => {
+          const existing = isEdit && tilkendegivelse?.deltagere
+            ? tilkendegivelse.deltagere.find(d => d.id === s.id)
+            : null
+          u[s.id] = existing !== null && existing !== undefined ? true : true
+        })
+        setUdtaget(u)
+      } else {
+        setSpillereErr(data.error || 'Fejl')
+      }
+    } catch { setSpillereErr('Netværksfejl') }
+    finally { setSpillereLoad(false) }
+  }
+
+  function addDato() {
+    setDatoer(d => [...d, { dato: '', tidspunkt: '', modetid: '', sted: '' }])
+  }
+
+  function updateDato(i, field, value) {
+    setDatoer(d => d.map((x, j) => j === i ? { ...x, [field]: value } : x))
+  }
+
+  function removeDato(i) {
+    if (datoer.length === 1) return
+    setDatoer(d => d.filter((_, j) => j !== i))
+  }
+
+  function goStep2() {
+    if (!titel.trim()) { setFormError('Titel er påkrævet'); return }
+    if (datoer.every(d => !d.dato)) { setFormError('Mindst én dato er påkrævet'); return }
+    setFormError('')
+    setStep(2)
+    loadSpillere()
+  }
+
+  async function save() {
+    const gyldige = datoer.filter(d => d.dato)
+    if (!titel.trim() || gyldige.length === 0) { setFormError('Titel og mindst én dato er påkrævet'); return }
+    const valgte = spillere ? spillere.filter(s => udtaget[s.id]) : []
+    if (valgte.length === 0) { setFormError('Vælg mindst én spiller'); return }
+
+    setSaving(true); setFormError('')
+    try {
+      const idToken = await user.getIdToken()
+      const res = await fetch('/api/tilkendegivelse-gem.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tilkendegivelseId: isEdit ? tilkendegivelse.id : null,
+          holdId: hold.id,
+          titel: titel.trim(),
+          datoer: gyldige,
+          besked: besked.trim(),
+          svarfrist: svarfrist,
+          deltagere: valgte.map(s => ({ id: s.id, navn: s.name || s.navn || '' })),
+        }),
+      })
+      const data = await res.json()
+      if (data.id) {
+        onSaved({ id: data.id, titel: titel.trim(), datoer: gyldige, besked: besked.trim(), svarfrist, status: isEdit ? tilkendegivelse.status : 'kladde' })
+      } else {
+        setFormError(data.error || 'Gem fejlede')
+      }
+    } catch { setFormError('Netværksfejl') }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div className="screen">
+      <header style={{
+        background: 'var(--green)', color: '#fff',
+        paddingTop: 'max(13px, env(safe-area-inset-top))',
+        paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
+        display: 'flex', alignItems: 'center', gap: 12,
+      }}>
+        <button onClick={step === 1 ? onBack : () => setStep(1)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 4px 0 0' }}>‹</button>
+        <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>
+          {isEdit ? 'Ret tilkendegivelse' : 'Ny tilkendegivelse'} ({step}/2)
+        </span>
+      </header>
+      <main style={{ padding: '16px', maxWidth: 600, margin: '0 auto', width: '100%', flex: 1, display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+        {step === 1 && <>
+          <div className="form-field">
+            <label className="form-label">Titel *</label>
+            <input className="form-input" value={titel} onChange={e => setTitel(e.target.value)}
+              placeholder="fx Kan du spille november-weekender?" />
+          </div>
+          <div className="form-field">
+            <label className="form-label">Besked til forældrene (valgfri)</label>
+            <textarea className="form-input" rows={3} value={besked}
+              onChange={e => setBesked(e.target.value)}
+              placeholder="Yderligere information om disse datoer…"
+              style={{ resize: 'vertical', fontFamily: 'inherit', fontSize: 15 }} />
+          </div>
+          <div className="form-field">
+            <label className="form-label">Svarfrist (valgfri)</label>
+            <input className="form-input" type="date" value={svarfrist}
+              onChange={e => setSvarfrist(e.target.value)} />
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+            <label className="form-label" style={{ margin: 0 }}>Datoer *</label>
+            <button onClick={addDato} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--green)', fontSize: 13, fontWeight: 700 }}>+ Tilføj dato</button>
+          </div>
+          {datoer.map((d, i) => (
+            <div key={i} style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input className="form-input" type="date" value={d.dato}
+                  onChange={e => updateDato(i, 'dato', e.target.value)}
+                  style={{ flex: 1 }} />
+                {datoer.length > 1 && (
+                  <button onClick={() => removeDato(i)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 18, lineHeight: 1, flexShrink: 0 }}>×</button>
+                )}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <div className="form-field" style={{ margin: 0 }}>
+                  <label className="form-label" style={{ fontSize: 11 }}>Tidspunkt</label>
+                  <input className="form-input" type="time" value={d.tidspunkt}
+                    onChange={e => updateDato(i, 'tidspunkt', e.target.value)} style={{ padding: '8px 10px', fontSize: 14 }} />
+                </div>
+                <div className="form-field" style={{ margin: 0 }}>
+                  <label className="form-label" style={{ fontSize: 11 }}>Mødetid</label>
+                  <input className="form-input" type="time" value={d.modetid}
+                    onChange={e => updateDato(i, 'modetid', e.target.value)} style={{ padding: '8px 10px', fontSize: 14 }} />
+                </div>
+              </div>
+              <div className="form-field" style={{ margin: 0 }}>
+                <label className="form-label" style={{ fontSize: 11 }}>Sted</label>
+                <input className="form-input" value={d.sted}
+                  onChange={e => updateDato(i, 'sted', e.target.value)}
+                  placeholder="fx Hjemmebane" style={{ fontSize: 14 }} />
+              </div>
+            </div>
+          ))}
+
+          {formError && <div className="error-box">{formError}</div>}
+          <button className="btn btn-primary" onClick={goStep2}>Vælg spillere →</button>
+        </>}
+
+        {step === 2 && <>
+          <p style={{ fontSize: 14, color: 'var(--text2)' }}>Vælg de spillere der skal modtage tilkendegivelsen:</p>
+          {spillereLoad && <div className="spinner" style={{ margin: '32px auto' }} />}
+          {spillereErr && <div className="error-box">{spillereErr}</div>}
+          {spillere && <>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
+              <button className="btn btn-outline" style={{ flex: 1, fontSize: 13 }}
+                onClick={() => { const u = {}; spillere.forEach(s => u[s.id] = true); setUdtaget(u) }}>
+                Vælg alle
+              </button>
+              <button className="btn btn-outline" style={{ flex: 1, fontSize: 13 }}
+                onClick={() => { const u = {}; spillere.forEach(s => u[s.id] = false); setUdtaget(u) }}>
+                Fravælg alle
+              </button>
+            </div>
+            {spillere.map(s => (
+              <label key={s.id} style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                background: 'var(--bg)', border: `1.5px solid ${udtaget[s.id] ? 'var(--green)' : 'var(--border)'}`,
+                borderRadius: 10, padding: '10px 12px', cursor: 'pointer',
+                transition: 'border-color .15s',
+              }}>
+                <input type="checkbox" checked={!!udtaget[s.id]}
+                  onChange={e => setUdtaget(u => ({ ...u, [s.id]: e.target.checked }))}
+                  style={{ accentColor: 'var(--green)', width: 18, height: 18 }} />
+                <span style={{ fontSize: 14, fontWeight: 500 }}>{s.name || s.navn || s.id}</span>
+              </label>
+            ))}
+          </>}
+
+          {formError && <div className="error-box">{formError}</div>}
+          <button className="btn btn-primary" onClick={save} disabled={saving || spillereLoad}>
+            {saving ? 'Gemmer…' : isEdit ? 'Gem ændringer' : 'Opret tilkendegivelse'}
+          </button>
+        </>}
+
+      </main>
+    </div>
+  )
+}
+
+// ── TilkendegivelseDetailScreen ───────────────────────────────────────────────
+
+function TilkendegivelseDetailScreen({ tilkendegivelse, hold, user, onBack, onEdit, onFordel, onDeleted }) {
+  const [detaljer,   setDetaljer]   = useState(null)
+  const [loading,    setLoading]    = useState(true)
+  const [error,      setError]      = useState('')
+  const [sending,    setSending]    = useState(false)
+  const [sendError,  setSendError]  = useState('')
+  const [sendDone,   setSendDone]   = useState(null)
+  const [showSend,   setShowSend]   = useState(false)
+  const [kanal,      setKanal]      = useState('mail')
+  const [deleting,   setDeleting]   = useState(false)
+  const [showDel,    setShowDel]    = useState(false)
+
+  useEffect(() => { load() }, [tilkendegivelse.id])
+
+  async function load() {
+    setLoading(true); setError('')
+    try {
+      const idToken = await user.getIdToken()
+      const res = await fetch('/api/tilkendegivelse-detalje.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tilkendegivelseId: tilkendegivelse.id, holdId: hold.id }),
+      })
+      const data = await res.json()
+      if (data.tilkendegivelse) setDetaljer(data)
+      else setError(data.error || 'Fejl ved hentning')
+    } catch { setError('Netværksfejl') }
+    finally { setLoading(false) }
+  }
+
+  async function sendUd() {
+    setSending(true); setSendError(''); setSendDone(null)
+    try {
+      const idToken = await user.getIdToken()
+      const res = await fetch('/api/tilkendegivelse-send.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tilkendegivelseId: tilkendegivelse.id, holdId: hold.id, kanal }),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        setSendDone(data)
+        setShowSend(false)
+        load()
+      } else {
+        setSendError(data.error || 'Udsendelse fejlede')
+      }
+    } catch { setSendError('Netværksfejl') }
+    finally { setSending(false) }
+  }
+
+  async function slet() {
+    setDeleting(true)
+    try {
+      const idToken = await user.getIdToken()
+      const res = await fetch('/api/tilkendegivelse-slet.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tilkendegivelseId: tilkendegivelse.id, holdId: hold.id }),
+      })
+      const data = await res.json()
+      if (data.ok) onDeleted()
+      else setError(data.error || 'Sletning fejlede')
+    } catch { setError('Netværksfejl') }
+    finally { setDeleting(false) }
+  }
+
+  const t   = detaljer?.tilkendegivelse
+  const deltagere = detaljer?.deltagere || []
+  const pivot     = detaljer?.pivot || []
+
+  const statusLabel = { kladde: 'Kladde', udsendt: 'Udsendt', lukket: 'Lukket' }[t?.status] || t?.status
+
+  return (
+    <div className="screen">
+      <header style={{
+        background: 'var(--green)', color: '#fff',
+        paddingTop: 'max(13px, env(safe-area-inset-top))',
+        paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
+        display: 'flex', alignItems: 'center', gap: 12,
+      }}>
+        <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 4px 0 0' }}>‹</button>
+        <span style={{ fontWeight: 800, fontSize: 16, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {tilkendegivelse.titel}
+        </span>
+        <button onClick={load} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,.75)', cursor: 'pointer', fontSize: 13 }}>↻</button>
+      </header>
+
+      <main style={{ padding: '16px', maxWidth: 600, margin: '0 auto', width: '100%', flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {loading && <div className="spinner" style={{ margin: '32px auto' }} />}
+        {error && <div className="error-box">{error}</div>}
+
+        {t && <>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 9px', borderRadius: 20,
+              background: t.status === 'udsendt' ? '#e8f5ec' : '#f0f0f0',
+              color: t.status === 'udsendt' ? 'var(--green)' : '#666' }}>
+              {statusLabel}
+            </span>
+            {t.svarfrist && (
+              <span style={{ fontSize: 12, color: 'var(--text3)' }}>Svarfrist: {formatDato(t.svarfrist)}</span>
+            )}
+          </div>
+
+          {/* Handlingsknapper */}
+          <div style={{ display: 'flex', gap: 8 }}>
+            {t.status === 'kladde' && (
+              <button className="btn btn-outline" style={{ flex: 1, fontSize: 13 }} onClick={onEdit}>✏ Ret</button>
+            )}
+            {(t.status === 'kladde' || t.status === 'udsendt') && (
+              <button className="btn btn-primary" style={{ flex: 2 }} onClick={() => setShowSend(true)}>
+                📨 {t.status === 'udsendt' ? 'Send påmindelse' : 'Send ud'}
+              </button>
+            )}
+          </div>
+
+          {sendDone && (
+            <div style={{ background: '#e8f5ec', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: 'var(--green)', fontWeight: 600 }}>
+              ✓ Sendt til {sendDone.sendt} {sendDone.fejlet > 0 ? `(${sendDone.fejlet} fejlede)` : ''}
+            </div>
+          )}
+
+          {/* Send-dialog */}
+          {showSend && (
+            <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 12, padding: '16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <p style={{ fontSize: 14, fontWeight: 700 }}>Send tilkendegivelse ud</p>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {['mail', 'sms', 'begge'].map(k => (
+                  <button key={k} onClick={() => setKanal(k)} style={{
+                    flex: 1, padding: '8px 0', borderRadius: 8, border: '1.5px solid',
+                    background: kanal === k ? 'var(--green)' : 'transparent',
+                    borderColor: kanal === k ? 'var(--green)' : 'var(--border)',
+                    color: kanal === k ? '#fff' : 'var(--text)', cursor: 'pointer',
+                    fontSize: 13, fontWeight: 700,
+                  }}>
+                    {k === 'begge' ? 'Begge' : k === 'mail' ? 'Mail' : 'SMS'}
+                  </button>
+                ))}
+              </div>
+              {sendError && <div className="error-box">{sendError}</div>}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => setShowSend(false)}>Annullér</button>
+                <button className="btn btn-primary" style={{ flex: 2 }} onClick={sendUd} disabled={sending}>
+                  {sending ? 'Sender…' : 'Send'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Svartabel - pivot */}
+          {pivot.length > 0 && deltagere.length > 0 && (
+            <div>
+              <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>
+                Svar ({deltagere.filter(d => d.harSvaret).length}/{deltagere.length} har svaret)
+              </h3>
+
+              {/* Dato-sammenfatning */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+                {pivot.map(p => (
+                  <div key={p.dato} style={{
+                    background: 'var(--bg)', border: '1px solid var(--border)',
+                    borderRadius: 10, padding: '10px 14px',
+                    display: 'flex', flexDirection: 'column', gap: 6,
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 14, fontWeight: 700 }}>{formatDato(p.dato)}</span>
+                      {t.status === 'udsendt' && (
+                        <button className="btn btn-outline" style={{ fontSize: 12, padding: '4px 10px' }}
+                          onClick={() => onFordel({ tilkendegivelse: t, dato: p.dato, pivot: p, deltagere })}>
+                          Fordel →
+                        </button>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: 12, fontSize: 12 }}>
+                      <span style={{ color: 'var(--green)', fontWeight: 700 }}>✓ Kan: {p.kan.length}</span>
+                      <span style={{ color: 'var(--red)', fontWeight: 700 }}>✗ Kan ikke: {p.kan_ikke.length}</span>
+                      <span style={{ color: '#aaa' }}>? Intet svar: {p.ingen_svar.length}</span>
+                    </div>
+                    {p.kan.length > 0 && (
+                      <div style={{ fontSize: 12, color: 'var(--text2)' }}>
+                        {p.kan.join(' · ')}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Spillerpivot - horisontalt scroll */}
+              <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                <table style={{ borderCollapse: 'collapse', fontSize: 13, minWidth: 280 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left', padding: '6px 10px', fontWeight: 700, whiteSpace: 'nowrap', borderBottom: '2px solid var(--border)' }}>Spiller</th>
+                      {pivot.map(p => (
+                        <th key={p.dato} style={{ padding: '6px 8px', textAlign: 'center', whiteSpace: 'nowrap', borderBottom: '2px solid var(--border)', fontWeight: 600, color: 'var(--text2)', fontSize: 11 }}>
+                          {formatDato(p.dato)}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {deltagere.map(d => (
+                      <tr key={d.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td style={{ padding: '6px 10px', fontWeight: 500, whiteSpace: 'nowrap' }}>{d.navn}</td>
+                        {pivot.map(p => {
+                          const s = d.svar[p.dato] || ''
+                          return (
+                            <td key={p.dato} style={{ padding: '6px 8px', textAlign: 'center' }}>
+                              {s === 'kan' ? <span style={{ color: 'var(--green)', fontWeight: 700 }}>✓</span>
+                               : s === 'kan_ikke' ? <span style={{ color: 'var(--red)' }}>✗</span>
+                               : <span style={{ color: '#ccc' }}>—</span>}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Slet */}
+          <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+            {!showDel && (
+              <button onClick={() => setShowDel(true)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+                Slet tilkendegivelse
+              </button>
+            )}
+            {showDel && (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => setShowDel(false)}>Annullér</button>
+                <button className="btn btn-primary" style={{ flex: 1, background: 'var(--red)', borderColor: 'var(--red)' }}
+                  onClick={slet} disabled={deleting}>
+                  {deleting ? 'Sletter…' : 'Bekræft slet'}
+                </button>
+              </div>
+            )}
+          </div>
+        </>}
+      </main>
+    </div>
+  )
+}
+
+// ── FordelScreen ───────────────────────────────────────────────────────────────
+
+function FordelScreen({ hold, user, fordelData, onBack, onSendt }) {
+  const { tilkendegivelse, dato, pivot, deltagere } = fordelData
+
+  const kanSpille = pivot.kan || []
+
+  const [kampe,     setKampe]     = useState([{ id: 1, titel: '', tidspunkt: '', modetid: '', sted: '', kræverSvar: false }])
+  const [fordeling, setFordeling] = useState({})
+  const [sending,   setSending]   = useState(false)
+  const [sendError, setSendError] = useState('')
+  const [kanal,     setKanal]     = useState('mail')
+  const [nextId,    setNextId]    = useState(2)
+
+  function addKamp() {
+    setKampe(k => [...k, { id: nextId, titel: '', tidspunkt: '', modetid: '', sted: '', kræverSvar: false }])
+    setNextId(n => n + 1)
+  }
+
+  function updateKamp(id, field, value) {
+    setKampe(k => k.map(x => x.id === id ? { ...x, [field]: value } : x))
+  }
+
+  function removeKamp(id) {
+    if (kampe.length === 1) return
+    setKampe(k => k.filter(x => x.id !== id))
+    setFordeling(f => {
+      const nf = { ...f }
+      Object.keys(nf).forEach(spillerId => { if (nf[spillerId] === id) delete nf[spillerId] })
+      return nf
+    })
+  }
+
+  function assignSpiller(spillerNavn, kampId) {
+    setFordeling(f => ({ ...f, [spillerNavn]: kampId }))
+  }
+
+  const ufordelte = kanSpille.filter(navn => !fordeling[navn])
+  const alleFordelt = kanSpille.length > 0 && ufordelte.length === 0
+
+  // Byg spillerIds for hvert kamp fra deltagere array
+  function getSpillerIds(kampId) {
+    return kanSpille
+      .filter(navn => fordeling[navn] === kampId)
+      .map(navn => {
+        const deltager = deltagere.find(d => d.navn === navn)
+        return deltager ? deltager.id : null
+      })
+      .filter(Boolean)
+  }
+
+  function getSpillerNavne(kampId) {
+    const navneMap = {}
+    kanSpille
+      .filter(navn => fordeling[navn] === kampId)
+      .forEach(navn => {
+        const deltager = deltagere.find(d => d.navn === navn)
+        if (deltager) navneMap[deltager.id] = deltager.navn
+      })
+    return navneMap
+  }
+
+  async function sendKampe() {
+    const ugyldige = kampe.filter(k => !k.titel.trim())
+    if (ugyldige.length > 0) { setSendError('Alle kampe skal have en titel'); return }
+    if (!alleFordelt) { setSendError('Alle spillere skal fordeles'); return }
+
+    const kampeData = kampe.map(k => ({
+      titel:         k.titel.trim(),
+      tidspunkt:     k.tidspunkt,
+      modetid:       k.modetid,
+      sted:          k.sted,
+      kræverSvar:    k.kræverSvar,
+      spillerIds:    getSpillerIds(k.id),
+      spillerNavne:  getSpillerNavne(k.id),
+    })).filter(k => k.spillerIds.length > 0)
+
+    if (kampeData.length === 0) { setSendError('Mindst én kamp skal have spillere'); return }
+
+    setSending(true); setSendError('')
+    try {
+      const idToken = await user.getIdToken()
+      const res = await fetch('/api/tilkendegivelse-opret-kampe.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tilkendegivelseId: tilkendegivelse.id,
+          holdId: hold.id,
+          dato,
+          kanal,
+          kampe: kampeData,
+        }),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        onSendt()
+      } else {
+        setSendError(data.error || 'Udsendelse fejlede')
+      }
+    } catch { setSendError('Netværksfejl') }
+    finally { setSending(false) }
+  }
+
+  return (
+    <div className="screen">
+      <header style={{
+        background: 'var(--green)', color: '#fff',
+        paddingTop: 'max(13px, env(safe-area-inset-top))',
+        paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
+        display: 'flex', alignItems: 'center', gap: 12,
+      }}>
+        <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 4px 0 0' }}>‹</button>
+        <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>Fordel spillere</span>
+      </header>
+
+      <main style={{ padding: '16px', maxWidth: 600, margin: '0 auto', width: '100%', flex: 1, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <p style={{ fontSize: 14, color: 'var(--text2)', fontWeight: 600 }}>
+          📅 {formatDato(dato)} · {kanSpille.length} spillere siger kan
+        </p>
+
+        {/* Kampe */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ fontSize: 14, fontWeight: 700 }}>Kampe ({kampe.length})</h3>
+          <button onClick={addKamp} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--green)', fontSize: 13, fontWeight: 700 }}>+ Tilføj kamp</button>
+        </div>
+
+        {kampe.map(k => (
+          <div key={k.id} style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input className="form-input" value={k.titel} placeholder="Kamp-navn, fx Pulje A"
+                onChange={e => updateKamp(k.id, 'titel', e.target.value)}
+                style={{ flex: 1 }} />
+              {kampe.length > 1 && (
+                <button onClick={() => removeKamp(k.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 18 }}>×</button>
+              )}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <input className="form-input" type="time" value={k.tidspunkt} placeholder="Tidspunkt"
+                onChange={e => updateKamp(k.id, 'tidspunkt', e.target.value)} style={{ fontSize: 14, padding: '8px 10px' }} />
+              <input className="form-input" type="time" value={k.modetid} placeholder="Mødetid"
+                onChange={e => updateKamp(k.id, 'modetid', e.target.value)} style={{ fontSize: 14, padding: '8px 10px' }} />
+            </div>
+            <input className="form-input" value={k.sted} placeholder="Sted"
+              onChange={e => updateKamp(k.id, 'sted', e.target.value)} style={{ fontSize: 14 }} />
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+              <input type="checkbox" checked={k.kræverSvar}
+                onChange={e => updateKamp(k.id, 'kræverSvar', e.target.checked)}
+                style={{ accentColor: 'var(--green)', width: 16, height: 16 }} />
+              Forældrene skal bekræfte igen
+            </label>
+            <div style={{ fontSize: 12, color: 'var(--text3)' }}>
+              {kanSpille.filter(n => fordeling[n] === k.id).length} spillere tildelt
+            </div>
+          </div>
+        ))}
+
+        {/* Fordeling af spillere */}
+        <h3 style={{ fontSize: 14, fontWeight: 700 }}>Fordel spillerne</h3>
+        {kanSpille.length === 0 ? (
+          <div className="empty-state"><h3>Ingen spillere siger kan denne dato</h3></div>
+        ) : (
+          kanSpille.map(navn => (
+            <div key={navn} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              background: 'var(--bg)', border: '1px solid var(--border)',
+              borderRadius: 10, padding: '10px 12px',
+            }}>
+              <span style={{ flex: 1, fontSize: 14, fontWeight: 500 }}>{navn}</span>
+              <select
+                value={fordeling[navn] || ''}
+                onChange={e => assignSpiller(navn, e.target.value ? parseInt(e.target.value) : '')}
+                style={{
+                  border: '1.5px solid var(--border)', borderRadius: 8,
+                  padding: '6px 8px', fontSize: 13, background: 'var(--card)',
+                  color: fordeling[navn] ? 'var(--text)' : 'var(--text3)',
+                  cursor: 'pointer',
+                }}
+              >
+                <option value="">— Ikke tildelt —</option>
+                {kampe.map(k => (
+                  <option key={k.id} value={k.id}>{k.titel || `Kamp ${k.id}`}</option>
+                ))}
+              </select>
+            </div>
+          ))
+        )}
+
+        {ufordelte.length > 0 && (
+          <div style={{ fontSize: 13, color: 'var(--red)', fontWeight: 600 }}>
+            ⚠ {ufordelte.length} spiller{ufordelte.length === 1 ? '' : 'e'} er ikke fordelt endnu
+          </div>
+        )}
+
+        {/* Udsendelse */}
+        <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+          {['mail', 'sms', 'begge'].map(k => (
+            <button key={k} onClick={() => setKanal(k)} style={{
+              flex: 1, padding: '8px 0', borderRadius: 8, border: '1.5px solid',
+              background: kanal === k ? 'var(--green)' : 'transparent',
+              borderColor: kanal === k ? 'var(--green)' : 'var(--border)',
+              color: kanal === k ? '#fff' : 'var(--text)', cursor: 'pointer',
+              fontSize: 13, fontWeight: 700,
+            }}>
+              {k === 'begge' ? 'Begge' : k === 'mail' ? 'Mail' : 'SMS'}
+            </button>
+          ))}
+        </div>
+
+        {sendError && <div className="error-box">{sendError}</div>}
+        <button className="btn btn-primary" onClick={sendKampe}
+          disabled={sending}>
+          {sending ? 'Sender…' : `Send ${kampe.length} kamp${kampe.length === 1 ? '' : 'e'}`}
+        </button>
       </main>
     </div>
   )

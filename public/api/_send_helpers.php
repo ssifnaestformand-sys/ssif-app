@@ -82,6 +82,117 @@ function byg_mail_html(string $navn, string $type, string $titel, string $dato, 
 HTML;
 }
 
+function byg_tilkendegivelse_mail(string $navn, string $titel, array $datoer, string $besked, string $token, string $holdTitel = ''): string {
+    $svarUrl  = 'https://app.sejssvejbaek-if.dk/s/' . rawurlencode($token);
+
+    $navnEnc  = htmlspecialchars($navn);
+    $titEnc   = htmlspecialchars($titel);
+    $holdEnc  = htmlspecialchars($holdTitel);
+    $holdSub  = $holdTitel
+        ? "<p style=\"margin:4px 0 0;color:rgba(255,255,255,.85);font-size:13px;font-weight:600\">{$holdEnc}</p>"
+        : '';
+    $beskHtml = $besked
+        ? '<p style="margin:14px 0 0;font-size:14px;color:#555;line-height:1.6">' . nl2br(htmlspecialchars($besked)) . '</p>'
+        : '';
+
+    $datoRækker = '';
+    foreach ($datoer as $d) {
+        $dato      = htmlspecialchars($d['dato'] ?? '');
+        $tidspunkt = htmlspecialchars($d['tidspunkt'] ?? '');
+        $modetid   = htmlspecialchars($d['modetid'] ?? '');
+        $sted      = htmlspecialchars($d['sted'] ?? '');
+
+        $detaljer = '';
+        if ($tidspunkt) $detaljer .= " kl.&nbsp;{$tidspunkt}";
+        if ($sted)      $detaljer .= " &middot; {$sted}";
+        if ($modetid)   $detaljer .= "<span style=\"font-size:11px;color:#888;\"> (møde {$modetid})</span>";
+
+        $datoRækker .= "<tr>"
+            . "<td style=\"padding:9px 14px;font-size:13px;font-weight:700;color:#1a5c2a;border-bottom:1px solid #dde5dd;white-space:nowrap\">{$dato}</td>"
+            . "<td style=\"padding:9px 14px;font-size:13px;color:#333;border-bottom:1px solid #dde5dd\">{$detaljer}</td>"
+            . "</tr>";
+    }
+
+    return <<<HTML
+<!DOCTYPE html>
+<html lang="da">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f4f6f4;font-family:system-ui,-apple-system,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0">
+<tr><td align="center" style="padding:24px 16px">
+<table width="100%" style="max-width:480px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 6px rgba(0,0,0,.08)">
+  <tr><td style="background:#1a5c2a;padding:18px 24px">
+    <p style="margin:0;color:#fff;font-size:18px;font-weight:800">&#9917; SSIF Tr&aelig;ner</p>
+    {$holdSub}
+  </td></tr>
+  <tr><td style="padding:24px">
+    <p style="margin:0 0 6px;font-size:14px;color:#4a4a4a">Hej {$navnEnc},</p>
+    <h1 style="margin:0 0 16px;font-size:20px;font-weight:800;color:#1a1a1a">{$titEnc}</h1>
+    <p style="margin:0 0 10px;font-size:13px;font-weight:700;color:#555">Træneren vil gerne vide, hvornår du kan spille:</p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #dde5dd;border-radius:10px;overflow:hidden;margin-bottom:16px">
+      {$datoRækker}
+    </table>
+    {$beskHtml}
+    <p style="margin:20px 0 12px;font-size:14px;font-weight:700;color:#1a1a1a;text-align:center">Svar for hver dato her:</p>
+    <table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
+      <a href="{$svarUrl}" style="display:inline-block;background:#1a5c2a;color:#fff;text-decoration:none;font-size:16px;font-weight:700;padding:14px 32px;border-radius:11px">Svar her &#10003;</a>
+    </td></tr></table>
+    <p style="margin:20px 0 0;font-size:12px;color:#888;text-align:center">Du kan &aelig;ndre dit svar, s&aring; l&aelig;nge tilkendegivelsen er &aring;ben.</p>
+    <p style="margin:8px 0 0;font-size:12px;color:#aaa;text-align:center">Venlig hilsen &middot; Sejs-Svejb&aelig;k IF</p>
+  </td></tr>
+</table>
+</td></tr>
+</table>
+</body></html>
+HTML;
+}
+
+function byg_info_mail_html(string $navn, string $titel, string $dato, string $tidspunkt, string $modetid, string $sted, string $besked, string $holdTitel = ''): string {
+    $navnEnc  = htmlspecialchars($navn);
+    $titEnc   = htmlspecialchars($titel);
+    $holdEnc  = htmlspecialchars($holdTitel);
+    $holdSub  = $holdTitel
+        ? "<p style=\"margin:4px 0 0;color:rgba(255,255,255,.85);font-size:13px;font-weight:600\">{$holdEnc}</p>"
+        : '';
+    $beskHtml = $besked
+        ? '<p style="margin:14px 0 0;font-size:14px;color:#555;line-height:1.6">' . nl2br(htmlspecialchars($besked)) . '</p>'
+        : '';
+
+    $rows = '';
+    if ($dato)     $rows .= t_row('Dato',      htmlspecialchars($dato));
+    if ($tidspunkt) $rows .= t_row('Tidspunkt', htmlspecialchars($tidspunkt));
+    if ($modetid)  $rows .= t_row('Mødetid',   htmlspecialchars($modetid));
+    if ($sted)     $rows .= t_row('Sted',       htmlspecialchars($sted));
+
+    return <<<HTML
+<!DOCTYPE html>
+<html lang="da">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f4f6f4;font-family:system-ui,-apple-system,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0">
+<tr><td align="center" style="padding:24px 16px">
+<table width="100%" style="max-width:480px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 6px rgba(0,0,0,.08)">
+  <tr><td style="background:#1a5c2a;padding:18px 24px">
+    <p style="margin:0;color:#fff;font-size:18px;font-weight:800">&#9917; SSIF Tr&aelig;ner</p>
+    {$holdSub}
+  </td></tr>
+  <tr><td style="padding:24px">
+    <p style="margin:0 0 6px;font-size:14px;color:#4a4a4a">Hej {$navnEnc},</p>
+    <h1 style="margin:0 0 16px;font-size:20px;font-weight:800;color:#1a1a1a">Du er udtaget til {$titEnc}</h1>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #dde5dd;border-radius:10px;overflow:hidden;margin-bottom:16px">
+      {$rows}
+    </table>
+    {$beskHtml}
+    <p style="margin:20px 0 0;font-size:14px;font-weight:700;color:#1a5c2a;text-align:center">Vi gl&aelig;der os til at se dig! &#127942;</p>
+    <p style="margin:12px 0 0;font-size:12px;color:#aaa;text-align:center">Venlig hilsen &middot; Sejs-Svejb&aelig;k IF</p>
+  </td></tr>
+</table>
+</td></tr>
+</table>
+</body></html>
+HTML;
+}
+
 function smtp_send_html(string $to, string $subject, string $html): bool {
     $host = 'send.one.com';
     $port = 465;

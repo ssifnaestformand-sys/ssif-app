@@ -35,9 +35,105 @@ if (!$linkResp) {
     vis_fejl('Linket er ukendt', 'Prøv at trykke på knappen i mailen igen.');
     exit;
 }
-$begivenhedId = $linkResp['fields']['begivenhedId']['stringValue'] ?? '';
-$memberId     = $linkResp['fields']['memberId']['stringValue']     ?? '';
-if (!$begivenhedId || !$memberId) {
+$lf                = $linkResp['fields'];
+$begivenhedId      = $lf['begivenhedId']['stringValue']      ?? '';
+$tilkendegivelseId = $lf['tilkendegivelseId']['stringValue'] ?? '';
+$memberId          = $lf['memberId']['stringValue']           ?? '';
+
+if (!$memberId) {
+    http_response_code(404);
+    vis_fejl('Ugyldigt link', 'Dette link er ikke gyldigt.');
+    exit;
+}
+
+// ══ Tilkendegivelse-flow ══════════════════════════════════════════════════════
+if ($tilkendegivelseId) {
+    $tResp = fs_get_s("{$fsBase}/tilkendegivelser/{$tilkendegivelseId}", $fsToken);
+    if (!$tResp) {
+        vis_fejl('Tilkendegivelsen er lukket', 'Tilkendegivelsen eksisterer ikke længere.');
+        exit;
+    }
+    $tf     = $tResp['fields'];
+    $status = $tf['status']['stringValue'] ?? 'udsendt';
+
+    if ($status === 'lukket') {
+        vis_tilkendegivelse_lukket($tf);
+        exit;
+    }
+
+    $datoer = [];
+    foreach ($tf['datoer']['arrayValue']['values'] ?? [] as $d) {
+        $df = $d['mapValue']['fields'] ?? [];
+        $dato = $df['dato']['stringValue'] ?? '';
+        if ($dato) $datoer[] = [
+            'dato'      => $dato,
+            'tidspunkt' => $df['tidspunkt']['stringValue'] ?? '',
+            'modetid'   => $df['modetid']['stringValue']   ?? '',
+            'sted'      => $df['sted']['stringValue']      ?? '',
+        ];
+    }
+
+    // Tjek om alle datoer er passeret
+    $allePaseret = true;
+    foreach ($datoer as $d) {
+        if (strtotime($d['dato'] . ' 23:59:59') >= time()) { $allePaseret = false; break; }
+    }
+    if ($allePaseret) {
+        vis_tilkendegivelse_lukket($tf);
+        exit;
+    }
+
+    $deltResp   = fs_get_s("{$fsBase}/tilkendegivelser/{$tilkendegivelseId}/deltagere/{$memberId}", $fsToken);
+    $deltFields = $deltResp ? ($deltResp['fields'] ?? []) : [];
+    $navn       = $deltFields['navn']['stringValue'] ?? '';
+    $nuværendeSvar = [];
+    foreach ($deltFields['svar']['mapValue']['fields'] ?? [] as $datKey => $v) {
+        $nuværendeSvar[$datKey] = $v['stringValue'] ?? '';
+    }
+
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $postSvar = is_array($_POST['svar'] ?? null) ? $_POST['svar'] : [];
+        $merged   = $nuværendeSvar;
+        foreach ($postSvar as $dato => $val) {
+            if (in_array($val, ['kan', 'kan_ikke'], true)) {
+                $merged[$dato] = $val;
+            }
+        }
+
+        $svarFields = [];
+        foreach ($merged as $dato => $val) {
+            $svarFields[$dato] = ['stringValue' => $val];
+        }
+
+        $now      = date('Y-m-d\TH:i:s\Z');
+        $patchUrl = "{$fsBase}/tilkendegivelser/{$tilkendegivelseId}/deltagere/{$memberId}"
+                  . '?updateMask.fieldPaths=svar&updateMask.fieldPaths=opdateretAt';
+        $patchResp = @file_get_contents($patchUrl, false, stream_context_create(['http' => [
+            'method'        => 'PATCH',
+            'header'        => "Authorization: Bearer {$fsToken}\r\nContent-Type: application/json\r\n",
+            'content'       => json_encode(['fields' => [
+                'svar'        => ['mapValue' => ['fields' => $svarFields]],
+                'opdateretAt' => ['timestampValue' => $now],
+            ]]),
+            'timeout'       => 10,
+            'ignore_errors' => true,
+        ]]));
+
+        if (!$patchResp || isset(json_decode($patchResp ?: '', true)['error'])) {
+            vis_fejl('Teknisk fejl', 'Svaret kunne ikke gemmes. Prøv igen.');
+            exit;
+        }
+
+        vis_tilkendegivelse_bekræftelse($navn, $merged, $datoer, $tf);
+        exit;
+    }
+
+    vis_tilkendegivelse_svarside($navn, $nuværendeSvar, $datoer, $tf, $token);
+    exit;
+}
+
+// ══ Begivenhed-flow (eksisterende, uændret) ═══════════════════════════════════
+if (!$begivenhedId) {
     http_response_code(404);
     vis_fejl('Ugyldigt link', 'Dette link er ikke gyldigt.');
     exit;
@@ -385,6 +481,135 @@ h1{font-size:20px;font-weight:800;color:#1a1a1a;line-height:1.25}
 </head>
 <body>
 HTML;
+}
+
+// ── Tilkendegivelse-sidefunktioner ────────────────────────────────────────────
+
+function vis_tilkendegivelse_svarside(string $navn, array $nuværendeSvar, array $datoer, array $tf, string $token): void {
+    $titel   = htmlspecialchars($tf['titel']['stringValue'] ?? '');
+    $besked  = htmlspecialchars($tf['besked']['stringValue'] ?? '');
+    $navnEnc = htmlspecialchars($navn);
+    $postUrl = '/s/' . rawurlencode($token);
+
+    $harSvaret = !empty($nuværendeSvar);
+    $tidlSvarHtml = $harSvaret
+        ? '<p class="curr-svar">&#10003; Du har allerede svaret — du kan ændre det herunder.</p>'
+        : '<div class="svar-kræves">&#128073; Tryk for at svare — det tager ét sekund</div>';
+
+    $beskHtml = $besked
+        ? "<p class=\"besk\">{$besked}</p>"
+        : '';
+
+    $datoRækker = '';
+    foreach ($datoer as $d) {
+        $dato     = htmlspecialchars($d['dato']);
+        $datoDk   = dato_dk_s($d['dato']);
+        $ekstra   = '';
+        if ($d['tidspunkt']) $ekstra .= ' kl. ' . htmlspecialchars($d['tidspunkt']);
+        if ($d['sted'])      $ekstra .= ' — ' . htmlspecialchars($d['sted']);
+
+        $nuv     = $nuværendeSvar[$d['dato']] ?? '';
+        $kanCls  = $nuv === 'kan'      ? ' class="bsvar kan selected"'      : ' class="bsvar kan"';
+        $ikkeCls = $nuv === 'kan_ikke' ? ' class="bsvar ikke selected"' : ' class="bsvar ikke"';
+
+        $datoRækker .= <<<ROW
+<div class="dato-blok">
+  <div class="dato-label">{$datoDk}{$ekstra}</div>
+  <div class="btn-row">
+    <button type="submit" name="svar[{$dato}]" value="kan" {$kanCls}>Kan &#10003;</button>
+    <button type="submit" name="svar[{$dato}]" value="kan_ikke" {$ikkeCls}>Kan ikke</button>
+  </div>
+</div>
+ROW;
+    }
+
+    header('Content-Type: text/html; charset=UTF-8');
+    echo html_hoved('Tilkendegivelse — Sejs-Svejbæk IF');
+    echo <<<HTML
+<div class="card">
+  <div class="topbar">&#9917; SSIF Tr&aelig;ner</div>
+  <div class="body">
+    <p class="hilsen">Hej {$navnEnc},</p>
+    <h1>{$titel}</h1>
+    {$beskHtml}
+    {$tidlSvarHtml}
+    <form method="POST" action="{$postUrl}" class="cta-form">
+      <p class="spørgsmål">Hvornår kan du spille?</p>
+      {$datoRækker}
+      <button type="submit" class="gem-alle-btn">Gem svar</button>
+    </form>
+    <p class="footer">Sejs-Svejb&aelig;k IF</p>
+  </div>
+</div>
+<style>
+.dato-blok{display:flex;flex-direction:column;gap:8px;padding:12px 0;border-bottom:1px solid #eee}
+.dato-blok:last-of-type{border-bottom:none}
+.dato-label{font-size:14px;font-weight:700;color:#1a1a1a}
+.gem-alle-btn{display:block;width:100%;background:#1a5c2a;color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:800;padding:16px;cursor:pointer;margin-top:8px}
+.gem-alle-btn:active{transform:scale(.97)}
+.bsvar.kan{background:#e8f5ec;color:#1a5c2a;border:2px solid #1a5c2a;border-radius:12px;font-size:15px;font-weight:800;padding:14px 0;cursor:pointer;flex:1;transition:all .15s}
+.bsvar.kan.selected,.bsvar.kan:hover{background:#1a5c2a;color:#fff}
+.bsvar.ikke{background:#fff5f5;color:#dc2626;border:2px solid #fecaca;border-radius:12px;font-size:15px;font-weight:800;padding:14px 0;cursor:pointer;flex:1;transition:all .15s}
+.bsvar.ikke.selected,.bsvar.ikke:hover{background:#dc2626;color:#fff;border-color:#dc2626}
+</style>
+HTML;
+    echo '</body></html>';
+}
+
+function vis_tilkendegivelse_bekræftelse(string $navn, array $svar, array $datoer, array $tf): void {
+    $titel   = htmlspecialchars($tf['titel']['stringValue'] ?? '');
+    $navnEnc = htmlspecialchars($navn);
+
+    $rækkerne = '';
+    foreach ($datoer as $d) {
+        $datoDk = htmlspecialchars(dato_dk_s($d['dato']));
+        $s      = $svar[$d['dato']] ?? '';
+        if ($s === 'kan') {
+            $ikon = '&#10003;'; $klasse = 'style="color:#1a5c2a;font-weight:700"';
+            $tekst = 'Kan';
+        } elseif ($s === 'kan_ikke') {
+            $ikon = '&#10005;'; $klasse = 'style="color:#dc2626;font-weight:700"';
+            $tekst = 'Kan ikke';
+        } else {
+            $ikon = ''; $klasse = 'style="color:#aaa"'; $tekst = 'Ikke svaret';
+        }
+        $rækkerne .= "<div class=\"det\"><span>{$datoDk}</span><strong {$klasse}>{$ikon} {$tekst}</strong></div>";
+    }
+
+    header('Content-Type: text/html; charset=UTF-8');
+    echo html_hoved('Svar registreret — Sejs-Svejbæk IF');
+    echo <<<HTML
+<div class="card">
+  <div class="topbar" style="background:#1a5c2a">&#9917; SSIF Tr&aelig;ner</div>
+  <div class="body">
+    <div class="ikon-stor" style="color:#1a5c2a">&#10003;</div>
+    <h1 style="text-align:center">Tak {$navnEnc}!</h1>
+    <p style="font-size:14px;color:#4a4a4a;text-align:center">Dit svar er gemt for {$titel}</p>
+    <div class="detaljer">{$rækkerne}</div>
+    <p style="font-size:13px;color:#888;text-align:center">Du kan ændre dit svar ved at trykke på linket i mailen igen.</p>
+    <p class="footer">Sejs-Svejb&aelig;k IF</p>
+  </div>
+</div>
+HTML;
+    echo '</body></html>';
+}
+
+function vis_tilkendegivelse_lukket(array $tf): void {
+    $titel = htmlspecialchars($tf['titel']['stringValue'] ?? '');
+    header('Content-Type: text/html; charset=UTF-8');
+    echo html_hoved('Tilkendegivelse lukket — Sejs-Svejbæk IF');
+    echo <<<HTML
+<div class="card">
+  <div class="topbar">&#9917; SSIF Tr&aelig;ner</div>
+  <div class="body" style="text-align:center">
+    <div class="ikon-stor">&#128197;</div>
+    <h1>{$titel}</h1>
+    <p style="font-size:14px;color:#4a4a4a">Denne tilkendegivelse er lukket — træneren har allerede fordelt holdene.</p>
+    <p class="footer">Sejs-Svejb&aelig;k IF</p>
+  </div>
+</div>
+HTML;
+    echo '</body></html>';
 }
 
 // ── Firestore + OAuth ─────────────────────────────────────────────────────────
