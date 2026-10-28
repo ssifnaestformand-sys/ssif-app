@@ -314,7 +314,6 @@ function InvitationRequiredPage({ user }) {
 
 const BACKOFFICE_PAGES = [
   { group: 'Træner app',    id: 'ta_begivenheder', label: 'Begivenheder',   icon: 'calendar' },
-  { group: 'Træner app',    id: 'ta_holds',        label: 'Hold & spillere',icon: 'users'    },
   { group: 'Træner app',    id: 'traener_app',     label: 'Indstillinger',  icon: 'phone'    },
   { group: 'Arkiv',         id: 'dashboard',       label: 'Dashboard',      icon: 'home'     },
   { group: 'Arkiv',         id: 'news',            label: 'Nyheder',        icon: 'news'     },
@@ -352,7 +351,10 @@ function Sidebar({ page, setPage, userDoc, user, onLogout }) {
         items: BACKOFFICE_PAGES.filter(p => p.group === label && hasPageAccess(userDoc, p.id)),
       }))
       .filter(g => g.items.length > 0),
-    ...(isAdmin ? [{ label: 'Administration', items: [{ id: 'users', label: 'Adgang', icon: 'shield' }] }] : []),
+    ...(isAdmin ? [{ label: 'Administration', items: [
+      { id: 'holds_admin', label: 'Hold',   icon: 'users'  },
+      { id: 'users',       label: 'Adgang', icon: 'shield' },
+    ]}] : []),
   ]
 
   function toggleGroup(label) {
@@ -5792,7 +5794,406 @@ function TaBegivenhederPage() {
   )
 }
 
-// ─── Træner app: Hold & spillere ──────────────────────────────────────────────
+// ─── Administration: Hold (global master-view) ────────────────────────────────
+
+function HoldsAdminPage({ authUser }) {
+  const [afdelinger,    setAfdelinger]    = useState([])
+  const [holds,         setHolds]         = useState([])
+  const [loading,       setLoading]       = useState(true)
+  const [selectedHold,  setSelectedHold]  = useState(null)
+  const [members,       setMembers]       = useState([])
+  const [membersLoad,   setMembersLoad]   = useState(false)
+  const [collapsed,     setCollapsed]     = useState(new Set())
+  const [holdSearch,    setHoldSearch]    = useState('')
+  const [memberSearch,  setMemberSearch]  = useState('')
+  const [togglingAktiv, setTogglingAktiv] = useState(false)
+  const [syncing,       setSyncing]       = useState(null)
+  const [syncResult,    setSyncResult]    = useState(null)
+
+  function loadAll() {
+    setLoading(true)
+    Promise.all([
+      getDocs(collection(db, 'afdelinger')),
+      getDocs(query(collection(db, 'holds'), orderBy('titel'))),
+    ]).then(([aSnap, hSnap]) => {
+      setAfdelinger(
+        aSnap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => (a.navn || '').localeCompare(b.navn || '', 'da'))
+      )
+      setHolds(hSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+    }).catch(() => {}).finally(() => setLoading(false))
+  }
+
+  useEffect(() => { loadAll() }, [])
+
+  const holdsByAfd = useMemo(() => {
+    const q = holdSearch.toLowerCase()
+    const map = {}
+    for (const h of holds) {
+      if (q && !(h.titel || '').toLowerCase().includes(q)) continue
+      const key = h.afdeling_id || '__ingen__'
+      if (!map[key]) map[key] = []
+      map[key].push(h)
+    }
+    return map
+  }, [holds, holdSearch])
+
+  const afdList = useMemo(() => {
+    const known = afdelinger.filter(a => holdsByAfd[a.id])
+    const rest  = holdsByAfd['__ingen__'] ? [{ id: '__ingen__', navn: 'Uden afdeling' }] : []
+    return [...known, ...rest]
+  }, [afdelinger, holdsByAfd])
+
+  async function selectHold(hold) {
+    if (selectedHold?.id === hold.id) { setSelectedHold(null); setMembers([]); return }
+    setSelectedHold(hold)
+    setMembersLoad(true)
+    setMembers([])
+    setMemberSearch('')
+    try {
+      const snap = await getDocs(
+        query(collection(db, 'members'), where('holdIds', 'array-contains', hold.id))
+      )
+      setMembers(
+        snap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'da'))
+      )
+    } catch(e) {}
+    setMembersLoad(false)
+  }
+
+  async function toggleAktiv() {
+    if (!selectedHold || togglingAktiv) return
+    const nextVal = !selectedHold.aktiv  // undefined→true, true→false, false→true
+    setTogglingAktiv(true)
+    try {
+      await updateDoc(doc(db, 'holds', selectedHold.id), { aktiv: nextVal })
+      const updated = { ...selectedHold, aktiv: nextVal }
+      setSelectedHold(updated)
+      setHolds(prev => prev.map(h => h.id === selectedHold.id ? updated : h))
+    } catch(e) {}
+    setTogglingAktiv(false)
+  }
+
+  async function triggerSync(what) {
+    setSyncing(what); setSyncResult(null)
+    try {
+      const idToken = await authUser.getIdToken()
+      const fd = new FormData()
+      fd.append('what', what); fd.append('idToken', idToken)
+      const res  = await fetch('https://app.sejssvejbaek-if.dk/api/admin-sync.php', {
+        method: 'POST', headers: { Authorization: `Bearer ${idToken}` }, body: fd,
+      })
+      const data = await res.json()
+      if (!res.ok) { setSyncResult({ ok: false, msg: data.error || 'Fejl' }); return }
+      const r = data.results || {}
+      const parts = []
+      if (r.holds)   parts.push(`Hold: ${r.holds.written ?? '?'} skrevet`)
+      if (r.members) parts.push('Spillere: kører i baggrunden')
+      setSyncResult({ ok: true, msg: parts.join(' · ') || 'Gennemført', ts: data.synced })
+      if (what === 'holds' || what === 'all') setTimeout(loadAll, 2000)
+    } catch(err) {
+      setSyncResult({ ok: false, msg: err.message })
+    } finally { setSyncing(null) }
+  }
+
+  function toggleAfd(id) {
+    setCollapsed(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  if (loading) return <div className="page-header"><div className="spinner" /></div>
+
+  const isLederOf  = id => m => (m.lederHolds || []).some(x => String(x) === String(id))
+  const trainers   = members.filter(isLederOf(selectedHold?.id))
+  const spillere   = members.filter(m => !isLederOf(selectedHold?.id)(m))
+  const mq         = memberSearch.toLowerCase()
+  const visSpillere = mq ? spillere.filter(m => (m.name || '').toLowerCase().includes(mq)) : spillere
+  const isInaktiv  = selectedHold?.aktiv === false
+
+  return (
+    <>
+      <div className="page-header">
+        <h1 className="page-title">Hold</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {syncResult && (
+            <span style={{ fontSize: 12, color: syncResult.ok ? '#1a5c2a' : '#c0392b' }}>
+              {syncResult.msg}
+            </span>
+          )}
+          <button className="btn btn-ghost btn-sm" disabled={!!syncing}
+            onClick={() => triggerSync('holds')} title="Henter hold og afdelinger fra Conventus">
+            {syncing === 'holds' ? 'Synker…' : 'Sync hold'}
+          </button>
+          <button className="btn btn-ghost btn-sm" disabled={!!syncing}
+            onClick={() => triggerSync('members')} title="Henter spillere og trænere fra Conventus">
+            {syncing === 'members' ? 'Synker…' : 'Sync spillere'}
+          </button>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 16, alignItems: 'start' }}>
+
+        {/* ── Venstre: afdeling-træ ── */}
+        <div>
+          <input
+            className="form-input"
+            placeholder="Søg hold…"
+            value={holdSearch}
+            onChange={e => setHoldSearch(e.target.value)}
+            style={{ marginBottom: 10 }}
+          />
+          <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 10 }}>
+            {afdelinger.length} afdelinger · {holds.length} hold
+          </div>
+          {afdList.length === 0 && (
+            <p style={{ fontSize: 13, color: 'var(--text2)', textAlign: 'center', padding: '16px 0' }}>
+              {holdSearch ? `Ingen hold matcher "${holdSearch}"` : 'Ingen hold fundet'}
+            </p>
+          )}
+          {afdList.map(afd => {
+            const afdHolds  = holdsByAfd[afd.id] || []
+            const isCollapsed = collapsed.has(afd.id)
+            return (
+              <div key={afd.id} style={{ marginBottom: 4 }}>
+                <button
+                  onClick={() => toggleAfd(afd.id)}
+                  style={{ width: '100%', background: 'var(--bg)', border: 'none',
+                    borderBottom: '2px solid var(--border)', cursor: 'pointer',
+                    padding: '7px 10px', display: 'flex', alignItems: 'center',
+                    justifyContent: 'space-between', textAlign: 'left', borderRadius: '6px 6px 0 0' }}
+                >
+                  <span style={{ fontWeight: 700, fontSize: 11, color: 'var(--text2)',
+                    textTransform: 'uppercase', letterSpacing: 0.6 }}>
+                    {afd.navn}
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ fontSize: 11, color: 'var(--text2)', fontWeight: 600 }}>{afdHolds.length}</span>
+                    <svg width="11" height="11" viewBox="0 0 12 12" fill="none"
+                      style={{ transition: 'transform .15s', transform: isCollapsed ? 'rotate(-90deg)' : 'none', color: 'var(--text2)' }}>
+                      <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                    </svg>
+                  </div>
+                </button>
+                {!isCollapsed && (
+                  <div style={{ paddingBottom: 6, borderLeft: '2px solid var(--border)', marginLeft: 10, paddingLeft: 6 }}>
+                    {afdHolds.map(hold => {
+                      const sel     = selectedHold?.id === hold.id
+                      const inaktiv = hold.aktiv === false
+                      return (
+                        <button key={hold.id}
+                          onClick={() => selectHold(hold)}
+                          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 6,
+                            background: sel ? '#e8f5ec' : 'transparent',
+                            border: `1px solid ${sel ? '#1a5c2a' : 'transparent'}`,
+                            borderRadius: 7, padding: '6px 8px', cursor: 'pointer',
+                            textAlign: 'left', marginBottom: 1, opacity: inaktiv ? 0.45 : 1 }}
+                        >
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: sel ? 700 : 400,
+                              color: sel ? '#1a5c2a' : 'var(--text)',
+                              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {hold.titel || hold.id}
+                            </div>
+                          </div>
+                          {inaktiv && (
+                            <span style={{ fontSize: 10, color: '#c0392b', fontWeight: 700, flexShrink: 0 }}>OFF</span>
+                          )}
+                          {sel && (
+                            <svg width="10" height="10" viewBox="0 0 16 16" fill="none" style={{ color: '#1a5c2a', flexShrink: 0 }}>
+                              <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                            </svg>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        {/* ── Højre: detailpanel ── */}
+        {!selectedHold ? (
+          <div className="card" style={{ padding: '40px 24px', textAlign: 'center' }}>
+            <Icon name="users" size={36} color="#d1d5db" />
+            <p style={{ color: 'var(--text2)', fontSize: 14, marginTop: 12 }}>
+              Vælg et hold for at se detaljer, aktivere/deaktivere og se spillere
+            </p>
+          </div>
+        ) : (
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+
+            {/* Hold-header */}
+            <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)',
+              background: 'var(--bg)', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 800, fontSize: 16, color: 'var(--text)', marginBottom: 3 }}>
+                  {selectedHold.titel}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text2)' }}>
+                  Conventus ID: {selectedHold.id}
+                </div>
+              </div>
+              {!membersLoad && (
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)', lineHeight: 1 }}>{members.length}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text2)' }}>
+                    {trainers.length > 0 ? `${trainers.length} tr · ` : ''}{spillere.length} spl
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div style={{ padding: '16px 18px' }}>
+
+              {/* Aktiv-status + toggle */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                background: isInaktiv ? '#fff0f0' : '#f0f7f1',
+                border: `1px solid ${isInaktiv ? '#f5c6c6' : '#d5e8d8'}`,
+                borderRadius: 8, padding: '10px 14px', marginBottom: 18 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13,
+                    color: isInaktiv ? '#c0392b' : '#1a5c2a', marginBottom: 3 }}>
+                    {isInaktiv ? 'Inaktivt hold' : 'Aktivt hold'}
+                    <span style={{ fontWeight: 400, fontSize: 11, marginLeft: 8,
+                      color: 'var(--text2)', fontFamily: 'monospace' }}>
+                      aktiv = {selectedHold.aktiv === undefined ? '(ikke sat)' : String(selectedHold.aktiv)}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.5 }}>
+                    {isInaktiv
+                      ? 'Skjult i trænerappen — trainer-data.php udelukker hold hvor aktiv === false.'
+                      : 'Vises i trænerappen for alle med leder-relation i Conventus. Sæt aktiv = false for at skjule det.'}
+                  </div>
+                </div>
+                <button
+                  onClick={toggleAktiv}
+                  disabled={togglingAktiv}
+                  className="btn btn-ghost btn-sm"
+                  style={{ marginLeft: 16, flexShrink: 0 }}
+                >
+                  {togglingAktiv ? '…' : isInaktiv ? 'Aktivér' : 'Deaktivér'}
+                </button>
+              </div>
+
+              {/* Conventus-datafelter */}
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#888',
+                  textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>
+                  Data fra Conventus (skrivebeskyttet — overskrives ved sync)
+                </div>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <tbody>
+                    {[
+                      ['aktivitet_titel',       selectedHold.aktivitet_titel || '–',
+                        'Aktivitet / sportsgren fra Conventus'],
+                      ['hold_type',             selectedHold.hold_type || '–',
+                        '"hold" eller "udvalg" — klassificering i Conventus'],
+                      ['periode_fra',           selectedHold.periode_fra || '–',
+                        'Sæsonstart — påvirker IKKE aktiv-feltet automatisk'],
+                      ['periode_til',           selectedHold.periode_til || '–',
+                        'Sæsonslut — påvirker IKKE aktiv-feltet automatisk'],
+                      ['afdeling_id',           selectedHold.afdeling_id || '–',
+                        'Afdelingens Conventus-ID'],
+                      ['sidst_synkroniseret',
+                        selectedHold.sidst_synkroniseret
+                          ? selectedHold.sidst_synkroniseret.slice(0,16).replace('T', ' ')
+                          : '–',
+                        null],
+                    ].map(([field, val, note]) => (
+                      <tr key={field} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td style={{ padding: '8px 0', width: '38%', verticalAlign: 'top' }}>
+                          <code style={{ fontSize: 12, color: '#888', background: 'var(--bg)',
+                            padding: '1px 5px', borderRadius: 4 }}>{field}</code>
+                        </td>
+                        <td style={{ padding: '8px 10px', color: 'var(--text)', verticalAlign: 'top', fontSize: 13 }}>
+                          {val}
+                          {note && (
+                            <span style={{ display: 'block', fontSize: 11, color: '#aaa', marginTop: 2 }}>{note}</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Trænere */}
+              {membersLoad && <div className="spinner" style={{ margin: '24px auto' }} />}
+              {!membersLoad && trainers.length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#888',
+                    textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
+                    Trænere & ledere ({trainers.length})
+                  </div>
+                  {trainers.map(m => (
+                    <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '8px 12px', borderRadius: 8, marginBottom: 4,
+                      background: '#f0f7f1', border: '1px solid #d5e8d8', fontSize: 13 }}>
+                      <span style={{ flex: 1, fontWeight: 600 }}>{m.name}</span>
+                      <span style={{ fontSize: 11, color: '#1a5c2a', fontWeight: 700 }}>Træner</span>
+                      <span style={{ fontSize: 12, color: 'var(--text2)' }}>{(m.allEmails || [])[0] || ''}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Spillere */}
+              {!membersLoad && spillere.length > 0 && (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center',
+                    justifyContent: 'space-between', marginBottom: 8 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#888',
+                      textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                      Spillere ({spillere.length})
+                    </div>
+                    <input
+                      className="form-input"
+                      placeholder="Filtrer navn…"
+                      value={memberSearch}
+                      onChange={e => setMemberSearch(e.target.value)}
+                      style={{ width: 150, padding: '4px 8px', fontSize: 12 }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {visSpillere.map(m => (
+                      <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10,
+                        padding: '7px 12px', borderRadius: 8,
+                        background: 'var(--bg)', border: '1px solid var(--border)', fontSize: 13 }}>
+                        <span style={{ flex: 1 }}>{m.name}</span>
+                        <span style={{ fontSize: 12, color: 'var(--text2)' }}>{(m.allEmails || [])[0] || ''}</span>
+                      </div>
+                    ))}
+                    {visSpillere.length === 0 && memberSearch && (
+                      <p style={{ fontSize: 13, color: 'var(--text2)', textAlign: 'center',
+                        padding: '12px 0', margin: 0 }}>
+                        Ingen spillere matcher "{memberSearch}"
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+              {!membersLoad && members.length === 0 && (
+                <p style={{ color: 'var(--text2)', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>
+                  Ingen synkroniserede spillere på dette hold.
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  )
+}
+
+// ─── Træner app: Hold & spillere (fjernet — se Administration → Hold) ─────────
 
 function TaHoldsPage() {
   const [afdelinger,     setAfdelinger]     = useState([])
@@ -6093,8 +6494,8 @@ function TaHoldsPage() {
 
 const PAGE_TITLES = {
   ta_begivenheder: 'Begivenheder',
-  ta_holds:        'Hold & spillere',
   traener_app:     'Indstillinger',
+  holds_admin:     'Hold',
   dashboard:       'Dashboard',
   messages:        'Beskeder',
   news:            'Nyheder',
@@ -6186,10 +6587,12 @@ export default function AdminApp() {
 
   function renderPage() {
     // Administration is always superadmin-only
-    if (page === 'users') {
-      return userDoc.role === 'admin'
-        ? <UsersPage authUser={authUser} userDoc={userDoc} />
-        : <EmptyState icon="shield" text="Kun Superadmin har adgang til Administration" />
+    if (page === 'users' || page === 'holds_admin') {
+      if (userDoc.role !== 'admin') {
+        return <EmptyState icon="shield" text="Kun Superadmin har adgang til Administration" />
+      }
+      if (page === 'users') return <UsersPage authUser={authUser} userDoc={userDoc} />
+      if (page === 'holds_admin') return <HoldsAdminPage authUser={authUser} />
     }
     // All other pages respect granular permissions
     if (!hasPageAccess(userDoc, page)) {
@@ -6197,7 +6600,6 @@ export default function AdminApp() {
     }
     switch (page) {
       case 'ta_begivenheder': return <TaBegivenhederPage />
-      case 'ta_holds':        return <TaHoldsPage />
       case 'traener_app':     return <TraenerAppPage    authUser={authUser} userDoc={userDoc} />
       case 'dashboard':    return <DashboardPage    userDoc={userDoc} />
       case 'messages':     return <MessagesPage      userDoc={userDoc} authUser={authUser} />
