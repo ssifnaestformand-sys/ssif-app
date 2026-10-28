@@ -20,7 +20,7 @@ function t_row(string $label, string $value): string {
          . "</tr>";
 }
 
-function byg_mail_html(string $navn, string $type, string $titel, string $dato, string $tid, string $modetid, string $sted, string $beskrivelse, string $token): string {
+function byg_mail_html(string $navn, string $type, string $titel, string $dato, string $tid, string $modetid, string $sted, string $beskrivelse, string $token, string $holdTitel = ''): string {
     $svarBase  = 'https://app.sejssvejbaek-if.dk/s/' . rawurlencode($token);
     $kommerUrl = $svarBase . '?svar=kommer';
     $ikkeUrl   = $svarBase . '?svar=kommer_ikke';
@@ -33,8 +33,12 @@ function byg_mail_html(string $navn, string $type, string $titel, string $dato, 
     if ($modetid) $rows .= t_row('Mødetid',   htmlspecialchars($modetid));
     if ($sted)    $rows .= t_row('Sted',       htmlspecialchars($sted));
 
-    $navnEnc   = htmlspecialchars($navn);
-    $titEnc    = htmlspecialchars($titel);
+    $navnEnc    = htmlspecialchars($navn);
+    $titEnc     = htmlspecialchars($titel);
+    $holdEnc    = htmlspecialchars($holdTitel);
+    $holdSubtitle = $holdTitel
+        ? "<p style=\"margin:4px 0 0;color:rgba(255,255,255,.85);font-size:13px;font-weight:600\">{$holdEnc}</p>"
+        : '';
     $besk      = $beskrivelse
         ? '<p style="margin:16px 0 0;font-size:14px;color:#555;line-height:1.6">'
           . nl2br(htmlspecialchars($beskrivelse)) . '</p>'
@@ -50,6 +54,7 @@ function byg_mail_html(string $navn, string $type, string $titel, string $dato, 
 <table width="100%" style="max-width:480px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 6px rgba(0,0,0,.08)">
   <tr><td style="background:#1a5c2a;padding:18px 24px">
     <p style="margin:0;color:#fff;font-size:18px;font-weight:800">&#9917; SSIF Tr&aelig;ner</p>
+    {$holdSubtitle}
   </td></tr>
   <tr><td style="padding:24px">
     <p style="margin:0 0 6px;font-size:14px;color:#4a4a4a">Hej {$navnEnc},</p>
@@ -111,6 +116,16 @@ function smtp_send_html(string $to, string $subject, string $html): bool {
 
 function smtp_r($s): string { $o = ''; while ($l = fgets($s, 512)) { $o = $l; if (isset($l[3]) && $l[3] === ' ') break; } return $o; }
 function smtp_c($s, string $c): string { fwrite($s, $c . "\r\n"); return smtp_r($s); }
+
+// Omdanner holdnavn til gyldigt SMS-afsendernavn (GatewayAPI: maks 11 ASCII-tegn).
+// æ→ae, ø→oe, å→aa, mellemrum og specialtegn fjernes.
+function sms_afsender(string $holdTitel): string {
+    $s = mb_strtolower($holdTitel, 'UTF-8');
+    $s = str_replace(['æ','ø','å','ä','ö','ü'], ['ae','oe','aa','ae','oe','ue'], $s);
+    $s = preg_replace('/[^a-z0-9]/i', '', $s);
+    $s = substr($s, 0, 11);
+    return $s ?: 'SSIF';
+}
 
 function hent_conventus_telefonmap(string $apiKey): array {
     if (!$apiKey) return [];

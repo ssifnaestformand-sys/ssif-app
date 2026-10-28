@@ -116,12 +116,12 @@ if (in_array($kanal, ['mail', 'begge'], true)) {
 
         if ($tc['testMode']) {
             $to      = $tc['testEmail'];
-            $subject = "[TEST → {$deltager['navn']}] Du er udtaget til {$titel}";
+            $subject = "[TEST → {$deltager['navn']}] Du er udtaget til {$titel} — {$holdTitel}";
         } else {
-            $subject = "Du er udtaget til {$titel} — Sejs-Svejbæk IF";
+            $subject = "Du er udtaget til {$titel} — {$holdTitel}";
         }
 
-        $html = byg_mail_html($deltager['navn'], $type, $titel, $datoDk, $tidspunkt, $modetid, $sted, $beskrivelse, $deltager['token']);
+        $html = byg_mail_html($deltager['navn'], $type, $titel, $datoDk, $tidspunkt, $modetid, $sted, $beskrivelse, $deltager['token'], $holdTitel);
 
         if (smtp_send_html($to, $subject, $html)) { $sendt++; } else { $fejlet++; }
     }
@@ -172,7 +172,7 @@ if (in_array($kanal, ['sms', 'begge'], true)) {
         $gwResp = @file_get_contents('https://gatewayapi.com/rest/mtsms', false, stream_context_create(['http' => [
             'method'        => 'POST',
             'header'        => "Authorization: Token {$smsKey}\r\nContent-Type: application/json\r\n",
-            'content'       => json_encode(['sender' => 'SSIF', 'message' => $smsText,
+            'content'       => json_encode(['sender' => sms_afsender($holdTitel), 'message' => $smsText,
                                             'recipients' => [['msisdn' => $msisdn]]]),
             'timeout'       => 10,
             'ignore_errors' => true,

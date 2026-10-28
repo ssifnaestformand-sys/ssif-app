@@ -156,7 +156,7 @@ if ($kanal === 'sms') {
         $gw = @file_get_contents('https://gatewayapi.com/rest/mtsms', false, stream_context_create(['http' => [
             'method' => 'POST',
             'header' => "Authorization: Token {$smsKey}\r\nContent-Type: application/json\r\n",
-            'content' => json_encode(['sender' => 'SSIF', 'message' => $sendText, 'recipients' => [['msisdn' => $msisdn]]]),
+            'content' => json_encode(['sender' => sms_afsender($holdTitel), 'message' => $sendText, 'recipients' => [['msisdn' => $msisdn]]]),
             'timeout' => 10, 'ignore_errors' => true,
         ]]));
         $gd = json_decode($gw ?: '{}', true);
@@ -170,7 +170,7 @@ if ($kanal === 'sms') {
         $gw = @file_get_contents('https://gatewayapi.com/rest/mtsms', false, stream_context_create(['http' => [
             'method' => 'POST',
             'header' => "Authorization: Token {$smsKey}\r\nContent-Type: application/json\r\n",
-            'content' => json_encode(['sender' => 'SSIF', 'message' => $sendText, 'recipients' => [['msisdn' => $msisdn]]]),
+            'content' => json_encode(['sender' => sms_afsender($holdTitel), 'message' => $sendText, 'recipients' => [['msisdn' => $msisdn]]]),
             'timeout' => 10, 'ignore_errors' => true,
         ]]));
         $gd = json_decode($gw ?: '{}', true);
