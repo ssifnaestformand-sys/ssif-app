@@ -5819,10 +5819,18 @@ function TaTraenerePage() {
       getDocs(query(collection(db, 'users'), where('role', '==', 'trainer'))),
       getDocs(collection(db, 'holds')),
     ]).then(([uSnap, hSnap]) => {
+      // Indeksér på både d.id og conventus_id-feltet, så opslag virker uanset lagring
       const hm = {}
-      hSnap.docs.forEach(d => { hm[String(d.data().conventus_id || d.id)] = d.data().titel || d.id })
+      hSnap.docs.forEach(d => {
+        const titel = d.data().titel || d.id
+        hm[String(d.id)] = titel
+        if (d.data().conventus_id != null) hm[String(d.data().conventus_id)] = titel
+      })
       setHoldMap(hm)
-      setUsers(uSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+      setUsers(uSnap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        // Vis kun trænere der rent faktisk har logget ind i trænerappen
+        .filter(u => u.lastSeen != null)
         .sort((a, b) => (a.displayName || '').localeCompare(b.displayName || '', 'da')))
     }).catch(() => {}).finally(() => setLoading(false))
   }, [])
