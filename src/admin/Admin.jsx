@@ -2385,14 +2385,15 @@ function fmtRelative(ts) {
 }
 
 function AppUsersPage() {
-  const [users,      setUsers]      = useState([])
-  const [holdMap,    setHoldMap]    = useState({})
-  const [loading,    setLoading]    = useState(true)
-  const [search,     setSearch]     = useState('')
-  const [sortKey,    setSortKey]    = useState('lastSeen')
-  const [actionMsg,  setActionMsg]  = useState({})  // uid → { ok, msg }
-  const [actionBusy, setActionBusy] = useState({})  // uid+type → true
-  const [toDelete,   setToDelete]   = useState(null) // bruger-obj til sletbekræftelse
+  const [users,        setUsers]        = useState([])
+  const [holdMap,      setHoldMap]      = useState({})
+  const [lederByEmail, setLederByEmail] = useState({})
+  const [loading,      setLoading]      = useState(true)
+  const [search,       setSearch]       = useState('')
+  const [sortKey,      setSortKey]      = useState('lastSeen')
+  const [actionMsg,    setActionMsg]    = useState({})  // uid → { ok, msg }
+  const [actionBusy,   setActionBusy]   = useState({})  // uid+type → true
+  const [toDelete,     setToDelete]     = useState(null) // bruger-obj til sletbekræftelse
 
   async function adminAction(uid, action) {
     const key = uid + action
@@ -2430,14 +2431,24 @@ function AppUsersPage() {
     Promise.all([
       getDocs(collection(db, 'users')),
       getDocs(collection(db, 'holds')),
-    ]).then(([uSnap, hSnap]) => {
+      getDocs(query(collection(db, 'members'), where('isLeder', '==', true))),
+    ]).then(([uSnap, hSnap, mSnap]) => {
       setUsers(uSnap.docs.map(d => ({ id: d.id, ...d.data() })))
       const map = {}
       hSnap.docs.forEach(d => {
         const h = d.data()
+        map[d.id] = h.titel || d.id
         if (h.conventus_id) map[String(h.conventus_id)] = h.titel || d.id
       })
       setHoldMap(map)
+      const lbm = {}
+      mSnap.docs.forEach(d => {
+        const f = d.data()
+        const emails = (f.allEmails || []).map(e => (e || '').toLowerCase())
+        const holdIds = (f.lederHolds || []).map(String)
+        emails.forEach(e => { if (e) lbm[e] = holdIds })
+      })
+      setLederByEmail(lbm)
     }).finally(() => setLoading(false))
   }, [])
 
@@ -2568,6 +2579,7 @@ function AppUsersPage() {
                   <SortTh k="displayName" label="Navn" />
                   <th>Email-forbindelser</th>
                   <th>Hold i appen</th>
+                  <th>Holds (leder)</th>
                   <th>Rolle</th>
                   <SortTh k="lastSeen"  label="Sidst aktiv" />
                   <SortTh k="createdAt" label="Oprettet" />
@@ -2641,6 +2653,32 @@ function AppUsersPage() {
                               {unknown > 0 && (
                                 <span style={{ fontSize: 10, color: 'var(--text3)', alignSelf: 'center' }}>
                                   ({unknown} uden navn)
+                                </span>
+                              )}
+                            </div>
+                          )
+                        })()}
+                      </td>
+
+                      {/* Holds (leder) fra Conventus/members */}
+                      <td style={{ fontSize: 12, maxWidth: 200 }}>
+                        {(() => {
+                          const email = (u.email || u.primaryEmail || '').toLowerCase()
+                          const ids   = lederByEmail[email] || []
+                          if (!ids.length) return <span style={{ color: 'var(--text3)' }}>–</span>
+                          const named = ids.map(id => holdMap[id]).filter(Boolean)
+                          return (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                              {named.map((titel, i) => (
+                                <span key={i} className="badge badge-blue"
+                                      style={{ fontSize: 10, padding: '1px 5px', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                      title={titel}>
+                                  {titel}
+                                </span>
+                              ))}
+                              {ids.length > named.length && (
+                                <span style={{ fontSize: 10, color: 'var(--text3)', alignSelf: 'center' }}>
+                                  +{ids.length - named.length} hold
                                 </span>
                               )}
                             </div>
@@ -7073,7 +7111,7 @@ export default function AdminApp() {
     }
     switch (page) {
       case 'ta_begivenheder':  return <TaBegivenhederPage />
-      case 'ta_trænere':       return <TaTraenerePage />
+      case 'ta_trænere':       return <AppUsersPage />
       case 'ta_kommunikation': return <TaKommunikationPage />
       case 'traener_app':      return <TraenerAppPage    userDoc={userDoc} />
       case 'dashboard':    return <DashboardPage    userDoc={userDoc} />
