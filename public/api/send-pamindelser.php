@@ -66,6 +66,10 @@ $behandlet = 0;
 $totalSendt = 0;
 $fejl = [];
 
+// Hent SMS-telefonmap én gang (undgå gentagne Conventus API-kald)
+$smsKey  = getenv('SMS_API_KEY') ?: '';
+$phoneMap = $smsKey ? hent_conventus_telefonmap(getenv('CONVENTUS_KEY') ?: '') : [];
+
 foreach ($rows as $row) {
     if (!isset($row['document']['fields'])) continue;
     $f           = $row['document']['fields'];
@@ -170,8 +174,6 @@ foreach ($rows as $row) {
     // ── SMS-påmindelser ───────────────────────────────────────────────────────
     $smsSendt = 0; $smsFejlet = 0;
     if (in_array($kanal, ['sms', 'begge'], true)) {
-        $smsKey  = getenv('SMS_API_KEY') ?: '';
-        $phoneMap = $smsKey ? hent_conventus_telefonmap(getenv('CONVENTUS_KEY') ?: '') : [];
 
         foreach ($ikkesvaret as $deltager) {
             $msisdn = $phoneMap[$deltager['id']] ?? null;

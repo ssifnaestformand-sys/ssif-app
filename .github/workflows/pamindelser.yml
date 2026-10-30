@@ -13,7 +13,8 @@ jobs:
         run: |
           curl -s -X POST \
             -H "X-Sync-Secret: ${{ secrets.SYNC_SECRET }}" \
-            --max-time 120 \
+            --connect-timeout 30 \
+            --max-time 300 \
             https://app.sejssvejbaek-if.dk/api/send-pamindelser.php
         env:
           SYNC_SECRET: ${{ secrets.SYNC_SECRET }}
