@@ -2787,7 +2787,7 @@ function UsersPage({ authUser, userDoc }) {
     })
   }, [])
 
-  const accessUsers = allUsers.filter(u => u.role === 'admin' || u.role === 'trainer')
+  const accessUsers = allUsers.filter(u => u.role === 'admin')
 
   async function removeAccess(uid) {
     setRemovingId(uid)

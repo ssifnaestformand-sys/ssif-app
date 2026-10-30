@@ -6,7 +6,7 @@ import {
 } from 'firebase/auth'
 import {
   collection, query, where, orderBy, getDocs, addDoc, serverTimestamp,
-  doc, updateDoc,
+  doc, setDoc,
 } from 'firebase/firestore'
 import { auth, db } from './firebase.js'
 import './trainer.css'
@@ -46,7 +46,11 @@ export default function App() {
         setHolds(data.holds)
         setTestMode(data.testMode || false)
         setScreen('app')
-        updateDoc(doc(db, 'users', fbUser.uid), { lastSeen: serverTimestamp() }).catch(() => {})
+        setDoc(doc(db, 'users', fbUser.uid), {
+          lastSeen:    serverTimestamp(),
+          email:       fbUser.email || '',
+          displayName: fbUser.displayName || data.name || '',
+        }, { merge: true }).catch(() => {})
       } else if (data.error === 'email_not_verified') {
         setScreen('unverified')
       } else {
