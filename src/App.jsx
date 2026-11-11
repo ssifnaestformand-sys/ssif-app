@@ -366,7 +366,7 @@ function DashboardScreen({ user, displayName, holds, onLogout, onRefresh }) {
         paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
         display: 'flex', alignItems: 'center', gap: 10,
       }}>
-        <img src="/ssif-logo-white.png" alt="SSIF" style={{ height: 28, objectFit: 'contain', flexShrink: 0 }} />
+        <img src="/ssif-logo-white.png" alt="SSIF" style={{ height: 28, width: 32, objectFit: 'contain', flexShrink: 0 }} />
         <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>SSIF Træner</span>
         <button onClick={handleRefresh} disabled={refreshing} style={{
           background: 'none', border: 'none',
@@ -979,27 +979,24 @@ function BegivenhedFormScreen({ hold, begivenhed, user, onBack, onSaved, onDelet
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <div className="form-field">
+          <div className="form-field" style={{ minWidth: 0 }}>
             <label className="form-label">Dato</label>
             <input className="form-input" type="date" value={dato}
               onChange={e => setDato(e.target.value)} />
           </div>
-          <div className="form-field">
+          <div className="form-field" style={{ minWidth: 0 }}>
             <label className="form-label">Tidspunkt</label>
             <input className="form-input" type="time" value={tidspunkt}
               onChange={e => setTidspunkt(e.target.value)} />
           </div>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <div className="form-field">
+          <div className="form-field" style={{ minWidth: 0 }}>
             <label className="form-label">
               Mødetid <span style={{ fontWeight: 400, color: 'var(--text3)' }}>(valgfri)</span>
             </label>
             <input className="form-input" type="time" value={modetid}
               onChange={e => setModetid(e.target.value)} />
           </div>
-          <div className="form-field">
+          <div className="form-field" style={{ minWidth: 0 }}>
             <label className="form-label">
               Sted <span style={{ fontWeight: 400, color: 'var(--text3)' }}>(valgfri)</span>
             </label>
