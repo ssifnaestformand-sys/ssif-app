@@ -113,6 +113,7 @@ body {
   font-size: 15px;
   outline: none;
   width: 100%;
+  min-width: 0;
   background: var(--bg);
   color: var(--text);
   transition: border-color .12s;
