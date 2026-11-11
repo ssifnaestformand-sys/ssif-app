@@ -50,7 +50,6 @@ export default function App() {
           lastSeen:    serverTimestamp(),
           email:       fbUser.email || '',
           displayName: fbUser.displayName || data.name || '',
-          role:        'Membre',
         }, { merge: true }).catch(() => {})
       } else if (data.error === 'email_not_verified') {
         setScreen('unverified')
