@@ -121,9 +121,9 @@ if (in_array($kanal, ['mail', 'begge'], true)) {
             $subject = "Du er udtaget til {$titel} — {$holdTitel}";
         }
 
-        $html = byg_mail_html($deltager['navn'], $type, $titel, $datoDk, $tidspunkt, $modetid, $sted, $beskrivelse, $deltager['token'], $holdTitel);
+        $html = byg_mail_html($deltager['navn'], $type, $titel, $datoDk, $tidspunkt, $modetid, $sted, $beskrivelse, $deltager['token'], $holdTitel, $senderNavn);
 
-        if (smtp_send_html($to, $subject, $html)) { $sendt++; } else { $fejlet++; }
+        if (smtp_send_html($to, $subject, $html, $senderNavn)) { $sendt++; } else { $fejlet++; }
     }
 
     log_udsendelse($projectId, $fsToken, [

@@ -20,7 +20,7 @@ function t_row(string $label, string $value): string {
          . "</tr>";
 }
 
-function byg_mail_html(string $navn, string $type, string $titel, string $dato, string $tid, string $modetid, string $sted, string $beskrivelse, string $token, string $holdTitel = ''): string {
+function byg_mail_html(string $navn, string $type, string $titel, string $dato, string $tid, string $modetid, string $sted, string $beskrivelse, string $token, string $holdTitel = '', string $senderNavn = ''): string {
     $svarBase  = 'https://app.sejssvejbaek-if.dk/s/' . rawurlencode($token);
     $kommerUrl = $svarBase . '?svar=kommer';
     $ikkeUrl   = $svarBase . '?svar=kommer_ikke';
@@ -36,6 +36,7 @@ function byg_mail_html(string $navn, string $type, string $titel, string $dato, 
     $navnEnc    = htmlspecialchars($navn);
     $titEnc     = htmlspecialchars($titel);
     $holdEnc    = htmlspecialchars($holdTitel);
+    $afsenderEnc = $senderNavn ? htmlspecialchars('SSIF - ' . $senderNavn) : 'SSIF Tr&aelig;ner';
     $holdSubtitle = $holdTitel
         ? "<p style=\"margin:4px 0 0;color:rgba(255,255,255,.85);font-size:13px;font-weight:600\">{$holdEnc}</p>"
         : '';
@@ -53,7 +54,7 @@ function byg_mail_html(string $navn, string $type, string $titel, string $dato, 
 <tr><td align="center" style="padding:24px 16px">
 <table width="100%" style="max-width:480px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 6px rgba(0,0,0,.08)">
   <tr><td style="background:#1a5c2a;padding:18px 24px">
-    <p style="margin:0;color:#fff;font-size:18px;font-weight:800">&#9917; SSIF Tr&aelig;ner</p>
+    <p style="margin:0;color:#fff;font-size:18px;font-weight:800">&#9917; {$afsenderEnc}</p>
     {$holdSubtitle}
   </td></tr>
   <tr><td style="padding:24px">
@@ -63,7 +64,10 @@ function byg_mail_html(string $navn, string $type, string $titel, string $dato, 
       {$rows}
     </table>
     {$besk}
-    <p style="margin:24px 0 12px;font-size:14px;font-weight:700;color:#1a1a1a;text-align:center">Kan du komme?</p>
+    <p style="margin:16px 0 6px;font-size:13px;color:#555;text-align:center">
+      <a href="{$svarBase}" style="color:#1a5c2a;font-weight:600">Se hvem der deltager &rarr;</a>
+    </p>
+    <p style="margin:16px 0 12px;font-size:14px;font-weight:700;color:#1a1a1a;text-align:center">Kan du komme?</p>
     <table width="100%" cellpadding="0" cellspacing="0"><tr>
       <td width="48%" align="center">
         <a href="{$kommerUrl}" style="display:block;background:#1a5c2a;color:#fff;text-decoration:none;font-size:15px;font-weight:700;padding:13px 0;border-radius:11px;text-align:center">Kommer &#10003;</a>
@@ -82,12 +86,13 @@ function byg_mail_html(string $navn, string $type, string $titel, string $dato, 
 HTML;
 }
 
-function byg_tilkendegivelse_mail(string $navn, string $titel, array $datoer, string $besked, string $token, string $holdTitel = ''): string {
+function byg_tilkendegivelse_mail(string $navn, string $titel, array $datoer, string $besked, string $token, string $holdTitel = '', string $senderNavn = ''): string {
     $svarUrl  = 'https://app.sejssvejbaek-if.dk/s/' . rawurlencode($token);
 
-    $navnEnc  = htmlspecialchars($navn);
-    $titEnc   = htmlspecialchars($titel);
-    $holdEnc  = htmlspecialchars($holdTitel);
+    $navnEnc     = htmlspecialchars($navn);
+    $titEnc      = htmlspecialchars($titel);
+    $holdEnc     = htmlspecialchars($holdTitel);
+    $afsenderEnc = $senderNavn ? htmlspecialchars('SSIF - ' . $senderNavn) : 'SSIF Tr&aelig;ner';
     $holdSub  = $holdTitel
         ? "<p style=\"margin:4px 0 0;color:rgba(255,255,255,.85);font-size:13px;font-weight:600\">{$holdEnc}</p>"
         : '';
@@ -122,7 +127,7 @@ function byg_tilkendegivelse_mail(string $navn, string $titel, array $datoer, st
 <tr><td align="center" style="padding:24px 16px">
 <table width="100%" style="max-width:480px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 6px rgba(0,0,0,.08)">
   <tr><td style="background:#1a5c2a;padding:18px 24px">
-    <p style="margin:0;color:#fff;font-size:18px;font-weight:800">&#9917; SSIF Tr&aelig;ner</p>
+    <p style="margin:0;color:#fff;font-size:18px;font-weight:800">&#9917; {$afsenderEnc}</p>
     {$holdSub}
   </td></tr>
   <tr><td style="padding:24px">
@@ -193,7 +198,7 @@ function byg_info_mail_html(string $navn, string $titel, string $dato, string $t
 HTML;
 }
 
-function smtp_send_html(string $to, string $subject, string $html): bool {
+function smtp_send_html(string $to, string $subject, string $html, string $fra = ''): bool {
     $host = 'send.one.com';
     $port = 465;
     $user = 'noreply@sejssvejbaek-if.dk';
@@ -215,7 +220,7 @@ function smtp_send_html(string $to, string $subject, string $html): bool {
     smtp_c($sock, 'DATA');
     $enc = '=?UTF-8?B?' . base64_encode($subject) . '?=';
     $msg = "Date: " . date('r') . "\r\n"
-         . "From: SSIF =?UTF-8?B?" . base64_encode('Træner') . "?= <{$from}>\r\n"
+         . "From: =?UTF-8?B?" . base64_encode($fra ? 'SSIF - ' . $fra : 'SSIF Træner') . "?= <{$from}>\r\n"
          . "To: {$to}\r\nSubject: {$enc}\r\n"
          . "MIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n"
          . $html . "\r\n.";

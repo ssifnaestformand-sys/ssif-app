@@ -207,8 +207,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    vis_bekræftelse($navn, $svar, $extraSvar, $extraSpørgsmaalTekst, $bf, $token);
+    // Hent opdateret status efter svaret er registreret
+    $alleDeltDocs = fs_list_s("{$fsBase}/begivenheder/{$begivenhedId}/deltagere", $fsToken);
+    $statusLister = ['kommer' => [], 'kommer_ikke' => [], 'ingen' => 0];
+    foreach ($alleDeltDocs as $d) {
+        $df = $d['fields'] ?? [];
+        if (!($df['udtaget']['booleanValue'] ?? false)) continue;
+        $n = $df['navn']['stringValue'] ?? '';
+        $s = $df['svar']['stringValue'] ?? '';
+        if ($s === 'kommer')          $statusLister['kommer'][]      = $n;
+        elseif ($s === 'kommer_ikke') $statusLister['kommer_ikke'][] = $n;
+        else                          $statusLister['ingen']++;
+    }
+    vis_bekræftelse($navn, $svar, $extraSvar, $extraSpørgsmaalTekst, $bf, $token, $statusLister);
     exit;
+}
+
+// ── Hent status for alle udtagne deltagere ────────────────────────────────────
+$alleDeltDocs = fs_list_s("{$fsBase}/begivenheder/{$begivenhedId}/deltagere", $fsToken);
+$statusLister = ['kommer' => [], 'kommer_ikke' => [], 'ingen' => 0];
+foreach ($alleDeltDocs as $d) {
+    $df = $d['fields'] ?? [];
+    if (!($df['udtaget']['booleanValue'] ?? false)) continue;
+    $n = $df['navn']['stringValue'] ?? '';
+    $s = $df['svar']['stringValue'] ?? '';
+    if ($s === 'kommer')          $statusLister['kommer'][]      = $n;
+    elseif ($s === 'kommer_ikke') $statusLister['kommer_ikke'][] = $n;
+    else                          $statusLister['ingen']++;
 }
 
 // ── GET: vis svarside ─────────────────────────────────────────────────────────
@@ -216,12 +241,12 @@ $forudvalgt          = trim($_GET['svar'] ?? '');
 if (!in_array($forudvalgt, ['kommer', 'kommer_ikke'], true)) $forudvalgt = '';
 $nuværendeExtraSvar  = $deltFields['extraSvar']['stringValue'] ?? null;
 
-vis_svarside($navn, $nuvsvar, $forudvalgt, $bf, $token, $hasExtraSpørgsmaal, $extraSpørgsmaalTekst, $nuværendeExtraSvar);
+vis_svarside($navn, $nuvsvar, $forudvalgt, $bf, $token, $hasExtraSpørgsmaal, $extraSpørgsmaalTekst, $nuværendeExtraSvar, $statusLister);
 
 // ── Sidefunktioner ────────────────────────────────────────────────────────────
 
 function vis_svarside(string $navn, ?string $nuvsvar, string $forudvalgt, array $bf, string $token,
-                      bool $hasExtra, string $extraTekst, ?string $nuværendeExtra): void {
+                      bool $hasExtra, string $extraTekst, ?string $nuværendeExtra, array $statusLister = []): void {
     $titel    = htmlspecialchars($bf['titel']['stringValue'] ?? '');
     $type     = $bf['type']['stringValue'] ?? '';
     $dato     = htmlspecialchars($bf['dato']['stringValue'] ?? '');
@@ -277,6 +302,8 @@ EXT;
         ? ''
         : '<div class="svar-kræves">&#128073; Tryk for at svare — det tager ét sekund</div>';
 
+    $statusHtml = byg_status_html($statusLister);
+
     header('Content-Type: text/html; charset=UTF-8');
     echo html_hoved('Svar på invitation — Sejs-Svejbæk IF');
     echo <<<HTML
@@ -301,6 +328,7 @@ EXT;
         </button>
       </div>
     </form>
+    {$statusHtml}
     <p class="footer">Sejs-Svejb&aelig;k IF</p>
   </div>
 </div>
@@ -317,7 +345,7 @@ HTML;
     echo '</body></html>';
 }
 
-function vis_bekræftelse(string $navn, string $svar, ?string $extraSvar, string $extraSpørgsmaalTekst, array $bf, string $token): void {
+function vis_bekræftelse(string $navn, string $svar, ?string $extraSvar, string $extraSpørgsmaalTekst, array $bf, string $token, array $statusLister = []): void {
     $titel   = htmlspecialchars($bf['titel']['stringValue'] ?? '');
     $navnEnc = htmlspecialchars($navn);
     if ($svar === 'kommer') {
@@ -375,6 +403,8 @@ function vis_bekræftelse(string $navn, string $svar, ?string $extraSvar, string
 KAL;
     }
 
+    $statusHtml = byg_status_html($statusLister);
+
     header('Content-Type: text/html; charset=UTF-8');
     echo html_hoved('Svar registreret — Sejs-Svejbæk IF');
     echo <<<HTML
@@ -386,6 +416,7 @@ KAL;
     <p style="font-size:14px;color:#4a4a4a">Hej {$navnEnc} — dit svar er gemt.</p>
     {$extraHtml}
     {$kalenderHtml}
+    {$statusHtml}
     <p class="footer">Sejs-Svejb&aelig;k IF</p>
   </div>
 </div>
@@ -477,6 +508,15 @@ h1{font-size:20px;font-weight:800;color:#1a1a1a;line-height:1.25}
 .kal-btn:hover,.kal-btn:active{background:#1a5c2a;color:#fff}
 .kal-google{background:#fff;color:#4285f4;border-color:#4285f4}
 .kal-google:hover,.kal-google:active{background:#4285f4;color:#fff}
+.status-boks{border-top:1px solid #e5e7eb;padding-top:14px;display:flex;flex-direction:column;gap:10px}
+.status-label{font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.05em}
+.status-gruppe{display:flex;flex-direction:column;gap:6px}
+.status-gruppe-label{font-size:12px;font-weight:700;color:#4a4a4a}
+.status-navne{display:flex;flex-wrap:wrap;gap:5px}
+.status-navn{font-size:12px;padding:3px 8px;border-radius:6px;font-weight:600}
+.status-kommer{background:#e8f5ec;color:#1a5c2a}
+.status-ikke{background:#fff5f5;color:#dc2626}
+.status-ingen{font-size:12px;color:#888;font-style:italic}
 </style>
 </head>
 <body>
@@ -637,6 +677,48 @@ function hent_sa_token(array $sa): string {
         'ignore_errors' => true,
     ]]));
     return json_decode($resp ?: '', true)['access_token'] ?? '';
+}
+
+function fs_list_s(string $url, string $token): array {
+    $resp = @file_get_contents($url . '?pageSize=500', false, stream_context_create(['http' => [
+        'method'        => 'GET',
+        'header'        => "Authorization: Bearer {$token}\r\n",
+        'timeout'       => 10,
+        'ignore_errors' => true,
+    ]]));
+    $data = json_decode($resp ?: '', true);
+    return $data['documents'] ?? [];
+}
+
+function byg_status_html(array $st): string {
+    if (empty($st['kommer']) && empty($st['kommer_ikke']) && $st['ingen'] === 0) return '';
+    $kom    = $st['kommer']      ?? [];
+    $ikke   = $st['kommer_ikke'] ?? [];
+    $ingen  = $st['ingen']       ?? 0;
+
+    $komHtml  = '';
+    foreach ($kom as $n) {
+        $komHtml .= '<span class="status-navn status-kommer">' . htmlspecialchars($n) . '</span>';
+    }
+    $ikkeHtml = '';
+    foreach ($ikke as $n) {
+        $ikkeHtml .= '<span class="status-navn status-ikke">' . htmlspecialchars($n) . '</span>';
+    }
+    $ingenHtml = $ingen > 0
+        ? "<p class=\"status-ingen\">{$ingen} har endnu ikke svaret</p>"
+        : '';
+
+    $komSekt  = $komHtml  ? "<div class=\"status-gruppe\"><p class=\"status-gruppe-label\">Kommer (" . count($kom)  . ")</p><div class=\"status-navne\">{$komHtml}</div></div>"  : '';
+    $ikkeSekt = $ikkeHtml ? "<div class=\"status-gruppe\"><p class=\"status-gruppe-label\">Kommer ikke (" . count($ikke) . ")</p><div class=\"status-navne\">{$ikkeHtml}</div></div>" : '';
+
+    return <<<HTML
+<div class="status-boks">
+  <p class="status-label">Tilmeldingsstatus</p>
+  {$komSekt}
+  {$ikkeSekt}
+  {$ingenHtml}
+</div>
+HTML;
 }
 
 function fs_get_s(string $url, string $token): ?array {

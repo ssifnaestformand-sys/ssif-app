@@ -123,9 +123,9 @@ if (in_array($kanal, ['mail', 'begge'], true)) {
             $subject = "{$titel} — {$holdTitel}";
         }
 
-        $html = byg_tilkendegivelse_mail($deltager['navn'], $titel, $datoer, $besked, $deltager['token'], $holdTitel);
+        $html = byg_tilkendegivelse_mail($deltager['navn'], $titel, $datoer, $besked, $deltager['token'], $holdTitel, $senderNavn);
 
-        if (smtp_send_html($to, $subject, $html)) { $sendt++; } else { $fejlet++; }
+        if (smtp_send_html($to, $subject, $html, $senderNavn)) { $sendt++; } else { $fejlet++; }
     }
 
     log_udsendelse($projectId, $fsToken, [

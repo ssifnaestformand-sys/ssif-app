@@ -152,8 +152,8 @@ foreach ($rows as $row) {
                 : "Påmindelse — du mangler at svare på {$titel}";
             if ($tc['testMode']) $to = $tc['testEmail'];
 
-            $html = byg_mail_html($deltager['navn'], $type, $titel, $datoDk, $tidBev, $modetid, $sted, $beskrivelse, $deltager['token']);
-            if (smtp_send_html($to, $subject, $html)) { $sendt++; } else { $fejlet++; }
+            $html = byg_mail_html($deltager['navn'], $type, $titel, $datoDk, $tidBev, $modetid, $sted, $beskrivelse, $deltager['token'], '', 'Påmindelse');
+            if (smtp_send_html($to, $subject, $html, 'Påmindelse')) { $sendt++; } else { $fejlet++; }
         }
 
         log_udsendelse($projectId, $fsToken, [
