@@ -367,11 +367,12 @@ function DashboardScreen({ user, displayName, holds, onLogout, onRefresh }) {
         display: 'flex', alignItems: 'center', gap: 10,
       }}>
         <img src="/ssif-logo-white.png" alt="SSIF" style={{ height: 28, width: 32, objectFit: 'contain', flexShrink: 0 }} />
-        <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>SSIF Træner</span>
+        <span style={{ fontWeight: 800, fontSize: 17, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>SSIF Træner</span>
         <button onClick={handleRefresh} disabled={refreshing} style={{
           background: 'none', border: 'none',
           color: 'rgba(255,255,255,.75)', cursor: 'pointer',
-          fontSize: 13, fontWeight: 500, marginRight: 10,
+          fontSize: 15, fontWeight: 500, flexShrink: 0,
+          padding: '6px 8px',
           opacity: refreshing ? .5 : 1,
         }}>
           {refreshing ? '…' : '↻'}
@@ -379,7 +380,8 @@ function DashboardScreen({ user, displayName, holds, onLogout, onRefresh }) {
         <button onClick={onLogout} style={{
           background: 'none', border: 'none',
           color: 'rgba(255,255,255,.75)', cursor: 'pointer',
-          fontSize: 13, fontWeight: 500,
+          fontSize: 13, fontWeight: 600, flexShrink: 0,
+          padding: '6px 0 6px 8px', whiteSpace: 'nowrap',
         }}>
           Log ud
         </button>
@@ -424,7 +426,7 @@ function DashboardScreen({ user, displayName, holds, onLogout, onRefresh }) {
         {/* Hvad kan du i appen? */}
         <div style={{ marginTop: 28 }}>
           <h2 style={{ fontSize: 15, fontWeight: 800, marginBottom: 12, color: 'var(--text2)' }}>Hvad kan du i appen?</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
             {FEATURE_CARDS.map(f => (
               <div key={f.title} style={{
                 background: 'var(--bg)', border: '1px solid var(--border)',
@@ -524,7 +526,7 @@ function HoldScreen({ hold, user, onBack }) {
         }}>
           <button onClick={() => setView('liste')} style={{
             background: 'none', border: 'none', color: '#fff',
-            cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 4px 0 0',
+            cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '8px 14px 8px 2px',
           }}>‹</button>
           <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>SMS-forbrug</span>
         </header>
@@ -681,20 +683,20 @@ function HoldScreen({ hold, user, onBack }) {
       }}>
         <button onClick={onBack} style={{
           background: 'none', border: 'none', color: '#fff',
-          cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 4px 0 0',
+          cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '8px 14px 8px 2px',
         }}>‹</button>
-        <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>
+        <span style={{ fontWeight: 800, fontSize: 17, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {hold.titel || `Hold ${hold.id}`}
         </span>
         <button onClick={() => setView('kontingent')} style={{
           background: 'none', border: 'none',
           color: 'rgba(255,255,255,.75)', cursor: 'pointer',
-          fontSize: 13, fontWeight: 500,
+          fontSize: 13, fontWeight: 500, flexShrink: 0,
         }}>Spillere</button>
         <button onClick={() => { setView('forbrug'); if (!forbrug) loadForbrug() }} style={{
           background: 'none', border: 'none',
           color: 'rgba(255,255,255,.75)', cursor: 'pointer',
-          fontSize: 13, fontWeight: 500,
+          fontSize: 13, fontWeight: 500, flexShrink: 0,
         }}>Forbrug</button>
       </header>
 
@@ -941,7 +943,7 @@ function BegivenhedFormScreen({ hold, begivenhed, user, onBack, onSaved, onDelet
     }}>
       <button onClick={onBk} style={{
         background: 'none', border: 'none', color: '#fff',
-        cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 4px 0 0',
+        cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '8px 14px 8px 2px',
       }}>‹</button>
       <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>{title}</span>
     </header>
@@ -978,7 +980,7 @@ function BegivenhedFormScreen({ hold, begivenhed, user, onBack, onSaved, onDelet
             placeholder="fx Kamp mod FC Silkeborg" />
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
           <div className="form-field" style={{ minWidth: 0 }}>
             <label className="form-label">Dato</label>
             <input className="form-input" type="date" value={dato}
@@ -1227,7 +1229,7 @@ function BegivenhedDetailScreen({ begivenhedId, user, onBack, onEdit, onDeleted,
       }}>
         <button onClick={onBack} style={{
           background: 'none', border: 'none', color: '#fff',
-          cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 4px 0 0',
+          cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '8px 14px 8px 2px',
         }}>‹</button>
         <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>
           {bev ? bev.titel : 'Begivenhed'}
@@ -1310,7 +1312,7 @@ function BegivenhedDetailScreen({ begivenhedId, user, onBack, onEdit, onDeleted,
                   }}>Udsendt</span>
                 )}
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 14 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, fontSize: 14 }}>
                 <div>
                   <div style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 700, marginBottom: 3 }}>DATO</div>
                   <div style={{ fontWeight: 600 }}>{formatDato(bev.dato)}</div>
@@ -1578,7 +1580,7 @@ function SendBeskedScreen({ hold, user, onBack }) {
   }
   const backBtn = {
     background: 'none', border: 'none', color: '#fff',
-    cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 4px 0 0',
+    cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '8px 14px 8px 2px',
   }
 
   return (
@@ -1664,7 +1666,7 @@ function SendBeskedScreen({ hold, user, onBack }) {
                   marginTop: 8,
                   background: 'var(--surface)', border: '1px solid var(--border)',
                   borderRadius: 8, padding: '10px 14px',
-                  display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', fontSize: 13,
+                  display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px 16px', fontSize: 13,
                 }}>
                   <div>
                     <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)', marginBottom: 2 }}>TEGN</div>
@@ -1815,7 +1817,7 @@ function KontingentScreen({ hold, user, onBack }) {
       }}>
         <button onClick={onBack} style={{
           background: 'none', border: 'none', color: '#fff',
-          cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 4px 0 0',
+          cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '8px 14px 8px 2px',
         }}>‹</button>
         <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>
           Spillere — {hold.titel || `Hold ${hold.id}`}
@@ -2241,7 +2243,7 @@ function TilkendegivelseFormScreen({ hold, tilkendegivelse, user, onBack, onSave
                   <button onClick={() => removeDato(i)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 18, lineHeight: 1, flexShrink: 0 }}>×</button>
                 )}
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
                 <div className="form-field" style={{ margin: 0 }}>
                   <label className="form-label" style={{ fontSize: 11 }}>Tidspunkt</label>
                   <input className="form-input" type="time" value={d.tidspunkt}
@@ -2690,7 +2692,7 @@ function FordelScreen({ hold, user, fordelData, onBack, onSendt }) {
                 <button onClick={() => removeKamp(k.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 18 }}>×</button>
               )}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
               <input className="form-input" type="time" value={k.tidspunkt} placeholder="Tidspunkt"
                 onChange={e => updateKamp(k.id, 'tidspunkt', e.target.value)} style={{ fontSize: 14, padding: '8px 10px' }} />
               <input className="form-input" type="time" value={k.modetid} placeholder="Mødetid"
