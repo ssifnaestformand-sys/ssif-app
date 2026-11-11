@@ -363,26 +363,31 @@ function DashboardScreen({ user, displayName, holds, onLogout, onRefresh }) {
       <header style={{
         background: 'var(--green)', color: '#fff',
         paddingTop: 'max(13px, env(safe-area-inset-top))',
-        paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
-        display: 'flex', alignItems: 'center', gap: 10,
+        paddingBottom: '14px', paddingLeft: '16px', paddingRight: '14px',
+        display: 'flex', alignItems: 'center', gap: 8,
       }}>
-        <img src="/ssif-logo-white.png" alt="SSIF" style={{ height: 28, width: 32, objectFit: 'contain', flexShrink: 0 }} />
-        <span style={{ fontWeight: 800, fontSize: 17, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>SSIF Træner</span>
+        <img src="/ssif-logo-white.png" alt="SSIF" style={{ height: 26, width: 30, objectFit: 'contain', flexShrink: 0 }} />
+        <span style={{ fontWeight: 800, fontSize: 17, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          SSIF Træner
+        </span>
         <button onClick={handleRefresh} disabled={refreshing} style={{
           background: 'none', border: 'none',
-          color: 'rgba(255,255,255,.75)', cursor: 'pointer',
-          fontSize: 15, fontWeight: 500, flexShrink: 0,
-          padding: '6px 8px',
-          opacity: refreshing ? .5 : 1,
+          color: 'rgba(255,255,255,0.65)', cursor: 'pointer',
+          width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          opacity: refreshing ? 0.35 : 1,
         }}>
-          {refreshing ? '…' : '↻'}
+          <RefreshIcon />
         </button>
         <button onClick={onLogout} style={{
-          background: 'none', border: 'none',
-          color: 'rgba(255,255,255,.75)', cursor: 'pointer',
-          fontSize: 13, fontWeight: 600, flexShrink: 0,
-          padding: '6px 0 6px 8px', whiteSpace: 'nowrap',
+          background: 'rgba(255,255,255,0.13)',
+          border: '1px solid rgba(255,255,255,0.22)',
+          color: '#fff', borderRadius: 20, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', gap: 6,
+          padding: '7px 12px',
+          fontSize: 13, fontWeight: 600, flexShrink: 0, whiteSpace: 'nowrap',
         }}>
+          <LogOutIcon />
           Log ud
         </button>
       </header>
@@ -526,8 +531,8 @@ function HoldScreen({ hold, user, onBack }) {
         }}>
           <button onClick={() => setView('liste')} style={{
             background: 'none', border: 'none', color: '#fff',
-            cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '8px 14px 8px 2px',
-          }}>‹</button>
+            cursor: 'pointer', fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 5, padding: '0 8px 0 0',
+          }}><BackChevronIcon /> Tilbage</button>
           <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>SMS-forbrug</span>
         </header>
         <main style={{ padding: '16px', maxWidth: 600, margin: '0 auto', width: '100%', flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -683,8 +688,8 @@ function HoldScreen({ hold, user, onBack }) {
       }}>
         <button onClick={onBack} style={{
           background: 'none', border: 'none', color: '#fff',
-          cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '8px 14px 8px 2px',
-        }}>‹</button>
+          cursor: 'pointer', fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 5, padding: '0 8px 0 0',
+        }}><BackChevronIcon /> Tilbage</button>
         <span style={{ fontWeight: 800, fontSize: 17, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {hold.titel || `Hold ${hold.id}`}
         </span>
@@ -934,20 +939,7 @@ function BegivenhedFormScreen({ hold, begivenhed, user, onBack, onSaved, onDelet
     </div>
   )
 
-  const header = (title, onBk) => (
-    <header style={{
-      background: 'var(--green)', color: '#fff',
-      paddingTop: 'max(13px, env(safe-area-inset-top))',
-      paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
-      display: 'flex', alignItems: 'center', gap: 12,
-    }}>
-      <button onClick={onBk} style={{
-        background: 'none', border: 'none', color: '#fff',
-        cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '8px 14px 8px 2px',
-      }}>‹</button>
-      <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>{title}</span>
-    </header>
-  )
+  const header = (title, onBk) => <NavHeader title={title} onBack={onBk} />
 
   if (step === 1) return (
     <div className="screen">
@@ -1229,8 +1221,8 @@ function BegivenhedDetailScreen({ begivenhedId, user, onBack, onEdit, onDeleted,
       }}>
         <button onClick={onBack} style={{
           background: 'none', border: 'none', color: '#fff',
-          cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '8px 14px 8px 2px',
-        }}>‹</button>
+          cursor: 'pointer', fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 5, padding: '0 8px 0 0',
+        }}><BackChevronIcon /> Tilbage</button>
         <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>
           {bev ? bev.titel : 'Begivenhed'}
         </span>
@@ -1580,7 +1572,7 @@ function SendBeskedScreen({ hold, user, onBack }) {
   }
   const backBtn = {
     background: 'none', border: 'none', color: '#fff',
-    cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '8px 14px 8px 2px',
+    cursor: 'pointer', fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 5, padding: '0 8px 0 0',
   }
 
   return (
@@ -1817,8 +1809,8 @@ function KontingentScreen({ hold, user, onBack }) {
       }}>
         <button onClick={onBack} style={{
           background: 'none', border: 'none', color: '#fff',
-          cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '8px 14px 8px 2px',
-        }}>‹</button>
+          cursor: 'pointer', fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 5, padding: '0 8px 0 0',
+        }}><BackChevronIcon /> Tilbage</button>
         <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>
           Spillere — {hold.titel || `Hold ${hold.id}`}
         </span>
@@ -1915,17 +1907,7 @@ function SupportScreen({ user, onBack }) {
     }
   }
 
-  const Header = ({ title }) => (
-    <header style={{
-      background: 'var(--green)', color: '#fff',
-      paddingTop: 'max(13px, env(safe-area-inset-top))',
-      paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
-      display: 'flex', alignItems: 'center', gap: 12,
-    }}>
-      <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 22, lineHeight: 1, padding: '0 4px 0 0' }}>‹</button>
-      <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>{title}</span>
-    </header>
-  )
+  const Header = ({ title }) => <NavHeader title={title} onBack={onBack} />
 
   if (view === 'tak') return (
     <div className="screen">
@@ -2052,7 +2034,7 @@ function TilkendegivelseListeScreen({ hold, user, onBack, onNy, onOpen }) {
         paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
         display: 'flex', alignItems: 'center', gap: 12,
       }}>
-        <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 4px 0 0' }}>‹</button>
+        <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 5, padding: '0 8px 0 0' }}><BackChevronIcon /> Tilbage</button>
         <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>Tilkendegivelser</span>
       </header>
       <main style={{ padding: '16px', maxWidth: 600, margin: '0 auto', width: '100%', flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -2203,7 +2185,7 @@ function TilkendegivelseFormScreen({ hold, tilkendegivelse, user, onBack, onSave
         paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
         display: 'flex', alignItems: 'center', gap: 12,
       }}>
-        <button onClick={step === 1 ? onBack : () => setStep(1)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 4px 0 0' }}>‹</button>
+        <button onClick={step === 1 ? onBack : () => setStep(1)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 5, padding: '0 8px 0 0' }}><BackChevronIcon /> Tilbage</button>
         <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>
           {isEdit ? 'Ret tilkendegivelse' : 'Ny tilkendegivelse'} ({step}/2)
         </span>
@@ -2392,7 +2374,7 @@ function TilkendegivelseDetailScreen({ tilkendegivelse, hold, user, onBack, onEd
         paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
         display: 'flex', alignItems: 'center', gap: 12,
       }}>
-        <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 4px 0 0' }}>‹</button>
+        <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 5, padding: '0 8px 0 0' }}><BackChevronIcon /> Tilbage</button>
         <span style={{ fontWeight: 800, fontSize: 16, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {tilkendegivelse.titel}
         </span>
@@ -2667,7 +2649,7 @@ function FordelScreen({ hold, user, fordelData, onBack, onSendt }) {
         paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
         display: 'flex', alignItems: 'center', gap: 12,
       }}>
-        <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 4px 0 0' }}>‹</button>
+        <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 5, padding: '0 8px 0 0' }}><BackChevronIcon /> Tilbage</button>
         <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>Fordel spillere</span>
       </header>
 
@@ -2794,6 +2776,80 @@ function formatDato(dato) {
   } catch {
     return dato
   }
+}
+
+function BackChevronIcon() {
+  return (
+    <svg width="10" height="17" viewBox="0 0 10 17" fill="none" aria-hidden="true">
+      <path d="M8.5 1.5L1.5 8.5L8.5 15.5" stroke="currentColor" strokeWidth="2.2"
+        strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function RefreshIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M21 2v6h-6" stroke="currentColor" strokeWidth="2.2"
+        strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M3 12a9 9 0 0 1 15-6.7L21 8" stroke="currentColor" strokeWidth="2.2"
+        strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M3 22v-6h6" stroke="currentColor" strokeWidth="2.2"
+        strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M21 12a9 9 0 0 1-15 6.7L3 16" stroke="currentColor" strokeWidth="2.2"
+        strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+
+function LogOutIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" stroke="currentColor"
+        strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+      <polyline points="16 17 21 12 16 7" stroke="currentColor" strokeWidth="2.2"
+        strokeLinecap="round" strokeLinejoin="round"/>
+      <line x1="21" y1="12" x2="9" y2="12" stroke="currentColor" strokeWidth="2.2"
+        strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+
+function NavHeader({ title, onBack, right = null }) {
+  return (
+    <header style={{
+      background: 'var(--green)', color: '#fff',
+      paddingTop: 'max(13px, env(safe-area-inset-top))',
+      paddingBottom: '14px',
+      paddingLeft: 0, paddingRight: right ? 10 : 18,
+      display: 'flex', alignItems: 'center', gap: 8,
+    }}>
+      {onBack && (
+        <button onClick={onBack} style={{
+          background: 'none', border: 'none', color: '#fff',
+          cursor: 'pointer', flexShrink: 0,
+          display: 'flex', alignItems: 'center', gap: 5,
+          padding: '0 8px 0 16px',
+          fontSize: 14, fontWeight: 500,
+        }}>
+          <BackChevronIcon />
+          Tilbage
+        </button>
+      )}
+      <span style={{
+        fontWeight: 700, fontSize: 17, flex: 1, minWidth: 0,
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        paddingLeft: onBack ? 2 : 18,
+      }}>
+        {title}
+      </span>
+      {right && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+          {right}
+        </div>
+      )}
+    </header>
+  )
 }
 
 function CheckIcon() {
