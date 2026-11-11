@@ -71,7 +71,7 @@ function teamName(id) {
 }
 
 function getVisibleTeams(userDoc) {
-  if (userDoc?.role === 'admin') return TEAMS_STATIC
+  if (userDoc?.isAdmin === true || userDoc?.role === 'admin') return TEAMS_STATIC
   return TEAMS_STATIC.filter(t => (userDoc?.holds ?? []).includes(t.id))
 }
 
@@ -334,7 +334,7 @@ const PAGE_GROUP_ORDER = ['Træner app', 'Arkiv', 'Kommunikation', 'Infoskærme'
 // Admins get everything. Trainers with no permissions array get all pages (legacy).
 // Trainers with an explicit permissions array get only listed pages.
 function hasPageAccess(userDoc, pageId) {
-  if (userDoc?.role === 'admin') return true
+  if (userDoc?.isAdmin === true || userDoc?.role === 'admin') return true
   const perms = userDoc?.permissions
   if (perms == null) return userDoc?.role === 'trainer'
   return perms.includes(pageId)
@@ -343,7 +343,7 @@ function hasPageAccess(userDoc, pageId) {
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 
 function Sidebar({ page, setPage, userDoc, user, onLogout }) {
-  const isAdmin = userDoc?.role === 'admin'
+  const isAdmin = userDoc?.isAdmin === true || userDoc?.role === 'admin'
   const [collapsedGroups, setCollapsedGroups] = useState(new Set(['Arkiv']))
 
   const groups = [
@@ -547,7 +547,7 @@ function MessagesPage({ userDoc, authUser }) {
       getDocs(collection(db, 'afdelinger')),
     ]).then(([hSnap, aSnap]) => {
       let all = hSnap.docs.map(d => ({ _id: d.id, ...d.data() }))
-      if (userDoc?.role !== 'admin' && userDoc?.holds?.length) {
+      if (!userDoc?.isAdmin && userDoc?.role !== 'admin' && userDoc?.holds?.length) {
         const mine = new Set(userDoc.holds.map(String))
         all = all.filter(h => mine.has(String(h.conventus_id)))
       }
@@ -1615,7 +1615,7 @@ function TeamsPage({ userDoc, authUser }) {
     <>
       <div className="page-header">
         <h1 className="page-title">Hold</h1>
-        {userDoc?.role === 'admin' && auth.currentUser && (
+        {(userDoc?.isAdmin === true || userDoc?.role === 'admin') && auth.currentUser && (
           <div style={{ display: 'flex', gap: 6 }}>
             <button className="btn btn-ghost btn-sm"
               disabled={!!syncing}
@@ -1878,7 +1878,7 @@ function EventsPage({ userDoc, authUser }) {
   }
   useEffect(() => { loadEvents() }, [])
 
-  const visibleHolds = userDoc?.role === 'admin'
+  const visibleHolds = (userDoc?.isAdmin === true || userDoc?.role === 'admin')
     ? holds
     : holds.filter(h => (userDoc?.holds ?? []).includes(String(h.conventus_id)))
 
@@ -2475,8 +2475,8 @@ function AppUsersPage() {
     ])]
   }
 
-  const ROLE_LABEL = { admin: 'Admin', trainer: 'Træner', Medlem: 'Medlem' }
-  const ROLE_COLOR = { admin: 'badge-green', trainer: 'badge-blue', Membre: 'badge-gray' }
+  const ROLE_LABEL = { admin: 'Admin', trainer: 'Træner', Член: 'Træner', Medlem: 'Medlem' }
+  const ROLE_COLOR = { admin: 'badge-green', trainer: 'badge-blue', Член: 'badge-blue', Membre: 'badge-gray' }
 
   const q = search.trim().toLowerCase()
   const filtered = users
@@ -2499,7 +2499,7 @@ function AppUsersPage() {
 
   const total    = users.length
   const members  = users.filter(u => !u.role || u.role === 'Medlem').length
-  const staff    = users.filter(u => u.role === 'admin' || u.role === 'trainer').length
+  const staff    = users.filter(u => u.isAdmin || u.role === 'admin' || u.role === 'trainer').length
   const verified = users.filter(u => u.emailVerified).length
 
   function SortTh({ k, label }) {
@@ -2688,9 +2688,11 @@ function AppUsersPage() {
                       </td>
 
                       <td>
-                        <span className={`badge ${ROLE_COLOR[u.role] || 'badge-gray'}`}>
-                          {ROLE_LABEL[u.role] || u.role || 'Membre'}
-                        </span>
+                        {(() => { const rk = u.isAdmin ? 'admin' : u.role; return (
+                          <span className={`badge ${ROLE_COLOR[rk] || 'badge-gray'}`}>
+                            {ROLE_LABEL[rk] || u.role || 'Membre'}
+                          </span>
+                        )})()}
                       </td>
                       <td style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
                         {fmtRelative(u.lastSeen)}
@@ -2788,13 +2790,13 @@ function UsersPage({ authUser, userDoc }) {
     })
   }, [])
 
-  const accessUsers = allUsers.filter(u => u.role === 'admin')
+  const accessUsers = allUsers.filter(u => u.isAdmin === true || u.role === 'admin')
 
   async function removeAccess(uid) {
     setRemovingId(uid)
     try {
-      await updateDoc(doc(db, 'users', uid), { role: 'Medlem', permissions: null })
-      setAllUsers(us => us.map(u => u.id === uid ? { ...u, role: 'Medlem', permissions: null } : u))
+      await updateDoc(doc(db, 'users', uid), { role: 'Член', isAdmin: false, permissions: null })
+      setAllUsers(us => us.map(u => u.id === uid ? { ...u, role: 'Член', isAdmin: false, permissions: null } : u))
     } catch (err) {
       setRoleError('Kunne ikke fjerne adgang: ' + err.message)
     } finally { setRemovingId(null) }
@@ -2850,7 +2852,7 @@ function UsersPage({ authUser, userDoc }) {
   }
 
   function accessSummary(u) {
-    if (u.role === 'admin') return <span className="badge badge-green">Superadmin</span>
+    if (u.isAdmin === true || u.role === 'admin') return <span className="badge badge-green">Superadmin</span>
     const perms = u.permissions
     if (perms == null) return <span className="badge badge-blue">Alle sider</span>
     if (perms.length === 0) return <span style={{ fontSize: 12, color: 'var(--text3)' }}>Ingen sider</span>
@@ -2863,7 +2865,7 @@ function UsersPage({ authUser, userDoc }) {
 
   // PermissionsEditor: edit both page access and (for trainers) holds
   function PermissionsEditor({ user }) {
-    const [type, setType]       = useState(user.role === 'admin' ? 'superadmin' : 'custom')
+    const [type, setType]       = useState((user.isAdmin === true || user.role === 'admin') ? 'superadmin' : 'custom')
     const [perms, setPerms]     = useState(user.permissions ?? BACKOFFICE_PAGES.map(p => p.id))
     const [holdsSel, setHoldsSel] = useState((user.holds ?? []).map(String))
     const [busy, setBusy]       = useState(false)
@@ -2886,8 +2888,8 @@ function UsersPage({ authUser, userDoc }) {
       setBusy(true)
       try {
         const updates = type === 'superadmin'
-          ? { role: 'admin', permissions: null, holds: holdsSel }
-          : { role: 'trainer', permissions: perms, holds: holdsSel }
+          ? { role: 'admin', isAdmin: true, permissions: null, holds: holdsSel }
+          : { role: 'trainer', isAdmin: false, permissions: perms, holds: holdsSel }
         await updateDoc(doc(db, 'users', user.id), updates)
         setAllUsers(us => us.map(u => u.id === user.id ? { ...u, ...updates } : u))
         setExpanded(null)
@@ -7055,6 +7057,7 @@ export default function AdminApp() {
             email:       fbUser.email,
             displayName: fbUser.displayName || fbUser.email.split('@')[0],
             role:        'admin',
+            isAdmin:     true,
             permissions: null,
             holds:       [],
             createdAt:   serverTimestamp(),
@@ -7076,6 +7079,7 @@ export default function AdminApp() {
               email:       fbUser.email,
               displayName: fbUser.displayName || fbUser.email.split('@')[0],
               role:        inv.role,
+              isAdmin:     inv.role === 'admin',
               permissions: inv.permissions ?? null,
               holds:       [],
               createdAt:   serverTimestamp(),
@@ -7100,7 +7104,7 @@ export default function AdminApp() {
   function renderPage() {
     // Administration is always superadmin-only
     if (page === 'users' || page === 'holds_admin') {
-      if (userDoc.role !== 'admin') {
+      if (!userDoc.isAdmin && userDoc.role !== 'admin') {
         return <EmptyState icon="shield" text="Kun Superadmin har adgang til Administration" />
       }
       if (page === 'users') return <UsersPage authUser={authUser} userDoc={userDoc} />
@@ -7137,8 +7141,8 @@ export default function AdminApp() {
           <span className="topbar-title">{PAGE_TITLES[page]}</span>
           <div className="topbar-right">
             <span>{userDoc?.email || authUser.email}</span>
-            <span className={`badge ${userDoc.role === 'admin' ? 'badge-green' : 'badge-blue'}`}>
-              {userDoc.role === 'admin' ? 'Superadmin' : 'Redaktør'}
+            <span className={`badge ${(userDoc.isAdmin === true || userDoc.role === 'admin') ? 'badge-green' : 'badge-blue'}`}>
+              {(userDoc.isAdmin === true || userDoc.role === 'admin') ? 'Superadmin' : 'Redaktør'}
             </span>
           </div>
         </header>

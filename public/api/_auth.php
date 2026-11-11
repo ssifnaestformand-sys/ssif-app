@@ -118,8 +118,10 @@ function require_role(string $uid, string $projectId, string $accessToken, array
         echo json_encode(['error' => 'Kunne ikke verificere brugerrolle']);
         exit;
     }
-    $data = json_decode($resp, true);
-    $role = $data['fields']['role']['stringValue'] ?? '';
+    $data    = json_decode($resp, true);
+    $role    = $data['fields']['role']['stringValue'] ?? '';
+    $isAdmin = $data['fields']['isAdmin']['booleanValue'] ?? false;
+    if ($isAdmin) $role = 'admin'; // isAdmin-flag trumfer role-strengen
     if (!in_array($role, $allowed, true)) {
         http_response_code(403);
         echo json_encode(['error' => 'Adgang nægtet — kræver admin- eller træner-rolle']);

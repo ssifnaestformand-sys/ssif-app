@@ -109,11 +109,14 @@ $uFields = [
         array_keys($lederHoldIds)
     ))]],
 ];
-// Tilføj kun role='trainer' hvis eksisterende doc ikke allerede har role='admin'
-$existingDoc  = fs_get("{$base}/users/{$uid}", $fsToken);
-$existingRole = $existingDoc['fields']['role']['stringValue'] ?? '';
-if ($existingRole !== 'admin') {
-    $uFields['role'] = ['stringValue' => 'trainer'];
+// Sæt altid role='trainer' — admin-rettigheder styres nu af isAdmin-feltet, ikke role
+$existingDoc    = fs_get("{$base}/users/{$uid}", $fsToken);
+$existingRole   = $existingDoc['fields']['role']['stringValue'] ?? '';
+$existingIsAdmin = $existingDoc['fields']['isAdmin']['booleanValue'] ?? false;
+$uFields['role'] = ['stringValue' => 'trainer'];
+// Migrér eksisterende rene admins: bevar rettigheder via isAdmin-felt
+if ($existingRole === 'admin' && !$existingIsAdmin) {
+    $uFields['isAdmin'] = ['booleanValue' => true];
 }
 $mask = implode('&', array_map(fn($k) => 'updateMask.fieldPaths=' . urlencode($k), array_keys($uFields)));
 @file_get_contents("{$base}/users/{$uid}?{$mask}", false, stream_context_create(['http' => [

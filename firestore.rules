@@ -15,8 +15,8 @@ service cloud.firestore {
       return isRealUser() && request.auth.uid == uid;
     }
     function isAdmin() {
-      return isRealUser() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      let u = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      return isRealUser() && (u.role == 'admin' || u.get('isAdmin', false) == true);
     }
     function isTrainerOrAdmin() {
       return isRealUser() &&
@@ -45,8 +45,10 @@ service cloud.firestore {
       allow update: if isAdmin()
         || (isOwner(uid)
             && resource.data.role != 'admin'
+            && resource.data.get('isAdmin', false) != true
             && (request.resource.data.role == resource.data.role
-                || request.resource.data.role in ['Medlem']));
+                || request.resource.data.role in ['Член', 'Medlem'])
+            && request.resource.data.get('isAdmin', false) == false);
 
       allow delete: if isAdmin();
     }
