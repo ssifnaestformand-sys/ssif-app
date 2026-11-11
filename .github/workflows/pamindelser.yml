@@ -11,10 +11,12 @@ jobs:
     steps:
       - name: Send påmindelser
         run: |
-          curl -s -X POST \
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
             -H "X-Sync-Secret: ${{ secrets.SYNC_SECRET }}" \
             --connect-timeout 30 \
             --max-time 300 \
-            https://app.sejssvejbaek-if.dk/api/send-pamindelser.php
+            https://app.sejssvejbaek-if.dk/api/send-pamindelser.php || echo "timeout")
+          echo "send-pamindelser HTTP: $HTTP"
+          [[ "$HTTP" =~ ^[45] ]] && echo "Påmindelses-afsendelse fejlede (HTTP $HTTP)" && exit 1 || true
         env:
           SYNC_SECRET: ${{ secrets.SYNC_SECRET }}

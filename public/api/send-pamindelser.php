@@ -217,10 +217,12 @@ foreach ($rows as $row) {
         $fejlet += $smsFejlet;
     }
 
-    // Marker påmindelsen som sendt
-    patch_pamindelse_sendt($base, $begivenhedId, $fsToken, $pamFields);
-
-    $behandlet++;
+    // Marker kun som sendt hvis mindst én besked kom igennem.
+    // Fejler SMTP fuldstændigt ($sendt == 0), forsøger vi igen næste time.
+    if ($sendt > 0) {
+        patch_pamindelse_sendt($base, $begivenhedId, $fsToken, $pamFields);
+        $behandlet++;
+    }
     $totalSendt += $sendt;
     if ($fejlet > 0) $fejl[] = "{$begivenhedId}: {$fejlet} fejl";
 }

@@ -40,14 +40,13 @@ service cloud.firestore {
 
       // Egen profil må opdateres, men:
       //  - aldrig hvis den nuværende role allerede er 'admin' (kun admin selv kan ændre den)
-      //  - den nye role skal enten være uændret, eller 'Medlem'/'trainer'
-      //    (aldrig 'admin') — trainer-status synkes klientside ud fra
-      //    members.lederHolds, som kun admin/service-account kan skrive.
+      //  - den nye role skal enten være uændret, eller 'Medlem'
+      //    ('trainer' self-assignes ikke — sættes kun af service account via trainer-data.php)
       allow update: if isAdmin()
         || (isOwner(uid)
             && resource.data.role != 'admin'
             && (request.resource.data.role == resource.data.role
-                || request.resource.data.role in ['Medlem', 'trainer']));
+                || request.resource.data.role in ['Medlem']));
 
       allow delete: if isAdmin();
     }

@@ -15,3 +15,10 @@ SetEnv SMS_API_KEY    SMS_API_KEY_PLACEHOLDER
 <FilesMatch "(^\.|\.(json|key|pem)$)">
     Require all denied
 </FilesMatch>
+
+# Sikkerhedsheaders
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "DENY"
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+</IfModule>
