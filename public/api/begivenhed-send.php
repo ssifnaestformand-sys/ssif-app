@@ -69,11 +69,27 @@ if (!isset($lederHolds[$holdId])) { http_response_code(403); echo json_encode(['
 $holdDoc   = fs_get("{$base}/holds/{$holdId}", $fsToken);
 $holdTitel = $holdDoc ? ($holdDoc['fields']['titel']['stringValue'] ?? "Hold {$holdId}") : "Hold {$holdId}";
 
-// Hent trænernavn til log
+// Hent trænernavn til email og log
 $senderNavn = '';
 if ($conventus_id) {
     $m = fs_get("{$base}/members/{$conventus_id}", $fsToken);
     $senderNavn = $m ? ($m['fields']['name']['stringValue'] ?? '') : '';
+}
+if ($senderNavn === '' && $email !== '') {
+    // Fallback: Google-login har ingen conventus_id — hent navn via email
+    $rows = fs_run_query($projectId, $fsToken, ['structuredQuery' => [
+        'from'  => [['collectionId' => 'members']],
+        'where' => ['fieldFilter' => [
+            'field' => ['fieldPath' => 'allEmails'],
+            'op'    => 'ARRAY_CONTAINS',
+            'value' => ['stringValue' => $email],
+        ]],
+        'limit' => 1,
+    ]]);
+    foreach ($rows as $row) {
+        $n = $row['document']['fields']['name']['stringValue'] ?? '';
+        if ($n !== '') { $senderNavn = $n; break; }
+    }
 }
 
 // Hent udtagne deltagere

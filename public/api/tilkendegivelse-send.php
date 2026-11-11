@@ -88,6 +88,22 @@ if ($conventus_id) {
     $m = fs_get("{$base}/members/{$conventus_id}", $fsToken);
     $senderNavn = $m ? ($m['fields']['name']['stringValue'] ?? '') : '';
 }
+if ($senderNavn === '' && $email !== '') {
+    // Fallback: Google-login har ingen conventus_id — hent navn via email
+    $rows = fs_run_query($projectId, $fsToken, ['structuredQuery' => [
+        'from'  => [['collectionId' => 'members']],
+        'where' => ['fieldFilter' => [
+            'field' => ['fieldPath' => 'allEmails'],
+            'op'    => 'ARRAY_CONTAINS',
+            'value' => ['stringValue' => $email],
+        ]],
+        'limit' => 1,
+    ]]);
+    foreach ($rows as $row) {
+        $n = $row['document']['fields']['name']['stringValue'] ?? '';
+        if ($n !== '') { $senderNavn = $n; break; }
+    }
+}
 
 // Hent alle deltagere med deres svarToken
 $deltDocs = fs_list("{$base}/tilkendegivelser/{$tilkendegivelseId}/deltagere", $fsToken);
