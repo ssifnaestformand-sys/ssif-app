@@ -33,10 +33,7 @@ $fsToken      = $auth['fsToken'];
 $projectId    = $auth['projectId'];
 $base         = $auth['base'];
 
-// Admin-token til users-skrivet (bypasser Firestore Security Rules, som blokerer CREATE med role≠'Membre')
-$saPath       = __DIR__ . '/firebase-service-account.json';
-$sa           = json_decode(file_get_contents($saPath), true);
-$adminFsToken = make_fs_token($sa);
+// $fsToken er allerede et service account token (fra trainer_auth) — bypasser Security Rules
 
 // ── Find alle matchende member-docs (til navn + lederHolds) ───────────────────
 $memberDocs = [];
@@ -121,7 +118,7 @@ if ($existingRole !== 'admin') {
 $mask = implode('&', array_map(fn($k) => 'updateMask.fieldPaths=' . urlencode($k), array_keys($uFields)));
 @file_get_contents("{$base}/users/{$uid}?{$mask}", false, stream_context_create(['http' => [
     'method'        => 'PATCH',
-    'header'        => "Authorization: Bearer {$adminFsToken}\r\nContent-Type: application/json\r\n",
+    'header'        => "Authorization: Bearer {$fsToken}\r\nContent-Type: application/json\r\n",
     'content'       => json_encode(['fields' => $uFields]),
     'timeout'       => 5,
     'ignore_errors' => true,

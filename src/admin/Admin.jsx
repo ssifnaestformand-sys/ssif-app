@@ -2480,6 +2480,7 @@ function AppUsersPage() {
 
   const q = search.trim().toLowerCase()
   const filtered = users
+    .filter(u => u.role === 'trainer')
     .filter(u => {
       if (!q) return true
       if ((u.displayName || '').toLowerCase().includes(q)) return true
