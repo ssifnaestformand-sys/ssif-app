@@ -38,6 +38,7 @@ $holdId      = trim((string)($body['holdId'] ?? ''));
 $kanal       = trim((string)($body['kanal']  ?? 'mail'));
 $emne        = trim((string)($body['emne']   ?? ''));
 $besked      = trim((string)($body['besked'] ?? ''));
+$excludeIds  = array_map('strval', (array)($body['excludeIds'] ?? []));
 $extraEmails = array_values(array_filter(array_map('trim', (array)($body['extraEmails'] ?? [])),
     fn($e) => filter_var($e, FILTER_VALIDATE_EMAIL)));
 $extraPhones = array_values(array_filter(array_map(fn($p) => parse_extra_phone(trim($p)), (array)($body['extraPhones'] ?? []))));
@@ -110,6 +111,7 @@ if ($kanal === 'mail') {
     $subjectBase = $emne ?: "Besked fra {$senderNavn} — {$holdTitel}";
 
     foreach ($members as $m) {
+        if (in_array($m['id'], $excludeIds, true)) continue;
         $to   = '';
         $navn = $m['fields']['name']['stringValue'] ?? '';
         foreach ($m['fields']['allEmails']['arrayValue']['values'] ?? [] as $v) {
@@ -147,6 +149,7 @@ if ($kanal === 'sms') {
 
     // Hold-medlemmer via Conventus-telefonmappen
     foreach ($members as $m) {
+        if (in_array($m['id'], $excludeIds, true)) continue;
         $msisdn   = $phoneMap[$m['id']] ?? null;
         if (!$msisdn) continue;
         $sendText = $besked;

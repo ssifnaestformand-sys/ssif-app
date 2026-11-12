@@ -984,19 +984,18 @@ function BegivenhedFormScreen({ hold, begivenhed, user, onBack, onSaved, onDelet
             onChange={e => setDato(e.target.value)} />
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
-          <div className="form-field">
-            <label className="form-label">Tidspunkt</label>
-            <input className="form-input" type="time" value={tidspunkt}
-              onChange={e => setTidspunkt(e.target.value)} />
-          </div>
-          <div className="form-field">
-            <label className="form-label">
-              Mødetid <span style={{ fontWeight: 400, color: 'var(--text3)' }}>(valgfri)</span>
-            </label>
-            <input className="form-input" type="time" value={modetid}
-              onChange={e => setModetid(e.target.value)} />
-          </div>
+        <div className="form-field">
+          <label className="form-label">Tidspunkt</label>
+          <input className="form-input" type="time" value={tidspunkt}
+            onChange={e => setTidspunkt(e.target.value)} />
+        </div>
+
+        <div className="form-field">
+          <label className="form-label">
+            Mødetid <span style={{ fontWeight: 400, color: 'var(--text3)' }}>(valgfri)</span>
+          </label>
+          <input className="form-input" type="time" value={modetid}
+            onChange={e => setModetid(e.target.value)} />
         </div>
 
         <div className="form-field">
@@ -1495,6 +1494,7 @@ function SendBeskedScreen({ hold, user, onBack }) {
   const [extraPhones,  setExtraPhones]  = useState([])
   const [newRecipient, setNewRecipient] = useState('')
   const [recipFejl,    setRecipFejl]    = useState('')
+  const [excluded,     setExcluded]     = useState(new Set())
   const [sending,      setSending]      = useState(false)
   const [fejl,         setFejl]         = useState('')
   const [resultat,     setResultat]     = useState(null)
@@ -1541,8 +1541,17 @@ function SendBeskedScreen({ hold, user, onBack }) {
     else                  setExtraPhones(prev => prev.filter(p => p !== val))
   }
 
-  const extras        = kanal === 'mail' ? extraEmails : extraPhones
-  const totalModtagere = (members?.length ?? 0) + extras.length
+  function toggleExcluded(id) {
+    setExcluded(prev => {
+      const n = new Set(prev)
+      n.has(id) ? n.delete(id) : n.add(id)
+      return n
+    })
+  }
+
+  const extras         = kanal === 'mail' ? extraEmails : extraPhones
+  const activeMembers  = members?.filter(m => !excluded.has(m.id)) ?? []
+  const totalModtagere = activeMembers.length + extras.length
   const parts          = smsParts(besked)
   const kostPerStk     = (parts * 0.29).toFixed(2)
   const kostIAlt       = (parts * 0.29 * totalModtagere).toFixed(2)
@@ -1561,6 +1570,7 @@ function SendBeskedScreen({ hold, user, onBack }) {
         body:    JSON.stringify({
           holdId: hold.id, kanal,
           emne: e, besked: b,
+          excludeIds:  [...excluded],
           extraEmails: kanal === 'mail' ? extraEmails : [],
           extraPhones: kanal === 'sms'  ? extraPhones : [],
         }),
@@ -1680,70 +1690,93 @@ function SendBeskedScreen({ hold, user, onBack }) {
             {/* ── Modtagerliste ─── */}
             <div style={{
               background: 'var(--surface)', border: '1px solid var(--border)',
-              borderRadius: 12, padding: 14, display: 'flex', flexDirection: 'column', gap: 10,
+              borderRadius: 12, overflow: 'hidden',
             }}>
-              <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>
-                Modtagere ({totalModtagere})
-              </h3>
+              <div style={{
+                padding: '12px 14px', borderBottom: members?.length ? '1px solid var(--border)' : 'none',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              }}>
+                <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>
+                  Holdmedlemmer
+                </h3>
+                {members && members.length > 0 && (
+                  <span style={{ fontSize: 13, color: 'var(--text3)' }}>
+                    {activeMembers.length}/{members.length} valgt
+                  </span>
+                )}
+              </div>
 
-              {membersLoad && <div className="spinner" style={{ margin: '8px auto' }} />}
+              {membersLoad && <div className="spinner" style={{ margin: '16px auto' }} />}
 
               {!membersLoad && members?.length === 0 && (
-                <p style={{ fontSize: 13, color: 'var(--text3)', margin: 0 }}>
-                  Ingen registrerede holdmedlemmer i databasen.
+                <p style={{ fontSize: 13, color: 'var(--text3)', margin: 0, padding: '12px 14px' }}>
+                  Ingen registrerede holdmedlemmer.
                 </p>
               )}
 
               {!membersLoad && members && members.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {members.map(m => (
-                    <span key={m.id} style={{
-                      background: 'var(--bg)', border: '1px solid var(--border)',
-                      borderRadius: 20, padding: '4px 10px', fontSize: 13,
-                    }}>
-                      {m.navn}
-                    </span>
-                  ))}
+                <div>
+                  {members.map((m, i) => {
+                    const isExcluded = excluded.has(m.id)
+                    return (
+                      <button key={m.id} onClick={() => toggleExcluded(m.id)} style={{
+                        width: '100%', background: 'none', border: 'none', cursor: 'pointer',
+                        borderTop: i === 0 ? 'none' : '1px solid var(--border)',
+                        padding: '11px 14px',
+                        display: 'flex', alignItems: 'center', gap: 12,
+                        opacity: isExcluded ? 0.4 : 1,
+                        transition: 'opacity .15s',
+                      }}>
+                        <span style={{
+                          width: 20, height: 20, borderRadius: 6, flexShrink: 0,
+                          border: `2px solid ${isExcluded ? 'var(--border)' : 'var(--green)'}`,
+                          background: isExcluded ? 'transparent' : 'var(--green)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}>
+                          {!isExcluded && <svg width="11" height="8" viewBox="0 0 11 8" fill="none"><path d="M1 4l3 3 6-6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                        </span>
+                        <span style={{ fontSize: 14, color: 'var(--text)', textAlign: 'left' }}>{m.navn}</span>
+                      </button>
+                    )
+                  })}
                 </div>
               )}
 
-              {/* Ekstra modtagere (grøn baggrund) */}
-              {extras.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {extras.map(r => (
-                    <div key={r} style={{
-                      display: 'flex', alignItems: 'center', gap: 8,
-                      background: 'var(--green-soft)', borderRadius: 8,
-                      padding: '6px 10px',
-                    }}>
-                      <span style={{ flex: 1, fontSize: 13, wordBreak: 'break-all' }}>{r}</span>
-                      <button onClick={() => removeExtra(kanal === 'mail' ? 'email' : 'phone', r)} style={{
-                        background: 'none', border: 'none', cursor: 'pointer',
-                        fontSize: 18, color: 'var(--text3)', lineHeight: 1, padding: 0, flexShrink: 0,
-                      }}>×</button>
-                    </div>
-                  ))}
-                </div>
-              )}
+            </div>
 
-              {/* Input: tilføj ekstra */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {/* ── Ekstra modtagere ─── */}
+            <div style={{
+              background: 'var(--surface)', border: '1px solid var(--border)',
+              borderRadius: 12, padding: 14, display: 'flex', flexDirection: 'column', gap: 8,
+            }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>Ekstra modtagere</h3>
+              {extras.map(r => (
+                <div key={r} style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  background: 'var(--green-soft)', borderRadius: 8, padding: '8px 12px',
+                }}>
+                  <span style={{ flex: 1, fontSize: 13, wordBreak: 'break-all' }}>{r}</span>
+                  <button onClick={() => removeExtra(kanal === 'mail' ? 'email' : 'phone', r)} style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    fontSize: 20, color: 'var(--text3)', lineHeight: 1, padding: 0, flexShrink: 0,
+                  }}>×</button>
+                </div>
+              ))}
+              <div style={{ display: 'flex', gap: 8 }}>
                 <input
                   className="form-input"
-                  style={{ margin: 0 }}
+                  style={{ margin: 0, flex: 1 }}
                   type={kanal === 'mail' ? 'email' : 'tel'}
                   value={newRecipient}
                   onChange={e => { setNewRecipient(e.target.value); setRecipFejl('') }}
                   onKeyDown={e => e.key === 'Enter' && addRecipient()}
-                  placeholder={kanal === 'mail' ? 'Tilføj ekstra email-adresse…' : 'Tilføj ekstra telefonnummer…'}
+                  placeholder={kanal === 'mail' ? 'Email-adresse…' : 'Telefonnummer…'}
                 />
-                <button className="btn btn-outline" onClick={addRecipient}>
+                <button className="btn btn-outline" onClick={addRecipient} style={{ flexShrink: 0 }}>
                   + Tilføj
                 </button>
               </div>
-              {recipFejl && (
-                <p style={{ fontSize: 12, color: 'var(--red)', margin: 0 }}>{recipFejl}</p>
-              )}
+              {recipFejl && <p style={{ fontSize: 12, color: 'var(--red)', margin: 0 }}>{recipFejl}</p>}
             </div>
 
             {fejl && <div className="error-box">{fejl}</div>}
