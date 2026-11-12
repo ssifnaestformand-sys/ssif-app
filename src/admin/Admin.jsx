@@ -2406,6 +2406,187 @@ function fmtRelative(ts) {
   return d.toLocaleDateString('da-DK', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
+// ─── Træner-overblik ──────────────────────────────────────────────────────────
+
+function TraenerOverblikPage() {
+  const [loading,  setLoading]  = useState(true)
+  const [members,  setMembers]  = useState([])
+  const [users,    setUsers]    = useState([])
+  const [holdMap,  setHoldMap]  = useState({})
+  const [afdMap,   setAfdMap]   = useState({})
+  const [search,   setSearch]   = useState('')
+
+  useEffect(() => {
+    async function load() {
+      const [mSnap, uSnap, hSnap, aSnap] = await Promise.all([
+        getDocs(query(collection(db, 'members'), where('isLeder', '==', true))),
+        getDocs(collection(db, 'users')),
+        getDocs(collection(db, 'holds')),
+        getDocs(collection(db, 'afdelinger')),
+      ])
+      setMembers(mSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+      setUsers(uSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+      const hm = {}
+      hSnap.docs.forEach(d => {
+        hm[d.id] = { titel: d.data().titel || d.id, afdeling_id: String(d.data().afdeling_id ?? '') }
+      })
+      const am = {}
+      aSnap.docs.forEach(d => { am[d.id] = d.data().navn || d.id })
+      setHoldMap(hm)
+      setAfdMap(am)
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><Spinner /></div>
+
+  const emailToUser = {}
+  users.forEach(u => { const e = (u.email || '').toLowerCase(); if (e) emailToUser[e] = u })
+
+  const trainerEmailSet = new Set()
+  members.forEach(m => { (m.allEmails || []).forEach(e => trainerEmailSet.add(e.toLowerCase())) })
+
+  const trainers = members.map(m => {
+    let userDoc = null
+    for (const e of (m.allEmails || [])) {
+      if (emailToUser[e.toLowerCase()]) { userDoc = emailToUser[e.toLowerCase()]; break }
+    }
+    const status = !userDoc ? 'ingen' : (!userDoc.lastSeen ? 'oprettet' : 'logget_ind')
+    const holdIds    = (m.lederHolds || []).map(id => String(id))
+    const holdTitles = holdIds.map(id => holdMap[id]?.titel || `Hold ${id}`)
+    const afdIds     = [...new Set(holdIds.map(id => holdMap[id]?.afdeling_id).filter(Boolean))]
+    return { ...m, userDoc, status, holdIds, holdTitles, afdIds }
+  })
+
+  const q = search.toLowerCase()
+  const filtered = q
+    ? trainers.filter(t =>
+        (t.name || '').toLowerCase().includes(q) ||
+        (t.allEmails || []).some(e => e.toLowerCase().includes(q)) ||
+        t.holdTitles.some(h => h.toLowerCase().includes(q))
+      )
+    : trainers
+
+  const afdGroups = {}
+  filtered.forEach(t => {
+    const keys = t.afdIds.length > 0 ? t.afdIds : ['__ingen__']
+    keys.forEach(afdId => {
+      afdGroups[afdId] = afdGroups[afdId] || []
+      afdGroups[afdId].push(t)
+    })
+  })
+
+  const sortedAfdIds = Object.keys(afdGroups).sort((a, b) => {
+    if (a === '__ingen__') return 1
+    if (b === '__ingen__') return -1
+    return (afdMap[a] || a).localeCompare(afdMap[b] || b, 'da')
+  })
+
+  const total      = members.length
+  const loggedIn   = trainers.filter(t => t.status === 'logget_ind').length
+  const notYet     = trainers.filter(t => t.status === 'ingen').length
+
+  const denied = users.filter(u => {
+    if (u.isAdmin === true || u.role === 'admin') return false
+    const e = (u.email || '').toLowerCase()
+    return e && !trainerEmailSet.has(e)
+  })
+
+  function StatusBadge({ status }) {
+    if (status === 'logget_ind') return <span style={{ color: '#16a34a', fontWeight: 700, fontSize: 12 }}>✅ Logget ind</span>
+    if (status === 'oprettet')   return <span style={{ color: '#d97706', fontWeight: 700, fontSize: 12 }}>🟡 Ingen aktivitet</span>
+    return <span style={{ color: '#aaa', fontWeight: 700, fontSize: 12 }}>⚪ Ikke logget ind</span>
+  }
+
+  return (
+    <div>
+      <div style={{ marginBottom: 18 }}>
+        <h2 style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>Trænere</h2>
+        <p style={{ color: '#888', fontSize: 12 }}>Kilde: Conventus (isLeder=true). Loginhistorik fra users-collection.</p>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 18 }}>
+        {[
+          { label: 'Trænere i alt',      value: total,    color: '#1a5c2a' },
+          { label: 'Logget ind',          value: loggedIn, color: '#16a34a' },
+          { label: 'Ikke logget ind',     value: notYet,   color: '#aaa'    },
+        ].map(s => (
+          <div key={s.label} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, padding: '12px 14px', textAlign: 'center' }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: s.color }}>{s.value}</div>
+            <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      <input
+        type="search"
+        placeholder="Søg navn, email eller hold…"
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid #ddd', fontSize: 14, marginBottom: 18 }}
+      />
+
+      {sortedAfdIds.map(afdId => {
+        const group   = afdGroups[afdId]
+        const afdNavn = afdId === '__ingen__' ? 'Uden afdeling' : (afdMap[afdId] || afdId)
+        return (
+          <div key={afdId} style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#888', marginBottom: 6 }}>{afdNavn}</div>
+            <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+              {group.map((t, i) => (
+                <div key={t.id + afdId} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', borderTop: i > 0 ? '1px solid #f3f4f6' : 'none', flexWrap: 'wrap' }}>
+                  <div style={{ flex: '1 1 150px', minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>{t.name || '–'}</div>
+                    <div style={{ fontSize: 11, color: '#888', marginTop: 1 }}>{(t.allEmails || []).join(' · ')}</div>
+                  </div>
+                  <div style={{ flex: '1 1 130px', minWidth: 0, fontSize: 12, color: '#666' }}>
+                    {t.holdTitles.length > 0 ? t.holdTitles.join(', ') : '–'}
+                  </div>
+                  <div style={{ flex: '0 0 auto' }}>
+                    <StatusBadge status={t.status} />
+                  </div>
+                  <div style={{ flex: '0 0 90px', fontSize: 11, color: '#aaa', textAlign: 'right' }}>
+                    {t.status === 'logget_ind' ? fmtRelative(t.userDoc.lastSeen) : '–'}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })}
+
+      {filtered.length === 0 && (
+        <div style={{ textAlign: 'center', padding: 40, color: '#888', fontSize: 14 }}>Ingen trænere matcher søgningen</div>
+      )}
+
+      {denied.length > 0 && (
+        <div style={{ marginTop: 28 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#dc2626', marginBottom: 6 }}>
+            Afviste adgangsforsøg ({denied.length})
+          </div>
+          <div style={{ background: '#fff9f9', border: '1px solid #fecaca', borderRadius: 10, overflow: 'hidden' }}>
+            {denied.map((u, i) => (
+              <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', borderTop: i > 0 ? '1px solid #fee2e2' : 'none', flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 160px', minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>{u.displayName || u.email || u.id}</div>
+                  <div style={{ fontSize: 11, color: '#dc2626', marginTop: 1 }}>{u.email || '–'}</div>
+                </div>
+                <div style={{ flex: '0 0 auto', fontSize: 11, color: '#888' }}>Senest: {fmtRelative(u.lastSeen)}</div>
+              </div>
+            ))}
+          </div>
+          <p style={{ fontSize: 11, color: '#888', marginTop: 6 }}>
+            Disse brugere har forsøgt at logge ind, men er ikke registreret som ledere i Conventus.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── App-brugere ──────────────────────────────────────────────────────────────
+
 function AppUsersPage() {
   const [users,        setUsers]        = useState([])
   const [holdMap,      setHoldMap]      = useState({})
@@ -7168,7 +7349,7 @@ export default function AdminApp() {
     }
     switch (page) {
       case 'ta_begivenheder':  return <TaBegivenhederPage />
-      case 'ta_trænere':       return <AppUsersPage />
+      case 'ta_trænere':       return <TraenerOverblikPage />
       case 'ta_kommunikation': return <TaKommunikationPage />
       case 'traener_app':      return <TraenerAppPage    userDoc={userDoc} />
       case 'dashboard':    return <DashboardPage    userDoc={userDoc} setPage={setPage} />
