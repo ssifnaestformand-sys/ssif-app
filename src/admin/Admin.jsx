@@ -2468,9 +2468,12 @@ function AppUsersPage() {
 
   // Hold-IDs som brugeren ser i appen (alle kilder)
   function getUserHoldIds(u) {
+    const email = (u.email || '').toLowerCase()
     return [...new Set([
       ...(u.holdIds       || []).map(String),
       ...(u.holds         || []).map(String),
+      ...(u.lederHolds    || []).map(String),
+      ...(lederByEmail[email] || []).map(String),
       ...(u.familyMembers || []).filter(m => m.holdId).map(m => String(m.holdId)),
     ])]
   }
@@ -2480,7 +2483,12 @@ function AppUsersPage() {
 
   const q = search.trim().toLowerCase()
   const filtered = users
-    .filter(u => u.role === 'trainer')
+    .filter(u => {
+      if (u.role === 'trainer') return true
+      // Admin der også er leder i Conventus fremgår i trænerlisten
+      if (u.isAdmin !== true && u.role !== 'admin') return false
+      return (lederByEmail[(u.email || '').toLowerCase()] || []).length > 0
+    })
     .filter(u => {
       if (!q) return true
       if ((u.displayName || '').toLowerCase().includes(q)) return true
