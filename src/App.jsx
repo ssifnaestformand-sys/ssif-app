@@ -41,7 +41,8 @@ export default function App() {
         headers: { Authorization: `Bearer ${idToken}` },
       })
       const data = await res.json()
-      console.log('[trainer-data]', { conventus_id: data.conventus_id, commit: data._commit, holds: data.holds?.length })
+      console.log('[trainer-data commit]', JSON.stringify(data._commit))
+      console.log('[trainer-data members-commit]', JSON.stringify(data._commitMembers))
       if (data.holds) {
         setTrainerName(data.name || fbUser.displayName || '')
         setHolds(data.holds)
@@ -58,11 +59,11 @@ export default function App() {
           sessionStorage.setItem(lsKey, String(Date.now()))
           fields.lastSeen = serverTimestamp()
         }
-        // updateDoc bevarer eksisterende role — ved første login (not-found) oprettes med role:'Член'
+        // updateDoc bevarer eksisterende role — ved første login (not-found) oprettes med role:'Medlem'
         const userRef = doc(db, 'users', fbUser.uid)
         updateDoc(userRef, fields).catch(err => {
           if (err.code === 'not-found') {
-            setDoc(userRef, { ...fields, role: 'Член' })
+            setDoc(userRef, { ...fields, role: 'Medlem' })
               .catch(e => console.error('[SSIF create fejl]', e))
           } else {
             console.error('[SSIF updateDoc fejl]', err)
@@ -76,7 +77,7 @@ export default function App() {
           email:       fbUser.email || '',
           displayName: fbUser.displayName || '',
           lastAttempt: serverTimestamp(),
-          role:        'Член',
+          role:        'Medlem',
         }, { merge: true }).catch(err => console.error('[SSIF setDoc fejl]', err))
       }
     } catch {
@@ -85,7 +86,7 @@ export default function App() {
         email:       fbUser.email || '',
         displayName: fbUser.displayName || '',
         lastAttempt: serverTimestamp(),
-        role:        'Член',
+        role:        'Medlem',
       }, { merge: true }).catch(err => console.error('[SSIF setDoc fejl]', err))
     }
   }

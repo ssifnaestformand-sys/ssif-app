@@ -46,7 +46,8 @@ service cloud.firestore {
         || (isOwner(uid)
             && resource.data.role != 'admin'
             && resource.data.get('isAdmin', false) != true
-            && (request.resource.data.role == resource.data.role
+            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])
+                || request.resource.data.role == resource.data.role
                 || request.resource.data.role in ['Член', 'Medlem'])
             && request.resource.data.get('isAdmin', false) == false);
 

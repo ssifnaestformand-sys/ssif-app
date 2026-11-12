@@ -2426,8 +2426,8 @@ function TraenerRow({ t, borderTop }) {
       </div>
       <div style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
         <TraenerStatusBadge status={t.status} />
-        {t.status === 'logget_ind' && (
-          <span style={{ fontSize: 10, color: '#aaa' }}>{fmtRelative(t.userDoc.lastSeen)}</span>
+        {t.status === 'logget_ind' && t.lastSeen && (
+          <span style={{ fontSize: 10, color: '#aaa' }}>{fmtRelative(t.lastSeen)}</span>
         )}
       </div>
     </div>
@@ -2488,11 +2488,12 @@ function TraenerOverblikPage() {
         if (emailToUser[e.toLowerCase()]) { userDoc = emailToUser[e.toLowerCase()]; break }
       }
     }
-    const status     = !userDoc ? 'ingen' : (userDoc.lastSeen ? 'logget_ind' : 'oprettet')
+    const lastSeen   = m.lastSeen || userDoc?.lastSeen || null
+    const status     = lastSeen ? 'logget_ind' : (!userDoc ? 'ingen' : 'oprettet')
     const holdIds    = (m.lederHolds || []).map(id => String(id))
     const holdTitles = holdIds.map(id => holdMap[id]?.titel || `Hold ${id}`)
     const afdIds     = [...new Set(holdIds.map(id => holdMap[id]?.afdeling_id).filter(Boolean))]
-    return { ...m, userDoc, status, holdIds, holdTitles, afdIds }
+    return { ...m, userDoc, status, holdIds, holdTitles, afdIds, lastSeen }
   })
 
   const total     = trainers.length

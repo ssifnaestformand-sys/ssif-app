@@ -126,11 +126,20 @@ if ($existingRole === 'admin' && !$existingIsAdmin) {
 }
 $commitResult = fs_commit_detail($projectId, $fsToken, [[
     'update' => [
-        'name'   => "projects/{$projectId}/databases/(default)/documents/users/{$uid}",
+        'name'   => "{$base}/users/{$uid}",
         'fields' => $uFields,
     ],
     'updateMask' => ['fieldPaths' => array_keys($uFields)],
 ]]);
 
+// Test: skriv lastSeen direkte til members/{conventus_id} — service account bypass af Security Rules
+$membersCommitResult = fs_commit_detail($projectId, $fsToken, [[
+    'update' => [
+        'name'   => "{$base}/members/{$conventus_id}",
+        'fields' => ['lastSeen' => ['timestampValue' => $now]],
+    ],
+    'updateMask' => ['fieldPaths' => ['lastSeen']],
+]]);
+
 $tc = trainer_app_config($base, $fsToken);
-echo json_encode(['name' => $displayName, 'holds' => $holds, 'testMode' => $tc['testMode'], 'conventus_id' => $conventus_id, '_commit' => $commitResult]);
+echo json_encode(['name' => $displayName, 'holds' => $holds, 'testMode' => $tc['testMode'], 'conventus_id' => $conventus_id, '_commit' => $commitResult, '_commitMembers' => $membersCommitResult]);

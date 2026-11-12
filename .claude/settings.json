@@ -7,7 +7,17 @@
       "Bash(npm run *)",
       "Bash(awk 'NR>=50')",
       "Bash(xargs ls -la)",
-      "Bash(./deploy.sh)"
+      "Bash(./deploy.sh)",
+      "Bash(xxd)",
+      "Bash(perl -i -pe 's/\\\\x{0427}\\\\x{043B}\\\\x{0435}\\\\x{043D}/Член/g' src/App.jsx)",
+      "Bash(perl -i '' -pe 's/\\\\xd0\\\\xa7\\\\xd0\\\\xbb\\\\xd0\\\\xb5\\\\xd0\\\\xbd/Medlem/g' /Users/peterh.-kristensen/Documents/GitHub/ssif-app/src/App.jsx)",
+      "Bash(perl -i '' -pe 's/\\\\xd0\\\\xa7\\\\xd0\\\\xbb\\\\xd0\\\\xb5\\\\xd0\\\\xbd/\\\\x4d\\\\x65\\\\x64\\\\x6c\\\\x65\\\\x6d/g' /Users/peterh.-kristensen/Documents/GitHub/ssif-app/src/App.jsx)",
+      "Bash(perl -pe 's/\\\\xd0\\\\xa7\\\\xd0\\\\xbb\\\\xd0\\\\xb5\\\\xd0\\\\xbd/REPLACED/g')",
+      "Bash(LANG=C LC_ALL=C perl -pe 's/\\\\xd0\\\\xa7\\\\xd0\\\\xbb\\\\xd0\\\\xb5\\\\xd0\\\\xbd/SSIF_MEDL\\\\x65M/g' /Users/peterh.-kristensen/Documents/GitHub/ssif-app/src/App.jsx)",
+      "Bash(LANG=C LC_ALL=C perl -pe 's/\\\\xd0\\\\xa7\\\\xd0\\\\xbb\\\\xd0\\\\xb5\\\\xd0\\\\xbd/Medl\\\\x65m/g' /Users/peterh.-kristensen/Documents/GitHub/ssif-app/src/App.jsx)",
+      "Bash(grep -v \"^$\")",
+      "Bash(python3 -c ' *)",
+      "Bash(firebase deploy *)"
     ]
   }
 }
