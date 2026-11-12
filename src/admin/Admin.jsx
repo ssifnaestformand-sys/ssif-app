@@ -2439,7 +2439,7 @@ function TraenerOverblikPage() {
     load()
   }, [])
 
-  if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><Spinner /></div>
+  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Henter trænere…</div>
 
   const emailToUser = {}
   users.forEach(u => { const e = (u.email || '').toLowerCase(); if (e) emailToUser[e] = u })
