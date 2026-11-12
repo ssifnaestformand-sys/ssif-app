@@ -2559,6 +2559,24 @@ function TraenerOverblikPage() {
         }}>↺ Genindlæs</button>
       </div>
 
+      {/* MIDLERTIDIG DIAGNOSE — fjernes når cross-reference virker */}
+      <details style={{ marginBottom: 14, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 12px' }}>
+        <summary style={{ fontSize: 12, fontWeight: 700, color: '#92400e', cursor: 'pointer' }}>🔍 Diagnose: users-collection ({users.length} docs)</summary>
+        <div style={{ marginTop: 8, fontSize: 11, fontFamily: 'monospace', maxHeight: 300, overflowY: 'auto' }}>
+          {users.map(u => (
+            <div key={u.id} style={{ marginBottom: 6, padding: '4px 6px', background: '#fff', borderRadius: 4, border: '1px solid #fde68a' }}>
+              <strong>uid:</strong> {u.id}<br/>
+              <strong>email:</strong> {u.email || '–'}<br/>
+              <strong>conventus_id:</strong> {u.conventus_id !== undefined ? String(u.conventus_id) : '⚠️ MANGLER'}<br/>
+              <strong>lastSeen:</strong> {u.lastSeen ? '✅ sat' : '–'} &nbsp;
+              <strong>lastAttempt:</strong> {u.lastAttempt ? '⚠️ sat' : '–'} &nbsp;
+              <strong>role:</strong> {u.role || '–'}
+            </div>
+          ))}
+          {users.length === 0 && <div style={{ color: '#92400e' }}>Ingen users-docs hentet – tjek Security Rules og at du er admin</div>}
+        </div>
+      </details>
+
       {/* Filter-tabs */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
         {filterButtons.map(f => {
