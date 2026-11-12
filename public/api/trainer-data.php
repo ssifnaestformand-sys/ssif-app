@@ -133,4 +133,4 @@ fs_commit($projectId, $fsToken, [[
 ]]);
 
 $tc = trainer_app_config($base, $fsToken);
-echo json_encode(['name' => $displayName, 'holds' => $holds, 'testMode' => $tc['testMode']]);
+echo json_encode(['name' => $displayName, 'holds' => $holds, 'testMode' => $tc['testMode'], 'conventus_id' => $conventus_id]);

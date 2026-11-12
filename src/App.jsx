@@ -52,9 +52,10 @@ export default function App() {
         if (Date.now() - lsLast > 5 * 60 * 1000) {
           sessionStorage.setItem(lsKey, String(Date.now()))
           setDoc(doc(db, 'users', fbUser.uid), {
-            lastSeen:    serverTimestamp(),
-            email:       fbUser.email || '',
-            displayName: fbUser.displayName || data.name || '',
+            lastSeen:      serverTimestamp(),
+            email:         fbUser.email || '',
+            displayName:   fbUser.displayName || data.name || '',
+            conventus_id:  String(data.conventus_id || ''),
           }, { merge: true }).catch(() => {})
         }
       } else if (data.error === 'email_not_verified') {
