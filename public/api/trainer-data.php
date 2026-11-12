@@ -62,6 +62,12 @@ if (empty($memberDocs)) {
     echo json_encode(['error' => 'no_trainer_access']); exit;
 }
 
+// Hvis conventus_id ikke var kendt fra trainer_auth (ingen i JWT eller users-doc),
+// brug document-ID'et fra det fundne member-dokument som conventus_id
+if ($conventus_id === '') {
+    $conventus_id = (string)array_key_first($memberDocs);
+}
+
 // ── Saml lederHolds og displayName fra alle docs ──────────────────────────────
 $lederHoldIds = [];
 $displayName  = '';
