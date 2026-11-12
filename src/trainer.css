@@ -98,6 +98,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .form-label {
@@ -113,6 +115,7 @@ body {
   font-size: 15px;
   outline: none;
   width: 100%;
+  max-width: 100%;
   min-width: 0;
   background: var(--bg);
   color: var(--text);
