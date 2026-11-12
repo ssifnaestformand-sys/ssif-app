@@ -325,16 +325,18 @@ function trainer_auth(): array {
     $fsToken = make_fs_token($sa);
     if (!$fsToken) { http_response_code(500); echo json_encode(['error' => 'OAuth fejlede']); exit; }
 
-    // conventus_id er ikke et Firebase JWT-claim — hent det fra Firestore users-doc
+    // conventus_id og displayName er ikke Firebase JWT-claims — hent fra Firestore users-doc
+    $userDoc      = fs_get("https://firestore.googleapis.com/v1/projects/{$projectId}/databases/(default)/documents/users/{$uid}", $fsToken);
     if ($conventus_id === '') {
-        $userDoc      = fs_get("https://firestore.googleapis.com/v1/projects/{$projectId}/databases/(default)/documents/users/{$uid}", $fsToken);
         $conventus_id = $userDoc['fields']['conventus_id']['stringValue'] ?? '';
     }
+    $displayName = $userDoc['fields']['displayName']['stringValue'] ?? '';
 
     return [
         'uid'          => $uid,
         'email'        => $email,
         'conventus_id' => $conventus_id,
+        'displayName'  => $displayName,
         'fsToken'      => $fsToken,
         'projectId'    => $projectId,
         // base: bruges som HTTP request-URL til Firestore REST-kald

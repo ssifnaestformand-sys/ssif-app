@@ -26,6 +26,7 @@ $auth         = trainer_auth();
 $uid          = $auth['uid'];
 $email        = $auth['email'];
 $conventus_id = $auth['conventus_id'];
+$displayName  = $auth['displayName'];
 $fsToken      = $auth['fsToken'];
 $projectId    = $auth['projectId'];
 $base         = $auth['base'];
@@ -104,6 +105,8 @@ if ($senderNavn === '' && $email !== '') {
         if ($n !== '') { $senderNavn = $n; break; }
     }
 }
+// Fallback: brug displayName fra users-dokumentet
+if ($senderNavn === '') $senderNavn = $displayName;
 
 // Hent alle deltagere med deres svarToken
 $deltDocs = fs_list("{$base}/tilkendegivelser/{$tilkendegivelseId}/deltagere", $fsToken);
