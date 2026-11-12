@@ -2436,6 +2436,7 @@ function TraenerRow({ t, borderTop }) {
 
 function TraenerOverblikPage() {
   const [loading,      setLoading]      = useState(true)
+  const [loadKey,      setLoadKey]      = useState(0)
   const [members,      setMembers]      = useState([])
   const [users,        setUsers]        = useState([])
   const [holdMap,      setHoldMap]      = useState({})
@@ -2445,6 +2446,7 @@ function TraenerOverblikPage() {
   const [openGroups,   setOpenGroups]   = useState({})
 
   useEffect(() => {
+    setLoading(true)
     async function load() {
       const [mSnap, uSnap, hSnap, aSnap] = await Promise.all([
         getDocs(query(collection(db, 'members'), where('isLeder', '==', true))),
@@ -2465,19 +2467,27 @@ function TraenerOverblikPage() {
       setLoading(false)
     }
     load()
-  }, [])
+  }, [loadKey])
 
   if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Henter trænere…</div>
 
-  // Cross-reference via conventus_id (trainer-data.php skriver dette til users/{uid} ved succes)
+  // Cross-reference primært via conventus_id, sekundært via email (fallback)
   const cidToUser = {}
+  const emailToUser = {}
   users.forEach(u => {
     const cid = String(u.conventus_id || '').trim()
     if (cid) cidToUser[cid] = u
+    const e = (u.email || '').toLowerCase()
+    if (e) emailToUser[e] = u
   })
 
   const trainers = members.map(m => {
-    const userDoc    = cidToUser[m.id] || null
+    let userDoc = cidToUser[m.id] || null
+    if (!userDoc) {
+      for (const e of (m.allEmails || [])) {
+        if (emailToUser[e.toLowerCase()]) { userDoc = emailToUser[e.toLowerCase()]; break }
+      }
+    }
     const status     = !userDoc ? 'ingen' : (userDoc.lastSeen ? 'logget_ind' : 'oprettet')
     const holdIds    = (m.lederHolds || []).map(id => String(id))
     const holdTitles = holdIds.map(id => holdMap[id]?.titel || `Hold ${id}`)
@@ -2538,9 +2548,15 @@ function TraenerOverblikPage() {
 
   return (
     <div>
-      <div style={{ marginBottom: 14 }}>
-        <h2 style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>Trænere</h2>
-        <p style={{ color: '#888', fontSize: 12 }}>Kilde: Conventus (isLeder=true). Loginhistorik fra users-collection.</p>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
+        <div>
+          <h2 style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>Trænere</h2>
+          <p style={{ color: '#888', fontSize: 12 }}>Kilde: Conventus (isLeder=true). Loginhistorik fra users-collection.</p>
+        </div>
+        <button onClick={() => setLoadKey(k => k + 1)} style={{
+          padding: '7px 13px', borderRadius: 8, border: '1px solid #ddd',
+          background: '#fff', fontSize: 13, cursor: 'pointer', color: '#444', flexShrink: 0,
+        }}>↺ Genindlæs</button>
       </div>
 
       {/* Filter-tabs */}
