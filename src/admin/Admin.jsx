@@ -2452,14 +2452,12 @@ function TraenerOverblikPage() {
     setLoadError(null)
     async function load() {
       try {
-        const [mSnap, uSnap, hSnap, aSnap] = await Promise.all([
+        const [mSnap, hSnap, aSnap] = await Promise.all([
           getDocs(query(collection(db, 'members'), where('isLeder', '==', true))),
-          getDocs(collection(db, 'users')),
           getDocs(collection(db, 'holds')),
           getDocs(collection(db, 'afdelinger')),
         ])
         setMembers(mSnap.docs.map(d => ({ id: d.id, ...d.data() })))
-        setUsers(uSnap.docs.map(d => ({ id: d.id, ...d.data() })))
         const hm = {}
         hSnap.docs.forEach(d => {
           hm[d.id] = { titel: d.data().titel || d.id, afdeling_id: String(d.data().afdeling_id ?? '') }
@@ -2468,6 +2466,13 @@ function TraenerOverblikPage() {
         aSnap.docs.forEach(d => { am[d.id] = d.data().navn || d.id })
         setHoldMap(hm)
         setAfdMap(am)
+        // users-collection kræver isAdmin() — hentes separat så fejl ikke blokerer hele siden
+        try {
+          const uSnap = await getDocs(collection(db, 'users'))
+          setUsers(uSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+        } catch {
+          setUsers([])
+        }
       } catch (e) {
         setLoadError(`Firestore fejl: ${e?.code || e?.message || 'ukendt'} — er firestore.rules deployet?`)
       } finally {
