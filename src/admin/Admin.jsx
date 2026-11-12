@@ -317,6 +317,7 @@ const BACKOFFICE_PAGES = [
   { group: 'Træner app',    id: 'ta_trænere',       label: 'Trænere',           icon: 'users'    },
   { group: 'Træner app',    id: 'ta_kommunikation', label: 'Kommunikation',     icon: 'sms'      },
   { group: 'Træner app',    id: 'traener_app',      label: 'Indstillinger',     icon: 'phone'    },
+  { group: 'Træner app',    id: 'support',          label: 'Support',           icon: 'message'  },
   { group: 'Arkiv',         id: 'dashboard',       label: 'Dashboard',      icon: 'home'     },
   { group: 'Arkiv',         id: 'news',            label: 'Nyheder',        icon: 'news'     },
   { group: 'Arkiv',         id: 'events',          label: 'Begivenheder',   icon: 'calendar' },
@@ -324,7 +325,6 @@ const BACKOFFICE_PAGES = [
   { group: 'Arkiv',         id: 'teams',           label: 'Hold',           icon: 'users'    },
   { group: 'Arkiv',         id: 'messages',        label: 'Beskeder',       icon: 'message'  },
   { group: 'Arkiv',         id: 'appusers',        label: 'App-brugere',    icon: 'eye'      },
-  { group: 'Arkiv',         id: 'support',         label: 'Support',        icon: 'message'  },
   { group: 'Kommunikation', id: 'kommunikation',   label: 'Kommunikation',  icon: 'sms'      },
   { group: 'Infoskærme',    id: 'infoscreens',     label: 'Infoskærme',     icon: 'monitor'  },
 ]

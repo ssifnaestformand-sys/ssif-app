@@ -113,9 +113,11 @@ function TestModeBanner() {
 
 function SplashScreen() {
   return (
-    <div className="screen-center" style={{ flexDirection: 'column', gap: 20 }}>
-      <div style={{ fontSize: 48, lineHeight: 1 }}>⚽</div>
-      <div className="spinner" />
+    <div className="screen-center" style={{ flexDirection: 'column', gap: 0 }}>
+      <img src="/ssif-logo.png" alt="SSIF" style={{
+        height: 80, objectFit: 'contain',
+        animation: 'spin .9s linear infinite',
+      }} />
     </div>
   )
 }
@@ -722,7 +724,7 @@ function HoldScreen({ hold, user, onBack }) {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           {[
             { icon: '📅', label: 'Opret begivenhed', primary: true,  onClick: () => { setEditBev(null); setView('form') } },
-            { icon: '👥', label: 'Spillere',          primary: false, onClick: () => setView('kontingent') },
+            { icon: '👥', label: 'Tilmeldte',          primary: false, onClick: () => setView('kontingent') },
             { icon: '✉️',  label: 'Send besked',       primary: false, onClick: () => setView('send-besked') },
             { icon: '📊', label: 'Tilkendegivelse',   primary: false, onClick: () => setView('tilkendegivelse-liste') },
           ].map(a => (
