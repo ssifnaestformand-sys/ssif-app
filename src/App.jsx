@@ -1570,26 +1570,13 @@ function SendBeskedScreen({ hold, user, onBack }) {
     finally  { setSending(false) }
   }
 
-  const hdrStyle = {
-    background: 'var(--green)', color: '#fff',
-    paddingTop: 'max(13px, env(safe-area-inset-top))',
-    paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
-    display: 'flex', alignItems: 'center', gap: 12,
-  }
-  const backBtn = {
-    background: 'none', border: 'none', color: '#fff',
-    cursor: 'pointer', fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 5, padding: '0 8px 0 0',
-  }
-
   return (
     <div className="screen">
-      <header style={hdrStyle}>
-        <button onClick={onBack} style={backBtn}>‹</button>
-        <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>Send besked</span>
-        <span style={{ fontSize: 13, color: 'rgba(255,255,255,.7)' }}>
-          {hold.titel || `Hold ${hold.id}`}
-        </span>
-      </header>
+      <NavHeader
+        title="Send besked"
+        onBack={onBack}
+        right={<span style={{ fontSize: 13, color: 'rgba(255,255,255,.7)', paddingRight: 8 }}>{hold.titel || `Hold ${hold.id}`}</span>}
+      />
 
       <main style={{ padding: '16px', maxWidth: 600, margin: '0 auto', width: '100%', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
 
@@ -2185,17 +2172,10 @@ function TilkendegivelseFormScreen({ hold, tilkendegivelse, user, onBack, onSave
 
   return (
     <div className="screen">
-      <header style={{
-        background: 'var(--green)', color: '#fff',
-        paddingTop: 'max(13px, env(safe-area-inset-top))',
-        paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
-        display: 'flex', alignItems: 'center', gap: 12,
-      }}>
-        <button onClick={step === 1 ? onBack : () => setStep(1)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 5, padding: '0 8px 0 0' }}><BackChevronIcon /> Tilbage</button>
-        <span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>
-          {isEdit ? 'Ret tilkendegivelse' : 'Ny tilkendegivelse'} ({step}/2)
-        </span>
-      </header>
+      <NavHeader
+        title={`${isEdit ? 'Ret tilkendegivelse' : 'Ny tilkendegivelse'} (${step}/2)`}
+        onBack={step === 1 ? onBack : () => setStep(1)}
+      />
       <main style={{ padding: '16px', maxWidth: 600, margin: '0 auto', width: '100%', flex: 1, display: 'flex', flexDirection: 'column', gap: 14 }}>
 
         {step === 1 && <>
