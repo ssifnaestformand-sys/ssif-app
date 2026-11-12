@@ -428,11 +428,12 @@ function Sidebar({ page, setPage, userDoc, user, onLogout }) {
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
-function DashboardPage({ userDoc }) {
-  const [newsCount, setNewsCount]     = useState(null)
-  const [msgCount, setMsgCount]       = useState(null)
-  const [recentNews, setRecentNews]   = useState([])
-  const [recentMsgs, setRecentMsgs]   = useState([])
+function DashboardPage({ userDoc, setPage }) {
+  const [newsCount,    setNewsCount]    = useState(null)
+  const [msgCount,     setMsgCount]     = useState(null)
+  const [recentNews,   setRecentNews]   = useState([])
+  const [recentMsgs,   setRecentMsgs]   = useState([])
+  const [supportCount, setSupportCount] = useState(0)
 
   useEffect(() => {
     getDocs(query(collection(db, 'news'), orderBy('createdAt', 'desc'), limit(50)))
@@ -440,6 +441,9 @@ function DashboardPage({ userDoc }) {
       .catch(() => {})
     getDocs(query(collection(db, 'messages'), orderBy('oprettet', 'desc'), limit(50)))
       .then(snap => { setMsgCount(snap.size); setRecentMsgs(snap.docs.slice(0, 5).map(d => ({ id: d.id, ...d.data() }))) })
+      .catch(() => {})
+    getDocs(query(collection(db, 'support'), where('status', '==', 'afventer')))
+      .then(snap => setSupportCount(snap.size))
       .catch(() => {})
   }, [])
 
@@ -451,6 +455,24 @@ function DashboardPage({ userDoc }) {
           Velkommen tilbage, {userDoc?.displayName?.split(' ')[0] || 'Admin'}
         </span>
       </div>
+
+      {supportCount > 0 && (
+        <button onClick={() => setPage('support')} style={{
+          display: 'flex', alignItems: 'center', gap: 14,
+          width: '100%', background: '#fffbeb', border: '1.5px solid #f59e0b',
+          borderRadius: 10, padding: '14px 18px', cursor: 'pointer', textAlign: 'left',
+          marginBottom: 20,
+        }}>
+          <span style={{ fontSize: 22, flexShrink: 0 }}>🙋</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#92400e' }}>
+              {supportCount === 1 ? '1 ny supporthenvendelse' : `${supportCount} nye supporthenvendelser`}
+            </div>
+            <div style={{ fontSize: 12, color: '#b45309', marginTop: 2 }}>Afventer svar — klik for at se</div>
+          </div>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 12l4-4-4-4" stroke="#b45309" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        </button>
+      )}
 
       <div className="stat-grid">
         <div className="stat-card">
@@ -2873,10 +2895,11 @@ function UsersPage({ authUser, userDoc }) {
 
   // PermissionsEditor: edit both page access and (for trainers) holds
   function PermissionsEditor({ user }) {
-    const [type, setType]       = useState((user.isAdmin === true || user.role === 'admin') ? 'superadmin' : 'custom')
-    const [perms, setPerms]     = useState(user.permissions ?? BACKOFFICE_PAGES.map(p => p.id))
-    const [holdsSel, setHoldsSel] = useState((user.holds ?? []).map(String))
-    const [busy, setBusy]       = useState(false)
+    const [type, setType]           = useState((user.isAdmin === true || user.role === 'admin') ? 'superadmin' : 'custom')
+    const [perms, setPerms]         = useState(user.permissions ?? BACKOFFICE_PAGES.map(p => p.id))
+    const [holdsSel, setHoldsSel]   = useState((user.holds ?? []).map(String))
+    const [supportNotify, setSupportNotify] = useState(user.supportNotify === true)
+    const [busy, setBusy]           = useState(false)
 
     function togglePerm(id) {
       setPerms(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
@@ -2896,8 +2919,8 @@ function UsersPage({ authUser, userDoc }) {
       setBusy(true)
       try {
         const updates = type === 'superadmin'
-          ? { role: 'admin', isAdmin: true, permissions: null, holds: holdsSel }
-          : { role: 'trainer', isAdmin: false, permissions: perms, holds: holdsSel }
+          ? { role: 'admin', isAdmin: true, permissions: null, holds: holdsSel, supportNotify }
+          : { role: 'trainer', isAdmin: false, permissions: perms, holds: holdsSel, supportNotify }
         await updateDoc(doc(db, 'users', user.id), updates)
         setAllUsers(us => us.map(u => u.id === user.id ? { ...u, ...updates } : u))
         setExpanded(null)
@@ -2974,6 +2997,15 @@ function UsersPage({ authUser, userDoc }) {
             )}
           </div>
         )}
+
+        {/* Notifikationer */}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text2)', letterSpacing: '.5px', marginBottom: 8 }}>Notifikationer</div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+            <input type="checkbox" checked={supportNotify} onChange={e => setSupportNotify(e.target.checked)} />
+            Send email ved ny supporthenvendelse fra træner-appen
+          </label>
+        </div>
 
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-primary btn-sm" disabled={busy} onClick={save}>
@@ -7131,7 +7163,7 @@ export default function AdminApp() {
       case 'ta_trænere':       return <AppUsersPage />
       case 'ta_kommunikation': return <TaKommunikationPage />
       case 'traener_app':      return <TraenerAppPage    userDoc={userDoc} />
-      case 'dashboard':    return <DashboardPage    userDoc={userDoc} />
+      case 'dashboard':    return <DashboardPage    userDoc={userDoc} setPage={setPage} />
       case 'messages':     return <MessagesPage      userDoc={userDoc} authUser={authUser} />
       case 'news':         return <NewsPage          userDoc={userDoc} authUser={authUser} />
       case 'teams':        return <TeamsPage         userDoc={userDoc} authUser={authUser} />

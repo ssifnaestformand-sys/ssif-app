@@ -5,7 +5,7 @@ import {
   signInWithCustomToken,
 } from 'firebase/auth'
 import {
-  collection, query, where, orderBy, getDocs, addDoc, serverTimestamp,
+  collection, query, where, orderBy, getDocs, serverTimestamp,
   doc, setDoc,
 } from 'firebase/firestore'
 import { auth, db } from './firebase.js'
@@ -1929,17 +1929,15 @@ function SupportScreen({ user, onBack }) {
     if (!besked.trim()) return
     setSending(true); setError('')
     try {
-      await addDoc(collection(db, 'support'), {
-        question:   besked.trim(),
-        category:   kategori,
-        authorName: user.displayName || user.email || '',
-        authorEmail: user.email || '',
-        authorUid:  user.uid,
-        status:     'afventer',
-        createdAt:  serverTimestamp(),
-        source:     'trainer-app',
+      const idToken = await user.getIdToken()
+      const res = await fetch('/api/support-send.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: besked.trim(), category: kategori }),
       })
-      setView('tak')
+      const data = await res.json()
+      if (data.ok) setView('tak')
+      else setError(data.error || 'Det lykkedes ikke at sende. Prøv igen.')
     } catch {
       setError('Det lykkedes ikke at sende. Prøv igen.')
     } finally {
