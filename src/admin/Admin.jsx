@@ -7052,7 +7052,11 @@ export default function AdminApp() {
 
       // 1. Eksisterende bruger med gyldig backoffice-rolle
       if (snap.exists() && (snap.data().role === 'admin' || snap.data().role === 'trainer')) {
-        setDoc(ref, { lastSeen: serverTimestamp() }, { merge: true }).catch(() => {})
+        // Opdatér lastSeen maks én gang hvert 5. minut
+        const ls = snap.data().lastSeen?.toDate?.()
+        if (!ls || Date.now() - ls.getTime() > 5 * 60 * 1000) {
+          setDoc(ref, { lastSeen: serverTimestamp() }, { merge: true }).catch(() => {})
+        }
         setUserDoc({ id: snap.id, ...snap.data() })
         return
       }
