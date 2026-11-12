@@ -346,9 +346,10 @@ const FEATURE_CARDS = [
 ]
 
 function DashboardScreen({ user, displayName, holds, onLogout, onRefresh }) {
-  const [refreshing,   setRefreshing]   = useState(false)
-  const [selectedHold, setSelectedHold] = useState(null)
-  const [showSupport,  setShowSupport]  = useState(false)
+  const [refreshing,    setRefreshing]   = useState(false)
+  const [selectedHold,  setSelectedHold] = useState(null)
+  const [showSupport,   setShowSupport]  = useState(false)
+  const [showFeatures,  setShowFeatures] = useState(false)
 
   async function handleRefresh() {
     setRefreshing(true)
@@ -434,37 +435,52 @@ function DashboardScreen({ user, displayName, holds, onLogout, onRefresh }) {
           </div>
         )}
 
-        {/* Hvad kan du i appen? */}
-        <div style={{ marginTop: 28 }}>
-          <h2 style={{ fontSize: 15, fontWeight: 800, marginBottom: 12, color: 'var(--text2)' }}>Hvad kan du i appen?</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
-            {FEATURE_CARDS.map(f => (
-              <div key={f.title} style={{
-                background: 'var(--bg)', border: '1px solid var(--border)',
-                borderRadius: 12, padding: '12px 13px',
-              }}>
-                <div style={{ fontSize: 22, marginBottom: 6, lineHeight: 1 }}>{f.emoji}</div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 3 }}>{f.title}</div>
-                <div style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.45 }}>{f.desc}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
         {/* Support */}
-        <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid var(--border)' }}>
+        <div style={{ marginTop: 8, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
           <button onClick={() => setShowSupport(true)} style={{
-            display: 'flex', alignItems: 'center', gap: 10,
-            width: '100%', background: 'none', border: 'none',
-            padding: '10px 0', cursor: 'pointer', textAlign: 'left',
+            display: 'flex', alignItems: 'center', gap: 12,
+            width: '100%', background: 'var(--bg)', border: '1.5px solid var(--border)',
+            borderRadius: 12, padding: '14px 16px', cursor: 'pointer', textAlign: 'left',
           }}>
-            <span style={{ fontSize: 22, lineHeight: 1 }}>🙋</span>
-            <div>
+            <span style={{ fontSize: 24, lineHeight: 1, flexShrink: 0 }}>🙋</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>Hjælp og support</div>
-              <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 1 }}>Stil et spørgsmål eller se svar på ofte stillede spørgsmål</div>
+              <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>Stil et spørgsmål eller se ofte stillede spørgsmål</div>
             </div>
             <ChevronIcon />
           </button>
+        </div>
+
+        {/* Hvad kan du i appen? — kompakt, sammenfoldelig */}
+        <div style={{ marginTop: 4 }}>
+          <button onClick={() => setShowFeatures(f => !f)} style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            width: '100%', background: 'none', border: 'none',
+            padding: '8px 0', cursor: 'pointer', textAlign: 'left',
+          }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text3)', flex: 1 }}>Hvad kan appen?</span>
+            <span style={{
+              fontSize: 11, color: 'var(--text3)',
+              transform: showFeatures ? 'rotate(180deg)' : 'none',
+              transition: 'transform .2s', display: 'inline-block',
+            }}>▼</span>
+          </button>
+          {showFeatures && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8, marginTop: 6 }}>
+              {FEATURE_CARDS.map(f => (
+                <div key={f.title} style={{
+                  background: 'var(--bg)', border: '1px solid var(--border)',
+                  borderRadius: 10, padding: '10px 12px', display: 'flex', alignItems: 'flex-start', gap: 8,
+                }}>
+                  <span style={{ fontSize: 18, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>{f.emoji}</span>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', marginBottom: 2 }}>{f.title}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text3)', lineHeight: 1.4 }}>{f.desc}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </main>
     </div>
@@ -686,49 +702,43 @@ function HoldScreen({ hold, user, onBack }) {
 
   return (
     <div className="screen">
-      <header style={{
-        background: 'var(--green)', color: '#fff',
-        paddingTop: 'max(13px, env(safe-area-inset-top))',
-        paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
-        display: 'flex', alignItems: 'center', gap: 12,
-      }}>
-        <button onClick={onBack} style={{
-          background: 'none', border: 'none', color: '#fff',
-          cursor: 'pointer', fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 5, padding: '0 8px 0 0',
-        }}><BackChevronIcon /> Tilbage</button>
-        <span style={{ fontWeight: 800, fontSize: 17, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {hold.titel || `Hold ${hold.id}`}
-        </span>
-        <button onClick={() => setView('kontingent')} style={{
-          background: 'none', border: 'none',
-          color: 'rgba(255,255,255,.75)', cursor: 'pointer',
-          fontSize: 13, fontWeight: 500, flexShrink: 0,
-        }}>Spillere</button>
-        <button onClick={() => { setView('forbrug'); if (!forbrug) loadForbrug() }} style={{
-          background: 'none', border: 'none',
-          color: 'rgba(255,255,255,.75)', cursor: 'pointer',
-          fontSize: 13, fontWeight: 500, flexShrink: 0,
-        }}>Forbrug</button>
-      </header>
+      <NavHeader
+        title={hold.titel || `Hold ${hold.id}`}
+        onBack={onBack}
+        right={
+          <button onClick={() => { setView('forbrug'); if (!forbrug) loadForbrug() }} style={{
+            background: 'none', border: 'none',
+            color: 'rgba(255,255,255,.75)', cursor: 'pointer',
+            fontSize: 13, fontWeight: 500, padding: '0 8px',
+          }}>Forbrug</button>
+        }
+      />
 
       <main style={{ padding: '16px', maxWidth: 600, margin: '0 auto', width: '100%', flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
         {hold.afdeling && (
-          <p style={{ fontSize: 13, color: 'var(--text3)' }}>{hold.afdeling}</p>
+          <p style={{ fontSize: 13, color: 'var(--text3)', marginTop: 2 }}>{hold.afdeling}</p>
         )}
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button className="btn btn-primary" style={{ flex: 1 }}
-            onClick={() => { setEditBev(null); setView('form') }}>
-            + Opret begivenhed
-          </button>
-          <button className="btn btn-outline" style={{ flex: 1 }}
-            onClick={() => setView('send-besked')}>
-            ✉ Send besked
-          </button>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          {[
+            { icon: '📅', label: 'Opret begivenhed', primary: true,  onClick: () => { setEditBev(null); setView('form') } },
+            { icon: '👥', label: 'Spillere',          primary: false, onClick: () => setView('kontingent') },
+            { icon: '✉️',  label: 'Send besked',       primary: false, onClick: () => setView('send-besked') },
+            { icon: '📊', label: 'Tilkendegivelse',   primary: false, onClick: () => setView('tilkendegivelse-liste') },
+          ].map(a => (
+            <button key={a.label} onClick={a.onClick} style={{
+              background:   a.primary ? 'var(--green)' : 'var(--bg)',
+              color:        a.primary ? '#fff' : 'var(--text)',
+              border:       a.primary ? 'none' : '1.5px solid var(--border)',
+              borderRadius: 12, padding: '14px 10px',
+              cursor: 'pointer', textAlign: 'center',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+            }}>
+              <span style={{ fontSize: 24, lineHeight: 1 }}>{a.icon}</span>
+              <span style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.3 }}>{a.label}</span>
+            </button>
+          ))}
         </div>
-        <button className="btn btn-outline" style={{ width: '100%' }}
-          onClick={() => setView('tilkendegivelse-liste')}>
-          📊 Tilkendegivelse
-        </button>
 
         {loading && <div className="spinner" style={{ margin: '32px auto' }} />}
         {error && <div className="error-box">{error}</div>}
