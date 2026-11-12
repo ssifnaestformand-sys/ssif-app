@@ -2445,31 +2445,40 @@ function TraenerOverblikPage() {
   const [statusFilter, setStatusFilter] = useState('alle')
   const [openGroups,   setOpenGroups]   = useState({})
 
+  const [loadError, setLoadError] = useState(null)
+
   useEffect(() => {
     setLoading(true)
+    setLoadError(null)
     async function load() {
-      const [mSnap, uSnap, hSnap, aSnap] = await Promise.all([
-        getDocs(query(collection(db, 'members'), where('isLeder', '==', true))),
-        getDocs(collection(db, 'users')),
-        getDocs(collection(db, 'holds')),
-        getDocs(collection(db, 'afdelinger')),
-      ])
-      setMembers(mSnap.docs.map(d => ({ id: d.id, ...d.data() })))
-      setUsers(uSnap.docs.map(d => ({ id: d.id, ...d.data() })))
-      const hm = {}
-      hSnap.docs.forEach(d => {
-        hm[d.id] = { titel: d.data().titel || d.id, afdeling_id: String(d.data().afdeling_id ?? '') }
-      })
-      const am = {}
-      aSnap.docs.forEach(d => { am[d.id] = d.data().navn || d.id })
-      setHoldMap(hm)
-      setAfdMap(am)
-      setLoading(false)
+      try {
+        const [mSnap, uSnap, hSnap, aSnap] = await Promise.all([
+          getDocs(query(collection(db, 'members'), where('isLeder', '==', true))),
+          getDocs(collection(db, 'users')),
+          getDocs(collection(db, 'holds')),
+          getDocs(collection(db, 'afdelinger')),
+        ])
+        setMembers(mSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+        setUsers(uSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+        const hm = {}
+        hSnap.docs.forEach(d => {
+          hm[d.id] = { titel: d.data().titel || d.id, afdeling_id: String(d.data().afdeling_id ?? '') }
+        })
+        const am = {}
+        aSnap.docs.forEach(d => { am[d.id] = d.data().navn || d.id })
+        setHoldMap(hm)
+        setAfdMap(am)
+      } catch (e) {
+        setLoadError(`Firestore fejl: ${e?.code || e?.message || 'ukendt'} — er firestore.rules deployet?`)
+      } finally {
+        setLoading(false)
+      }
     }
     load()
   }, [loadKey])
 
   if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Henter trænere…</div>
+  if (loadError) return <div style={{ padding: 40, color: '#dc2626', fontSize: 14 }}>{loadError}</div>
 
   // Cross-reference primært via conventus_id, sekundært via email (fallback)
   const cidToUser = {}
