@@ -2644,7 +2644,7 @@ function TraenerOverblikPage() {
                     <div style={{ fontWeight: 600, fontSize: 14 }}>{u.displayName || u.email || u.id}</div>
                     <div style={{ fontSize: 11, color: '#dc2626', marginTop: 1 }}>{u.email || '–'}</div>
                   </div>
-                  <div style={{ flex: '0 0 auto', fontSize: 11, color: '#888' }}>Senest: {fmtRelative(u.lastSeen)}</div>
+                  <div style={{ flex: '0 0 auto', fontSize: 11, color: '#888' }}>Senest: {fmtRelative(u.lastAttempt || u.lastSeen)}</div>
                 </div>
               ))}
             </div>

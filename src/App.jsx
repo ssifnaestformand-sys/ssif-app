@@ -61,9 +61,19 @@ export default function App() {
         setScreen('unverified')
       } else {
         setScreen('denied')
+        setDoc(doc(db, 'users', fbUser.uid), {
+          email:       fbUser.email || '',
+          displayName: fbUser.displayName || '',
+          lastAttempt: serverTimestamp(),
+        }, { merge: true }).catch(() => {})
       }
     } catch {
       setScreen('denied')
+      setDoc(doc(db, 'users', fbUser.uid), {
+        email:       fbUser.email || '',
+        displayName: fbUser.displayName || '',
+        lastAttempt: serverTimestamp(),
+      }, { merge: true }).catch(() => {})
     }
   }
 
