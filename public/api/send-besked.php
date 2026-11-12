@@ -27,6 +27,7 @@ $auth         = trainer_auth();
 $uid          = $auth['uid'];
 $email        = $auth['email'];
 $conventus_id = $auth['conventus_id'];
+$displayName  = $auth['displayName'];
 $fsToken      = $auth['fsToken'];
 $projectId    = $auth['projectId'];
 $base         = $auth['base'];
@@ -62,6 +63,7 @@ if ($conventus_id) {
     $m = fs_get("{$base}/members/{$conventus_id}", $fsToken);
     $senderNavn = $m ? ($m['fields']['name']['stringValue'] ?? '') : '';
 }
+if ($senderNavn === '') $senderNavn = $displayName;
 
 $tc = trainer_app_config($base, $fsToken);
 if ($tc['testMode']) {
@@ -117,13 +119,13 @@ if ($kanal === 'mail') {
         if (!$to) { $fejlet++; continue; }
         $subj = $tc['testMode'] ? "[TEST → {$navn}] {$subjectBase}" : $subjectBase;
         $to   = $tc['testMode'] ? $tc['testEmail'] : $to;
-        if (smtp_send_html($to, $subj, byg_besked_html($navn, $senderNavn, $holdTitel, $besked))) $sendt++; else $fejlet++;
+        if (smtp_send_html($to, $subj, byg_besked_html($navn, $senderNavn, $holdTitel, $besked), $senderNavn)) $sendt++; else $fejlet++;
     }
     // Ekstra e-mail-adresser (manuelt tilføjet)
     foreach ($extraEmails as $to) {
         $subj = $tc['testMode'] ? "[TEST] {$subjectBase}" : $subjectBase;
         $to   = $tc['testMode'] ? $tc['testEmail'] : $to;
-        if (smtp_send_html($to, $subj, byg_besked_html('', $senderNavn, $holdTitel, $besked))) $sendt++; else $fejlet++;
+        if (smtp_send_html($to, $subj, byg_besked_html('', $senderNavn, $holdTitel, $besked), $senderNavn)) $sendt++; else $fejlet++;
     }
 
     log_udsendelse($projectId, $fsToken, [
@@ -203,10 +205,14 @@ function parse_extra_phone(string $raw): ?int {
 
 // ── Mail-template ─────────────────────────────────────────────────────────────
 function byg_besked_html(string $modtagerNavn, string $afsenderNavn, string $holdNavn, string $besked): string {
-    $navnEnc = htmlspecialchars($modtagerNavn);
-    $afsEnc  = htmlspecialchars($afsenderNavn ?: 'Træneren');
-    $holdEnc = htmlspecialchars($holdNavn);
+    $navnEnc    = htmlspecialchars($modtagerNavn);
+    $holdEnc    = htmlspecialchars($holdNavn);
+    $afsEnc     = $afsenderNavn ? htmlspecialchars('SSIF - ' . $afsenderNavn) : 'SSIF Tr&aelig;ner';
+    $holdSubtitle = $holdNavn
+        ? "<p style=\"margin:4px 0 0;color:rgba(255,255,255,.85);font-size:13px;font-weight:600\">{$holdEnc}</p>"
+        : '';
     $besk    = nl2br(htmlspecialchars($besked));
+    $hilsen  = $modtagerNavn ? "<p style=\"margin:0 0 16px;font-size:14px;color:#4a4a4a\">Hej {$navnEnc},</p>" : '';
     return <<<HTML
 <!DOCTYPE html>
 <html lang="da">
@@ -216,11 +222,11 @@ function byg_besked_html(string $modtagerNavn, string $afsenderNavn, string $hol
 <tr><td align="center" style="padding:24px 16px">
 <table width="100%" style="max-width:480px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 6px rgba(0,0,0,.08)">
   <tr><td style="background:#1a5c2a;padding:18px 24px">
-    <p style="margin:0;color:#fff;font-size:18px;font-weight:800">&#9917; SSIF Tr&aelig;ner</p>
+    <p style="margin:0;color:#fff;font-size:18px;font-weight:800">&#9917; {$afsEnc}</p>
+    {$holdSubtitle}
   </td></tr>
   <tr><td style="padding:24px">
-    <p style="margin:0 0 4px;font-size:14px;color:#4a4a4a">Hej {$navnEnc},</p>
-    <p style="margin:0 0 18px;font-size:14px;color:#4a4a4a">{$afsEnc} har sendt en besked til {$holdEnc}:</p>
+    {$hilsen}
     <div style="background:#f4f6f4;border-left:3px solid #1a5c2a;border-radius:0 8px 8px 0;padding:14px 16px;margin-bottom:20px;font-size:14px;color:#1a1a1a;line-height:1.65">
       {$besk}
     </div>
