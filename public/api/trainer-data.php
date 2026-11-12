@@ -124,14 +124,13 @@ $uFields['role'] = ['stringValue' => 'trainer'];
 if ($existingRole === 'admin' && !$existingIsAdmin) {
     $uFields['isAdmin'] = ['booleanValue' => true];
 }
-$mask = implode('&', array_map(fn($k) => 'updateMask.fieldPaths=' . urlencode($k), array_keys($uFields)));
-@file_get_contents("{$base}/users/{$uid}?{$mask}", false, stream_context_create(['http' => [
-    'method'        => 'PATCH',
-    'header'        => "Authorization: Bearer {$fsToken}\r\nContent-Type: application/json\r\n",
-    'content'       => json_encode(['fields' => $uFields]),
-    'timeout'       => 5,
-    'ignore_errors' => true,
-]]));
+fs_commit($projectId, $fsToken, [[
+    'update' => [
+        'name'   => "projects/{$projectId}/databases/(default)/documents/users/{$uid}",
+        'fields' => $uFields,
+    ],
+    'updateMask' => ['fieldPaths' => array_keys($uFields)],
+]]);
 
 $tc = trainer_app_config($base, $fsToken);
 echo json_encode(['name' => $displayName, 'holds' => $holds, 'testMode' => $tc['testMode']]);
