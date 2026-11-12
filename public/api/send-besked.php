@@ -205,12 +205,8 @@ function parse_extra_phone(string $raw): ?int {
 
 // ── Mail-template ─────────────────────────────────────────────────────────────
 function byg_besked_html(string $modtagerNavn, string $afsenderNavn, string $holdNavn, string $besked): string {
-    $navnEnc    = htmlspecialchars($modtagerNavn);
-    $holdEnc    = htmlspecialchars($holdNavn);
-    $afsEnc     = $afsenderNavn ? htmlspecialchars('SSIF - ' . $afsenderNavn) : 'SSIF Tr&aelig;ner';
-    $holdSubtitle = $holdNavn
-        ? "<p style=\"margin:4px 0 0;color:rgba(255,255,255,.85);font-size:13px;font-weight:600\">{$holdEnc}</p>"
-        : '';
+    $navnEnc = htmlspecialchars($modtagerNavn);
+    $holdEnc = $holdNavn ? htmlspecialchars('SSIF - ' . $holdNavn) : 'SSIF Tr&aelig;ner';
     $besk    = nl2br(htmlspecialchars($besked));
     $hilsen  = $modtagerNavn ? "<p style=\"margin:0 0 16px;font-size:14px;color:#4a4a4a\">Hej {$navnEnc},</p>" : '';
     return <<<HTML
@@ -222,8 +218,7 @@ function byg_besked_html(string $modtagerNavn, string $afsenderNavn, string $hol
 <tr><td align="center" style="padding:24px 16px">
 <table width="100%" style="max-width:480px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 6px rgba(0,0,0,.08)">
   <tr><td style="background:#1a5c2a;padding:18px 24px">
-    <p style="margin:0;color:#fff;font-size:18px;font-weight:800">&#9917; {$afsEnc}</p>
-    {$holdSubtitle}
+    <p style="margin:0;color:#fff;font-size:18px;font-weight:800">&#9917; {$holdEnc}</p>
   </td></tr>
   <tr><td style="padding:24px">
     {$hilsen}
