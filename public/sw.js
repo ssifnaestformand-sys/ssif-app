@@ -21,6 +21,9 @@ self.addEventListener('fetch', e => {
 
   const url = new URL(e.request.url)
 
+  // Aldrig cross-origin — Firebase/Google streaming-requests kan ikke clones
+  if (url.origin !== self.location.origin) return
+
   // API-kald: aldrig SW — lad netværket håndtere dem
   if (url.pathname.startsWith('/api/')) return
 

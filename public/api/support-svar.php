@@ -19,7 +19,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST')    { http_response_code(405); echo js
 $auth       = trainer_auth();
 $fsToken    = $auth['fsToken'];
 $projectId  = $auth['projectId'];
-$base       = $auth['base'];
+$base         = $auth['base'];
+$resourceBase = $auth['resourceBase'];
 $svarGivetAf = $auth['displayName'] ?: $auth['email'];
 
 $body        = json_decode(file_get_contents('php://input'), true) ?? [];
@@ -37,7 +38,7 @@ if (!$supportId || !$answer) {
 // ── Opdatér Firestore ─────────────────────────────────────────────────────────
 $ok = fs_commit($projectId, $fsToken, [[
     'update' => [
-        'name'   => "{$base}/support/{$supportId}",
+        'name'   => "{$resourceBase}/support/{$supportId}",
         'fields' => [
             'answer'      => ['stringValue'    => $answer],
             'status'      => ['stringValue'    => 'besvaret'],

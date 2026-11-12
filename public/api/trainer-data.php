@@ -32,6 +32,7 @@ $conventus_id = $auth['conventus_id'];
 $fsToken      = $auth['fsToken'];
 $projectId    = $auth['projectId'];
 $base         = $auth['base'];
+$resourceBase = $auth['resourceBase'];
 
 // $fsToken er allerede et service account token (fra trainer_auth) — bypasser Security Rules
 
@@ -126,16 +127,16 @@ if ($existingRole === 'admin' && !$existingIsAdmin) {
 }
 $commitResult = fs_commit_detail($projectId, $fsToken, [[
     'update' => [
-        'name'   => "{$base}/users/{$uid}",
+        'name'   => "{$resourceBase}/users/{$uid}",
         'fields' => $uFields,
     ],
     'updateMask' => ['fieldPaths' => array_keys($uFields)],
 ]]);
 
-// Test: skriv lastSeen direkte til members/{conventus_id} — service account bypass af Security Rules
+// Skriv lastSeen til members/{conventus_id} — primær kilde for login-status i overblikket
 $membersCommitResult = fs_commit_detail($projectId, $fsToken, [[
     'update' => [
-        'name'   => "{$base}/members/{$conventus_id}",
+        'name'   => "{$resourceBase}/members/{$conventus_id}",
         'fields' => ['lastSeen' => ['timestampValue' => $now]],
     ],
     'updateMask' => ['fieldPaths' => ['lastSeen']],
