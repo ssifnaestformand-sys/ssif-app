@@ -2469,43 +2469,33 @@ function TraenerOverblikPage() {
 
   if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Henter trænere…</div>
 
-  const emailToUser = {}
-  users.forEach(u => { const e = (u.email || '').toLowerCase(); if (e) emailToUser[e] = u })
-
-  const trainerEmailSet = new Set()
-  members.forEach(m => { (m.allEmails || []).forEach(e => trainerEmailSet.add(e.toLowerCase())) })
+  // Cross-reference via conventus_id (trainer-data.php skriver dette til users/{uid} ved succes)
+  const cidToUser = {}
+  users.forEach(u => {
+    const cid = String(u.conventus_id || '').trim()
+    if (cid) cidToUser[cid] = u
+  })
 
   const trainers = members.map(m => {
-    let userDoc = null
-    for (const e of (m.allEmails || [])) {
-      if (emailToUser[e.toLowerCase()]) { userDoc = emailToUser[e.toLowerCase()]; break }
-    }
-    const status     = !userDoc ? 'ingen' : (!userDoc.lastSeen ? 'oprettet' : 'logget_ind')
+    const userDoc    = cidToUser[m.id] || null
+    const status     = !userDoc ? 'ingen' : (userDoc.lastSeen ? 'logget_ind' : 'oprettet')
     const holdIds    = (m.lederHolds || []).map(id => String(id))
     const holdTitles = holdIds.map(id => holdMap[id]?.titel || `Hold ${id}`)
     const afdIds     = [...new Set(holdIds.map(id => holdMap[id]?.afdeling_id).filter(Boolean))]
     return { ...m, userDoc, status, holdIds, holdTitles, afdIds }
   })
 
-  const total    = trainers.length
-  const nLogget  = trainers.filter(t => t.status === 'logget_ind').length
-  const nOprettet= trainers.filter(t => t.status === 'oprettet').length
-  const nIngen   = trainers.filter(t => t.status === 'ingen').length
+  const total     = trainers.length
+  const nLogget   = trainers.filter(t => t.status === 'logget_ind').length
+  const nOprettet = trainers.filter(t => t.status === 'oprettet').length
+  const nIngen    = trainers.filter(t => t.status === 'ingen').length
 
-  // Emails der er succesfuldt matchet til en trainer-members-doc
-  const matchedUserEmails = new Set()
-  trainers.forEach(t => {
-    if (t.userDoc) {
-      const e = (t.userDoc.email || '').toLowerCase()
-      if (e) matchedUserEmails.add(e)
-    }
-  })
-
-  // Afviste = users-docs der IKKE er matchet til en aktiv trainer, og ikke er admins
+  // Afviste = users-docs med lastAttempt (skrevet af App.jsx ved denied) + ikke aktiv trainer
+  const matchedUids = new Set(trainers.filter(t => t.userDoc).map(t => t.userDoc.id))
   const denied = users.filter(u => {
     if (u.isAdmin === true || u.role === 'admin') return false
-    const e = (u.email || '').toLowerCase()
-    return e && !matchedUserEmails.has(e)
+    if (!u.lastAttempt) return false
+    return !matchedUids.has(u.id)
   })
 
   const q = search.toLowerCase()
@@ -2644,7 +2634,7 @@ function TraenerOverblikPage() {
                     <div style={{ fontWeight: 600, fontSize: 14 }}>{u.displayName || u.email || u.id}</div>
                     <div style={{ fontSize: 11, color: '#dc2626', marginTop: 1 }}>{u.email || '–'}</div>
                   </div>
-                  <div style={{ flex: '0 0 auto', fontSize: 11, color: '#888' }}>Senest: {fmtRelative(u.lastAttempt || u.lastSeen)}</div>
+                  <div style={{ flex: '0 0 auto', fontSize: 11, color: '#888' }}>Forsøgte: {fmtRelative(u.lastAttempt)}</div>
                 </div>
               ))}
             </div>
