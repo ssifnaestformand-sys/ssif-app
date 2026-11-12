@@ -2507,8 +2507,7 @@ function AppUsersPage() {
   const filtered = users
     .filter(u => {
       if (u.role === 'trainer') return true
-      // Admin der også er leder i Conventus fremgår i trænerlisten
-      if (u.isAdmin !== true && u.role !== 'admin') return false
+      // Enhver bruger hvis email matcher en Conventus-leder vises — uanset role-felt
       return (lederByEmail[(u.email || '').toLowerCase()] || []).length > 0
     })
     .filter(u => {
@@ -4312,15 +4311,24 @@ function SupportPage({ authUser }) {
     if (!answer) return
     setSaving(item.id)
     try {
-      await updateDoc(doc(db, 'support', item.id), {
-        answer,
-        status:     'besvaret',
-        answeredAt: serverTimestamp(),
-        answeredBy: authUser.email,
+      const idToken = await auth.currentUser?.getIdToken() ?? ''
+      const res  = await fetch('https://app.sejssvejbaek-if.dk/api/support-svar.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          supportId:   item.id,
+          answer,
+          authorEmail: item.authorEmail || '',
+          authorName:  item.authorName  || '',
+          question:    item.question    || '',
+          category:    item.category    || '',
+        }),
       })
+      const data = await res.json()
+      if (!data.ok) throw new Error(data.error || 'Fejl')
       load()
       setExpandedId(null)
-    } catch { alert('Fejl ved lagring') }
+    } catch (e) { alert('Fejl ved svar: ' + e.message) }
     setSaving(null)
   }
 

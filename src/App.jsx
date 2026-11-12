@@ -114,10 +114,14 @@ function TestModeBanner() {
 function SplashScreen() {
   return (
     <div className="screen-center" style={{ flexDirection: 'column', gap: 0 }}>
-      <img src="/ssif-logo.png" alt="SSIF" style={{
-        height: 80, objectFit: 'contain',
+      <div style={{
+        width: 80, height: 80, borderRadius: '50%',
+        background: 'var(--green)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
         animation: 'spin .9s linear infinite',
-      }} />
+      }}>
+        <img src="/ssif-logo-white.png" alt="SSIF" style={{ width: 52, height: 52, objectFit: 'contain' }} />
+      </div>
     </div>
   )
 }
