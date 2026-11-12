@@ -6,7 +6,7 @@ import {
 } from 'firebase/auth'
 import {
   collection, query, where, orderBy, getDocs, serverTimestamp,
-  doc, setDoc,
+  doc, setDoc, updateDoc,
 } from 'firebase/firestore'
 import { auth, db } from './firebase.js'
 import './trainer.css'
@@ -41,26 +41,33 @@ export default function App() {
         headers: { Authorization: `Bearer ${idToken}` },
       })
       const data = await res.json()
+      console.log('[trainer-data]', { conventus_id: data.conventus_id, commitOk: data._commitOk, holds: data.holds?.length })
       if (data.holds) {
         setTrainerName(data.name || fbUser.displayName || '')
         setHolds(data.holds)
         setTestMode(data.testMode || false)
         setScreen('app')
-        // Skriv identitetsfelter + lastSeen — role:'trainer' sikrer CREATE-regel overholdes
         const lsKey  = 'ssif_ls_' + fbUser.uid
         const lsLast = parseInt(sessionStorage.getItem(lsKey) || '0')
-        const payload = {
+        const fields = {
           email:        fbUser.email || '',
           displayName:  fbUser.displayName || data.name || '',
           conventus_id: String(data.conventus_id || ''),
-          role:         'trainer',
         }
         if (Date.now() - lsLast > 5 * 60 * 1000) {
           sessionStorage.setItem(lsKey, String(Date.now()))
-          payload.lastSeen = serverTimestamp()
+          fields.lastSeen = serverTimestamp()
         }
-        setDoc(doc(db, 'users', fbUser.uid), payload, { merge: true })
-          .catch(err => console.error('[SSIF setDoc fejl]', err))
+        // updateDoc bevarer eksisterende role — ved første login (not-found) oprettes med role:'Член'
+        const userRef = doc(db, 'users', fbUser.uid)
+        updateDoc(userRef, fields).catch(err => {
+          if (err.code === 'not-found') {
+            setDoc(userRef, { ...fields, role: 'Член' })
+              .catch(e => console.error('[SSIF create fejl]', e))
+          } else {
+            console.error('[SSIF updateDoc fejl]', err)
+          }
+        })
       } else if (data.error === 'email_not_verified') {
         setScreen('unverified')
       } else {

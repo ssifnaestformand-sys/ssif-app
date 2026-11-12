@@ -124,7 +124,7 @@ $uFields['role'] = ['stringValue' => 'trainer'];
 if ($existingRole === 'admin' && !$existingIsAdmin) {
     $uFields['isAdmin'] = ['booleanValue' => true];
 }
-fs_commit($projectId, $fsToken, [[
+$commitOk = fs_commit($projectId, $fsToken, [[
     'update' => [
         'name'   => "projects/{$projectId}/databases/(default)/documents/users/{$uid}",
         'fields' => $uFields,
@@ -133,4 +133,4 @@ fs_commit($projectId, $fsToken, [[
 ]]);
 
 $tc = trainer_app_config($base, $fsToken);
-echo json_encode(['name' => $displayName, 'holds' => $holds, 'testMode' => $tc['testMode'], 'conventus_id' => $conventus_id]);
+echo json_encode(['name' => $displayName, 'holds' => $holds, 'testMode' => $tc['testMode'], 'conventus_id' => $conventus_id, '_commitOk' => $commitOk]);
