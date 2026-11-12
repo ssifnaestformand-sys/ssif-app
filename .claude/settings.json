@@ -6,7 +6,8 @@
       "Bash(echo \"EXIT: $?\")",
       "Bash(npm run *)",
       "Bash(awk 'NR>=50')",
-      "Bash(xargs ls -la)"
+      "Bash(xargs ls -la)",
+      "Bash(./deploy.sh)"
     ]
   }
 }
