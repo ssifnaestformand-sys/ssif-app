@@ -211,6 +211,10 @@ function fs_list(string $url, string $token, int $pageSize = 100): array {
 }
 
 function fs_commit(string $projectId, string $token, array $writes): bool {
+    return fs_commit_detail($projectId, $token, $writes)['ok'];
+}
+
+function fs_commit_detail(string $projectId, string $token, array $writes): array {
     $url  = "https://firestore.googleapis.com/v1/projects/{$projectId}/databases/(default)/documents:commit";
     $resp = @file_get_contents($url, false, stream_context_create(['http' => [
         'method'        => 'POST',
@@ -219,9 +223,13 @@ function fs_commit(string $projectId, string $token, array $writes): bool {
         'timeout'       => 15,
         'ignore_errors' => true,
     ]]));
-    if (!$resp) return false;
+    $httpStatus = '';
+    foreach ($http_response_header ?? [] as $h) {
+        if (str_starts_with($h, 'HTTP/')) { $httpStatus = $h; break; }
+    }
+    if (!$resp) return ['ok' => false, 'httpStatus' => $httpStatus, 'error' => 'no_response'];
     $data = json_decode($resp, true);
-    return !isset($data['error']);
+    return ['ok' => !isset($data['error']), 'httpStatus' => $httpStatus, 'error' => $data['error'] ?? null];
 }
 
 function fs_create(string $projectId, string $token, string $collection, array $fields): ?string {

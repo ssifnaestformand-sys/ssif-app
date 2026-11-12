@@ -41,7 +41,7 @@ export default function App() {
         headers: { Authorization: `Bearer ${idToken}` },
       })
       const data = await res.json()
-      console.log('[trainer-data]', { conventus_id: data.conventus_id, commitOk: data._commitOk, holds: data.holds?.length })
+      console.log('[trainer-data]', { conventus_id: data.conventus_id, commit: data._commit, holds: data.holds?.length })
       if (data.holds) {
         setTrainerName(data.name || fbUser.displayName || '')
         setHolds(data.holds)
