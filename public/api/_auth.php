@@ -332,6 +332,27 @@ function trainer_auth(): array {
     }
     $displayName = $userDoc['fields']['displayName']['stringValue'] ?? '';
 
+    // Hvis conventus_id stadig mangler (f.eks. admin der ikke har logget ind i træner-appen),
+    // find member-doc via email og udled conventus_id + Conventus-navn derfra
+    if ($conventus_id === '' && $email !== '') {
+        $memberRows = fs_run_query($projectId, $fsToken, ['structuredQuery' => [
+            'from'  => [['collectionId' => 'members']],
+            'where' => ['fieldFilter' => [
+                'field' => ['fieldPath' => 'allEmails'],
+                'op'    => 'ARRAY_CONTAINS',
+                'value' => ['stringValue' => $email],
+            ]],
+            'limit' => 1,
+        ]]);
+        foreach ($memberRows as $mr) {
+            if (!isset($mr['document']['fields'])) continue;
+            $conventus_id = basename($mr['document']['name'] ?? '');
+            $conventus_displayName = $mr['document']['fields']['name']['stringValue'] ?? '';
+            if ($conventus_displayName !== '') $displayName = $conventus_displayName;
+            break;
+        }
+    }
+
     return [
         'uid'          => $uid,
         'email'        => $email,
