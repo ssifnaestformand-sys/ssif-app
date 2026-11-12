@@ -325,6 +325,12 @@ function trainer_auth(): array {
     $fsToken = make_fs_token($sa);
     if (!$fsToken) { http_response_code(500); echo json_encode(['error' => 'OAuth fejlede']); exit; }
 
+    // conventus_id er ikke et Firebase JWT-claim — hent det fra Firestore users-doc
+    if ($conventus_id === '') {
+        $userDoc      = fs_get("https://firestore.googleapis.com/v1/projects/{$projectId}/databases/(default)/documents/users/{$uid}", $fsToken);
+        $conventus_id = $userDoc['fields']['conventus_id']['stringValue'] ?? '';
+    }
+
     return [
         'uid'          => $uid,
         'email'        => $email,
