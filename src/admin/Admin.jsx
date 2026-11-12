@@ -2492,10 +2492,20 @@ function TraenerOverblikPage() {
   const nOprettet= trainers.filter(t => t.status === 'oprettet').length
   const nIngen   = trainers.filter(t => t.status === 'ingen').length
 
+  // Emails der er succesfuldt matchet til en trainer-members-doc
+  const matchedUserEmails = new Set()
+  trainers.forEach(t => {
+    if (t.userDoc) {
+      const e = (t.userDoc.email || '').toLowerCase()
+      if (e) matchedUserEmails.add(e)
+    }
+  })
+
+  // Afviste = users-docs der IKKE er matchet til en aktiv trainer, og ikke er admins
   const denied = users.filter(u => {
     if (u.isAdmin === true || u.role === 'admin') return false
     const e = (u.email || '').toLowerCase()
-    return e && !trainerEmailSet.has(e)
+    return e && !matchedUserEmails.has(e)
   })
 
   const q = search.toLowerCase()
