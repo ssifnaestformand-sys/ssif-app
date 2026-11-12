@@ -46,21 +46,21 @@ export default function App() {
         setHolds(data.holds)
         setTestMode(data.testMode || false)
         setScreen('app')
-        // Identitetsfelter skrives altid (nødvendigt for backoffice-matching)
-        setDoc(doc(db, 'users', fbUser.uid), {
+        // Skriv identitetsfelter + lastSeen — role:'trainer' sikrer CREATE-regel overholdes
+        const lsKey  = 'ssif_ls_' + fbUser.uid
+        const lsLast = parseInt(sessionStorage.getItem(lsKey) || '0')
+        const payload = {
           email:        fbUser.email || '',
           displayName:  fbUser.displayName || data.name || '',
           conventus_id: String(data.conventus_id || ''),
-        }, { merge: true }).catch(() => {})
-        // lastSeen throttles til maks én gang hvert 5. minut
-        const lsKey  = 'ssif_ls_' + fbUser.uid
-        const lsLast = parseInt(sessionStorage.getItem(lsKey) || '0')
+          role:         'trainer',
+        }
         if (Date.now() - lsLast > 5 * 60 * 1000) {
           sessionStorage.setItem(lsKey, String(Date.now()))
-          setDoc(doc(db, 'users', fbUser.uid), {
-            lastSeen: serverTimestamp(),
-          }, { merge: true }).catch(() => {})
+          payload.lastSeen = serverTimestamp()
         }
+        setDoc(doc(db, 'users', fbUser.uid), payload, { merge: true })
+          .catch(err => console.error('[SSIF setDoc fejl]', err))
       } else if (data.error === 'email_not_verified') {
         setScreen('unverified')
       } else {
@@ -69,7 +69,8 @@ export default function App() {
           email:       fbUser.email || '',
           displayName: fbUser.displayName || '',
           lastAttempt: serverTimestamp(),
-        }, { merge: true }).catch(() => {})
+          role:        'Член',
+        }, { merge: true }).catch(err => console.error('[SSIF setDoc fejl]', err))
       }
     } catch {
       setScreen('denied')
@@ -77,7 +78,8 @@ export default function App() {
         email:       fbUser.email || '',
         displayName: fbUser.displayName || '',
         lastAttempt: serverTimestamp(),
-      }, { merge: true }).catch(() => {})
+        role:        'Член',
+      }, { merge: true }).catch(err => console.error('[SSIF setDoc fejl]', err))
     }
   }
 
