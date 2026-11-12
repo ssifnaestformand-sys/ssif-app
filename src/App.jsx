@@ -46,16 +46,19 @@ export default function App() {
         setHolds(data.holds)
         setTestMode(data.testMode || false)
         setScreen('app')
-        // Opdatér kun lastSeen maks én gang hvert 5. minut (undgår unødvendige Firestore-writes)
+        // Identitetsfelter skrives altid (nødvendigt for backoffice-matching)
+        setDoc(doc(db, 'users', fbUser.uid), {
+          email:        fbUser.email || '',
+          displayName:  fbUser.displayName || data.name || '',
+          conventus_id: String(data.conventus_id || ''),
+        }, { merge: true }).catch(() => {})
+        // lastSeen throttles til maks én gang hvert 5. minut
         const lsKey  = 'ssif_ls_' + fbUser.uid
         const lsLast = parseInt(sessionStorage.getItem(lsKey) || '0')
         if (Date.now() - lsLast > 5 * 60 * 1000) {
           sessionStorage.setItem(lsKey, String(Date.now()))
           setDoc(doc(db, 'users', fbUser.uid), {
-            lastSeen:      serverTimestamp(),
-            email:         fbUser.email || '',
-            displayName:   fbUser.displayName || data.name || '',
-            conventus_id:  String(data.conventus_id || ''),
+            lastSeen: serverTimestamp(),
           }, { merge: true }).catch(() => {})
         }
       } else if (data.error === 'email_not_verified') {
