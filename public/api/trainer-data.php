@@ -124,30 +124,13 @@ $uFields['role'] = ['stringValue' => 'trainer'];
 if ($existingRole === 'admin' && !$existingIsAdmin) {
     $uFields['isAdmin'] = ['booleanValue' => true];
 }
-$commitUrl  = "https://firestore.googleapis.com/v1/projects/{$projectId}/databases/(default)/documents:commit";
-$commitBody = json_encode(['writes' => [[
+fs_commit($projectId, $fsToken, [[
     'update' => [
         'name'   => "projects/{$projectId}/databases/(default)/documents/users/{$uid}",
         'fields' => $uFields,
     ],
     'updateMask' => ['fieldPaths' => array_keys($uFields)],
-]]]);
-$commitResp = @file_get_contents($commitUrl, false, stream_context_create(['http' => [
-    'method'        => 'POST',
-    'header'        => "Authorization: Bearer {$fsToken}\r\nContent-Type: application/json\r\n",
-    'content'       => $commitBody,
-    'timeout'       => 15,
-    'ignore_errors' => true,
-]]));
-$commitData = json_decode($commitResp ?: '{}', true);
+]]);
 
 $tc = trainer_app_config($base, $fsToken);
-echo json_encode([
-    'name'          => $displayName,
-    'holds'         => $holds,
-    'testMode'      => $tc['testMode'],
-    '_commitOk'     => !isset($commitData['error']) && $commitResp !== false,
-    '_commitError'  => $commitData['error'] ?? null,
-    '_tokenLen'     => strlen($fsToken),
-    '_uFields'      => array_keys($uFields),
-]);
+echo json_encode(['name' => $displayName, 'holds' => $holds, 'testMode' => $tc['testMode']]);
