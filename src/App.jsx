@@ -978,12 +978,13 @@ function BegivenhedFormScreen({ hold, begivenhed, user, onBack, onSaved, onDelet
             placeholder="fx Kamp mod FC Silkeborg" />
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, alignItems: 'start' }}>
-          <div className="form-field">
-            <label className="form-label">Dato</label>
-            <input className="form-input" type="date" value={dato}
-              onChange={e => setDato(e.target.value)} />
-          </div>
+        <div className="form-field">
+          <label className="form-label">Dato</label>
+          <input className="form-input" type="date" value={dato}
+            onChange={e => setDato(e.target.value)} />
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
           <div className="form-field">
             <label className="form-label">Tidspunkt</label>
             <input className="form-input" type="time" value={tidspunkt}
@@ -996,14 +997,15 @@ function BegivenhedFormScreen({ hold, begivenhed, user, onBack, onSaved, onDelet
             <input className="form-input" type="time" value={modetid}
               onChange={e => setModetid(e.target.value)} />
           </div>
-          <div className="form-field">
-            <label className="form-label">
-              Sted <span style={{ fontWeight: 400, color: 'var(--text3)' }}>(valgfri)</span>
-            </label>
-            <input className="form-input" type="text" value={sted}
-              onChange={e => setSted(e.target.value)}
-              placeholder="fx Sejs Hallen" />
-          </div>
+        </div>
+
+        <div className="form-field">
+          <label className="form-label">
+            Sted <span style={{ fontWeight: 400, color: 'var(--text3)' }}>(valgfri)</span>
+          </label>
+          <input className="form-input" type="text" value={sted}
+            onChange={e => setSted(e.target.value)}
+            placeholder="fx Sejs Hallen" />
         </div>
 
         <div className="form-field">
