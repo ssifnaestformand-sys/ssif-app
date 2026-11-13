@@ -73,22 +73,22 @@ export default function App() {
         setScreen('unverified')
       } else {
         setScreen('denied')
-        setDoc(doc(db, 'users', fbUser.uid), {
-          email:       fbUser.email || '',
-          displayName: fbUser.displayName || '',
-          lastAttempt: serverTimestamp(),
-          role:        'Medlem',
-        }, { merge: true }).catch(err => console.error('[SSIF setDoc fejl]', err))
+        logDeniedAttempt(fbUser)
       }
     } catch {
       setScreen('denied')
-      setDoc(doc(db, 'users', fbUser.uid), {
-        email:       fbUser.email || '',
-        displayName: fbUser.displayName || '',
-        lastAttempt: serverTimestamp(),
-        role:        'Medlem',
-      }, { merge: true }).catch(err => console.error('[SSIF setDoc fejl]', err))
+      logDeniedAttempt(fbUser)
     }
+  }
+
+  function logDeniedAttempt(fbUser) {
+    const ref    = doc(db, 'users', fbUser.uid)
+    const fields = { email: fbUser.email || '', displayName: fbUser.displayName || '', lastAttempt: serverTimestamp() }
+    updateDoc(ref, fields).catch(err => {
+      if (err.code === 'not-found') {
+        setDoc(ref, { ...fields, role: 'Medlem' }).catch(() => {})
+      }
+    })
   }
 
   function handleLogout() {
