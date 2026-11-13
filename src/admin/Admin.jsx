@@ -16,7 +16,7 @@ import {
   signOut, onAuthStateChanged,
 } from 'firebase/auth'
 import {
-  collection, query, where, orderBy, limit,
+  collection, query, where, orderBy, limit, startAfter,
   addDoc, updateDoc, deleteDoc, serverTimestamp,
   doc, getDoc, setDoc, getDocs, Timestamp,
 } from 'firebase/firestore'
@@ -3654,6 +3654,7 @@ function KommunikationPage({ authUser, userDoc }) {
   const [logs,       setLogs]       = useState([])
   const [logsLoading,setLogsLoading]= useState(true)
   const [confirm,    setConfirm]    = useState(false)
+  const [selectedLog,setSelectedLog]= useState(null)
   const [periode,    setPeriode]    = useState(() => {
     const n = new Date()
     return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`
@@ -4525,7 +4526,7 @@ function KommunikationPage({ authUser, userDoc }) {
                         <td><span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, background: isSms ? '#e0f2fe' : '#f0fdf4', color: isSms ? '#0369a1' : 'var(--green)', fontWeight: 700 }}>{isSms ? 'SMS' : 'Email'}</span></td>
                         <td style={{ fontSize: 13, textAlign: 'right' }}>{l.recipients ?? '–'}</td>
                         <td style={{ fontSize: 12, color: 'var(--text2)' }}>{l.scope || '–'}</td>
-                        <td style={{ fontSize: 12, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text2)' }} title={l.subject || l.text}>{l.subject ? `[${l.subject}] ` : ''}{l.text}</td>
+                        <td onClick={() => setSelectedLog(l)} style={{ fontSize: 12, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text2)', cursor: 'pointer' }} title="Klik for at læse beskeden">{l.subject ? `[${l.subject}] ` : ''}{l.text || '–'}</td>
                         <td style={{ fontSize: 12, textAlign: 'right', fontWeight: 600, color: '#f59e0b' }}>{cost}</td>
                         <td><span className={`badge ${l.ok !== false ? 'badge-green' : 'badge-red'}`}>{l.ok !== false ? 'Sendt' : 'Fejl'}</span></td>
                       </tr>
@@ -4533,6 +4534,44 @@ function KommunikationPage({ authUser, userDoc }) {
                   })}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedLog && (
+        <div onClick={() => setSelectedLog(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 1000,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: 'var(--card)', borderRadius: 14, width: '100%', maxWidth: 600,
+              maxHeight: '90vh', overflow: 'auto', boxShadow: '0 8px 40px rgba(0,0,0,.18)' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)',
+              display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4,
+                background: selectedLog.channel === 'sms' ? '#e0f2fe' : '#f0fdf4',
+                color: selectedLog.channel === 'sms' ? '#0369a1' : 'var(--green)', fontWeight: 700 }}>
+                {selectedLog.channel === 'sms' ? 'SMS' : 'Email'}
+              </span>
+              <span style={{ fontSize: 14, fontWeight: 600, flex: 1 }}>{selectedLog.senderName || '–'}</span>
+              <span style={{ fontSize: 12, color: 'var(--text2)' }}>{formatDate(selectedLog.sentAt)}</span>
+              <button onClick={() => setSelectedLog(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer',
+                  fontSize: 22, color: 'var(--text2)', lineHeight: 1, padding: '0 4px' }}>×</button>
+            </div>
+            <div style={{ padding: '16px 20px' }}>
+              {selectedLog.channel !== 'sms' && selectedLog.subject && (
+                <p style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 700 }}>{selectedLog.subject}</p>
+              )}
+              {selectedLog.channel === 'sms'
+                ? <pre style={{ margin: 0, fontSize: 13, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                    lineHeight: 1.6, fontFamily: 'inherit' }}>{selectedLog.text || '(Ingen indhold)'}</pre>
+                : selectedLog.html
+                  ? <iframe srcDoc={selectedLog.html} sandbox="allow-same-origin" title="Mailindhold"
+                      style={{ width: '100%', height: 400, border: 'none', borderRadius: 6, background: '#fff' }} />
+                  : <pre style={{ margin: 0, fontSize: 13, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                      lineHeight: 1.6, fontFamily: 'inherit' }}>{selectedLog.text || '(Ingen indhold)'}</pre>
+              }
             </div>
           </div>
         </div>
@@ -6008,31 +6047,52 @@ function TraenerAppPage() {
 // ─── Træner app: Begivenheder ─────────────────────────────────────────────────
 
 const BEV_TYPE_LABEL = { kamp: 'Kamp', stævne: 'Stævne', event: 'Event', møde: 'Møde' }
+const BEV_PAGE_SIZE  = 50
 
 function TaBegivenhederPage() {
-  const [bevs,         setBevs]         = useState([])
-  const [holds,        setHolds]        = useState({})
-  const [loading,      setLoading]      = useState(true)
-  const [loadError,    setLoadError]    = useState('')
-  const [holdFilter,   setHoldFilter]   = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
-  const [expanded,     setExpanded]     = useState(null)
-  const [deltagere,    setDeltagere]    = useState({})
-  const [deltaLoad,    setDeltaLoad]    = useState({})
+  const [bevs,          setBevs]          = useState([])
+  const [holds,         setHolds]         = useState({})
+  const [loading,       setLoading]       = useState(true)
+  const [loadError,     setLoadError]     = useState('')
+  const [holdFilter,    setHoldFilter]    = useState('')
+  const [statusFilter,  setStatusFilter]  = useState('')
+  const [periodeFilter, setPeriodeFilter] = useState('kommende')
+  const [expanded,      setExpanded]      = useState(null)
+  const [deltagere,     setDeltagere]     = useState({})
+  const [deltaLoad,     setDeltaLoad]     = useState({})
+  const [lastDoc,       setLastDoc]       = useState(null)
+  const [hasMore,       setHasMore]       = useState(false)
+  const [loadingMore,   setLoadingMore]   = useState(false)
 
   useEffect(() => {
     Promise.all([
       getDocs(collection(db, 'holds')),
-      getDocs(query(collection(db, 'begivenheder'), orderBy('dato', 'desc'))),
+      getDocs(query(collection(db, 'begivenheder'), orderBy('dato', 'desc'), limit(BEV_PAGE_SIZE))),
     ]).then(([hSnap, bSnap]) => {
       const h = {}
       hSnap.forEach(d => { h[d.id] = d.data().titel || d.id })
       setHolds(h)
-      setBevs(bSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+      const docs = bSnap.docs
+      setBevs(docs.map(d => ({ id: d.id, ...d.data() })))
+      setLastDoc(docs[docs.length - 1] || null)
+      setHasMore(docs.length === BEV_PAGE_SIZE)
     }).catch(e => {
       setLoadError(`Firestore fejl: ${e?.code || e?.message || 'permission-denied'} — er firestore.rules deployet?`)
     }).finally(() => setLoading(false))
   }, [])
+
+  async function loadMore() {
+    if (!lastDoc || loadingMore) return
+    setLoadingMore(true)
+    try {
+      const snap = await getDocs(query(collection(db, 'begivenheder'), orderBy('dato', 'desc'), startAfter(lastDoc), limit(BEV_PAGE_SIZE)))
+      const docs = snap.docs
+      setBevs(prev => [...prev, ...docs.map(d => ({ id: d.id, ...d.data() }))])
+      setLastDoc(docs[docs.length - 1] || lastDoc)
+      setHasMore(docs.length === BEV_PAGE_SIZE)
+    } catch(e) {}
+    setLoadingMore(false)
+  }
 
   async function toggleExpand(bevId) {
     if (expanded === bevId) { setExpanded(null); return }
@@ -6046,10 +6106,40 @@ function TaBegivenhederPage() {
     setDeltaLoad(p => ({...p, [bevId]: false}))
   }
 
+  const today = new Date().toISOString().slice(0, 10)
+  const d30   = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)
+  const d90   = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10)
+
   const allHoldIds = [...new Set(bevs.map(b => b.holdId).filter(Boolean))]
+
   const filtered = bevs
-    .filter(b => !holdFilter  || b.holdId === holdFilter)
+    .filter(b => {
+      const dato = b.dato || ''
+      if (periodeFilter === 'kommende') return dato >= today
+      if (periodeFilter === 'd30') return dato >= d30 && dato < today
+      if (periodeFilter === 'd90') return dato >= d90 && dato < today
+      return true
+    })
+    .filter(b => !holdFilter   || b.holdId === holdFilter)
     .filter(b => !statusFilter || b.status === statusFilter)
+
+  const countAll     = filtered.length
+  const countUdsendt = filtered.filter(b => b.status === 'udsendt').length
+  const countKladde  = filtered.filter(b => b.status !== 'udsendt').length
+
+  const groups = holdFilter
+    ? [{ key: '__all__', navn: null, bevs: filtered }]
+    : (() => {
+        const map = {}
+        filtered.forEach(b => {
+          const hid = b.holdId || '__ingen__'
+          if (!map[hid]) map[hid] = []
+          map[hid].push(b)
+        })
+        return Object.entries(map)
+          .map(([hid, bs]) => ({ key: hid, navn: hid === '__ingen__' ? '(Intet hold)' : (holds[hid] || hid), bevs: bs }))
+          .sort((a, b) => a.navn.localeCompare(b.navn, 'da'))
+      })()
 
   if (loading) return <div className="page-header"><div className="spinner" /></div>
   if (loadError) return (
@@ -6063,10 +6153,43 @@ function TaBegivenhederPage() {
     <>
       <div className="page-header">
         <h1 className="page-title">Begivenheder</h1>
-        <span style={{ fontSize: 13, color: 'var(--text2)' }}>{filtered.length} begivenheder</span>
       </div>
 
+      {/* Stats-chips */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+        {[
+          { label: 'Alle', count: countAll, val: '' },
+          { label: 'Udsendt', count: countUdsendt, val: 'udsendt' },
+          { label: 'Kladde', count: countKladde, val: 'kladde' },
+        ].map(chip => {
+          const active = statusFilter === chip.val
+          return (
+            <button key={chip.label} onClick={() => setStatusFilter(chip.val)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px',
+                borderRadius: 20, border: `1px solid ${active ? 'var(--green)' : 'var(--border)'}`,
+                background: active ? '#f0fdf4' : 'var(--card)',
+                color: active ? 'var(--green)' : 'var(--text2)',
+                fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              {chip.label}
+              <span style={{ background: active ? 'var(--green)' : 'var(--bg)',
+                color: active ? '#fff' : 'var(--text2)',
+                borderRadius: 10, fontSize: 11, fontWeight: 700, padding: '1px 7px' }}>
+                {chip.count}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Filtre */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+        <select className="form-select" style={{ width: 'auto', minWidth: 160 }}
+          value={periodeFilter} onChange={e => setPeriodeFilter(e.target.value)}>
+          <option value="kommende">Kommende</option>
+          <option value="d30">Seneste 30 dage</option>
+          <option value="d90">Seneste 90 dage</option>
+          <option value="alt">Alt</option>
+        </select>
         <select className="form-select" style={{ width: 'auto', minWidth: 160 }}
           value={holdFilter} onChange={e => setHoldFilter(e.target.value)}>
           <option value="">Alle hold</option>
@@ -6074,97 +6197,109 @@ function TaBegivenhederPage() {
             <option key={id} value={id}>{holds[id] || id}</option>
           ))}
         </select>
-        <select className="form-select" style={{ width: 'auto', minWidth: 140 }}
-          value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-          <option value="">Alle statusser</option>
-          <option value="kladde">Kladde</option>
-          <option value="udsendt">Udsendt</option>
-        </select>
       </div>
 
       {filtered.length === 0 && <EmptyState icon="calendar" text="Ingen begivenheder matcher filteret" />}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {filtered.map(bev => {
-          const isOpen = expanded === bev.id
-          const dl     = deltagere[bev.id] || []
-          const udtaget    = dl.filter(d => d.udtaget)
-          const kommer     = udtaget.filter(d => d.svar === 'kommer').length
-          const ikkeKommer = udtaget.filter(d => d.svar === 'kommer_ikke').length
-          const ingenSvar  = udtaget.filter(d => !d.svar).length
+      {groups.map(({ key, navn, bevs: groupBevs }) => (
+        <div key={key} style={{ marginBottom: holdFilter ? 0 : 20 }}>
+          {!holdFilter && navn && (
+            <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase',
+              letterSpacing: '.06em', marginBottom: 8, marginTop: 0 }}>{navn}</p>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {groupBevs.map(bev => {
+              const isOpen     = expanded === bev.id
+              const dl         = deltagere[bev.id] || []
+              const udtaget    = dl.filter(d => d.udtaget)
+              const kommer     = udtaget.filter(d => d.svar === 'kommer').length
+              const ikkeKommer = udtaget.filter(d => d.svar === 'kommer_ikke').length
+              const ingenSvar  = udtaget.filter(d => !d.svar).length
 
-          return (
-            <div key={bev.id} className="card" style={{ overflow: 'hidden' }}>
-              <button
-                style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer',
-                  padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left' }}
-                onClick={() => toggleExpand(bev.id)}
-              >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: '#888',
-                      background: 'var(--bg)', border: '1px solid var(--border)',
-                      borderRadius: 5, padding: '2px 6px' }}>
-                      {BEV_TYPE_LABEL[bev.type] || bev.type || '–'}
-                    </span>
-                    <span className={`badge ${bev.status === 'udsendt' ? 'badge-green' : 'badge-blue'}`}>
-                      {bev.status === 'udsendt' ? 'Udsendt' : 'Kladde'}
-                    </span>
-                    <span style={{ fontSize: 12, color: 'var(--text2)', marginLeft: 4 }}>
-                      {holds[bev.holdId] || bev.holdId || '–'}
-                    </span>
-                  </div>
-                  <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)' }}>{bev.titel}</div>
-                  <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>{bev.dato}{bev.tidspunkt ? `, kl. ${bev.tidspunkt}` : ''}</div>
-                </div>
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
-                  style={{ flexShrink: 0, transition: 'transform .2s', transform: isOpen ? 'rotate(180deg)' : 'none', color: 'var(--text2)' }}>
-                  <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
-              </button>
+              return (
+                <div key={bev.id} className="card" style={{ overflow: 'hidden' }}>
+                  <button
+                    style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer',
+                      padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left' }}
+                    onClick={() => toggleExpand(bev.id)}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: '#888',
+                          background: 'var(--bg)', border: '1px solid var(--border)',
+                          borderRadius: 5, padding: '2px 6px' }}>
+                          {BEV_TYPE_LABEL[bev.type] || bev.type || '–'}
+                        </span>
+                        <span className={`badge ${bev.status === 'udsendt' ? 'badge-green' : 'badge-blue'}`}>
+                          {bev.status === 'udsendt' ? 'Udsendt' : 'Kladde'}
+                        </span>
+                        {holdFilter ? null : (
+                          <span style={{ fontSize: 12, color: 'var(--text2)', marginLeft: 4 }}>
+                            {holds[bev.holdId] || bev.holdId || '–'}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)' }}>{bev.titel}</div>
+                      <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>{bev.dato}{bev.tidspunkt ? `, kl. ${bev.tidspunkt}` : ''}</div>
+                    </div>
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
+                      style={{ flexShrink: 0, transition: 'transform .2s', transform: isOpen ? 'rotate(180deg)' : 'none', color: 'var(--text2)' }}>
+                      <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                    </svg>
+                  </button>
 
-              {isOpen && (
-                <div style={{ borderTop: '1px solid var(--border)', padding: '14px 16px', background: 'var(--bg)' }}>
-                  {deltaLoad[bev.id] && <div className="spinner" style={{ margin: '12px auto' }} />}
-                  {!deltaLoad[bev.id] && dl.length === 0 && (
-                    <p style={{ fontSize: 13, color: 'var(--text2)', textAlign: 'center', margin: 0 }}>Ingen deltagere udtaget endnu.</p>
-                  )}
-                  {!deltaLoad[bev.id] && udtaget.length > 0 && (
-                    <>
-                      <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-                        {[
-                          { n: kommer,     label: 'Kommer',      bg: '#e8f5ec', fg: '#1a5c2a' },
-                          { n: ikkeKommer, label: 'Kommer ikke', bg: '#fff0f0', fg: '#c0392b' },
-                          { n: ingenSvar,  label: 'Intet svar',  bg: 'var(--bg)', fg: 'var(--text2)' },
-                        ].map(({ n, label, bg, fg }) => (
-                          <div key={label} style={{ flex: 1, background: bg, borderRadius: 8,
-                            padding: '8px 12px', textAlign: 'center', border: '1px solid var(--border)' }}>
-                            <div style={{ fontSize: 22, fontWeight: 800, color: fg }}>{n}</div>
-                            <div style={{ fontSize: 11, color: fg, fontWeight: 600 }}>{label}</div>
+                  {isOpen && (
+                    <div style={{ borderTop: '1px solid var(--border)', padding: '14px 16px', background: 'var(--bg)' }}>
+                      {deltaLoad[bev.id] && <div className="spinner" style={{ margin: '12px auto' }} />}
+                      {!deltaLoad[bev.id] && dl.length === 0 && (
+                        <p style={{ fontSize: 13, color: 'var(--text2)', textAlign: 'center', margin: 0 }}>Ingen deltagere udtaget endnu.</p>
+                      )}
+                      {!deltaLoad[bev.id] && udtaget.length > 0 && (
+                        <>
+                          <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+                            {[
+                              { n: kommer,     label: 'Kommer',      bg: '#e8f5ec', fg: '#1a5c2a' },
+                              { n: ikkeKommer, label: 'Kommer ikke', bg: '#fff0f0', fg: '#c0392b' },
+                              { n: ingenSvar,  label: 'Intet svar',  bg: 'var(--bg)', fg: 'var(--text2)' },
+                            ].map(({ n, label, bg, fg }) => (
+                              <div key={label} style={{ flex: 1, background: bg, borderRadius: 8,
+                                padding: '8px 12px', textAlign: 'center', border: '1px solid var(--border)' }}>
+                                <div style={{ fontSize: 22, fontWeight: 800, color: fg }}>{n}</div>
+                                <div style={{ fontSize: 11, color: fg, fontWeight: 600 }}>{label}</div>
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        {udtaget.sort((a,b) => (a.navn||a.name||'').localeCompare(b.navn||b.name||'', 'da')).map(d => (
-                          <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 8,
-                            padding: '7px 10px', borderRadius: 8,
-                            background: d.svar === 'kommer' ? '#f2faf4' : d.svar === 'kommer_ikke' ? '#fff5f5' : 'var(--card)',
-                            border: '1px solid var(--border)', fontSize: 13 }}>
-                            <span style={{ flex: 1, fontWeight: 500 }}>{d.navn || d.name || d.id}</span>
-                            {d.svar === 'kommer' && <span style={{ color: '#1a5c2a', fontWeight: 700, fontSize: 12 }}>Kommer ✓</span>}
-                            {d.svar === 'kommer_ikke' && <span style={{ color: '#c0392b', fontWeight: 700, fontSize: 12 }}>Kommer ikke</span>}
-                            {!d.svar && <span style={{ color: '#999', fontSize: 12 }}>Intet svar</span>}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            {udtaget.sort((a,b) => (a.navn||a.name||'').localeCompare(b.navn||b.name||'', 'da')).map(d => (
+                              <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 8,
+                                padding: '7px 10px', borderRadius: 8,
+                                background: d.svar === 'kommer' ? '#f2faf4' : d.svar === 'kommer_ikke' ? '#fff5f5' : 'var(--card)',
+                                border: '1px solid var(--border)', fontSize: 13 }}>
+                                <span style={{ flex: 1, fontWeight: 500 }}>{d.navn || d.name || d.id}</span>
+                                {d.svar === 'kommer' && <span style={{ color: '#1a5c2a', fontWeight: 700, fontSize: 12 }}>Kommer ✓</span>}
+                                {d.svar === 'kommer_ikke' && <span style={{ color: '#c0392b', fontWeight: 700, fontSize: 12 }}>Kommer ikke</span>}
+                                {!d.svar && <span style={{ color: '#999', fontSize: 12 }}>Intet svar</span>}
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
-                    </>
+                        </>
+                      )}
+                    </div>
                   )}
                 </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+
+      {hasMore && (
+        <div style={{ textAlign: 'center', marginTop: 20 }}>
+          <button className="btn btn-secondary" onClick={loadMore} disabled={loadingMore} style={{ minWidth: 120 }}>
+            {loadingMore ? 'Henter…' : 'Hent ældre'}
+          </button>
+        </div>
+      )}
     </>
   )
 }
