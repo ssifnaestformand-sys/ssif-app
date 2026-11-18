@@ -119,8 +119,8 @@ if ($result === 'success') {
 if ($result === 'multiple_profiles') {
     $profiles = [];
 
-    // Conventus v2: profiler er enten et array direkte eller under en nøgle
-    $profilNodes = $data['profiler'] ?? $data['profiles'] ?? $data['profil'] ?? [];
+    // Conventus bruger 'medlemmer' — øvrige bevares som fallback for fremtidige API-versioner
+    $profilNodes = $data['medlemmer'] ?? $data['profiler'] ?? $data['profiles'] ?? $data['profil'] ?? [];
     if (!empty($profilNodes) && !isset($profilNodes[0])) {
         // Enkelt objekt i stedet for array
         $profilNodes = [$profilNodes];
@@ -138,14 +138,45 @@ if ($result === 'multiple_profiles') {
         exit;
     }
 
+    // Hent Firestore-token til lederHolds-tjek og pendingToken-lagring
+    $fsToken = get_sa_token_cv($sa, 'https://www.googleapis.com/auth/datastore');
+    $fsBase  = "https://firestore.googleapis.com/v1/projects/{$projectId}/databases/(default)/documents";
+
+    // Find de profiler der rent faktisk har en lederrolle (lederHolds i members-collection)
+    $lederProfiles = [];
+    if ($fsToken) {
+        foreach ($profiles as $p) {
+            $memberDoc = fs_get("{$fsBase}/members/{$p['id']}", $fsToken);
+            $holds = $memberDoc['fields']['lederHolds']['arrayValue']['values'] ?? [];
+            if (!empty($holds)) $lederProfiles[] = $p;
+        }
+    }
+
+    // Præcis én leder-profil → auto-login direkte uden profil-vælger
+    if (count($lederProfiles) === 1) {
+        $lp          = $lederProfiles[0];
+        $uid         = 'conventus_' . preg_replace('/[^a-zA-Z0-9_-]/', '', $lp['id']);
+        $customToken = make_custom_token($sa, $uid, ['conventus_id' => $lp['id']]);
+        echo json_encode([
+            'status'      => 'ok',
+            'customToken' => $customToken,
+            'email'       => $email,
+            'displayName' => $lp['name'],
+            'conventusId' => $lp['id'],
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // 0 eller 2+ leder-profiler → vis selector (kun leder-profiler hvis der er nogen)
+    $selectorProfiles = !empty($lederProfiles) ? $lederProfiles : $profiles;
+
     // Gem i Firestore conventus_pending/{token} med 5-minutters udløb
-    $pendingToken = bin2hex(random_bytes(24)); // 48-char hex
-    $fsToken      = get_sa_token_cv($sa, 'https://www.googleapis.com/auth/datastore');
+    $pendingToken  = bin2hex(random_bytes(24)); // 48-char hex
     if ($fsToken) {
         $profileValues = array_map(fn($p) => ['mapValue' => ['fields' => [
             'id'   => ['stringValue' => $p['id']],
             'name' => ['stringValue' => $p['name']],
-        ]]], $profiles);
+        ]]], $selectorProfiles);
 
         $docBody = json_encode(['fields' => [
             'email'     => ['stringValue' => $email],
@@ -167,7 +198,7 @@ if ($result === 'multiple_profiles') {
     echo json_encode([
         'status'       => 'multiple_profiles',
         'pendingToken' => $pendingToken,
-        'profiles'     => $profiles,
+        'profiles'     => $selectorProfiles,
     ], JSON_UNESCAPED_UNICODE);
     exit;
 }
