@@ -380,6 +380,18 @@ function DashboardScreen({ user, displayName, holds, onLogout, onRefresh }) {
   const [selectedHold,  setSelectedHold] = useState(null)
   const [showSupport,   setShowSupport]  = useState(false)
   const [showFeatures,  setShowFeatures] = useState(false)
+  const [showUdlaeg,    setShowUdlaeg]   = useState(false)
+  const [udlaegBadge,   setUdlaegBadge]  = useState(0)
+
+  useEffect(() => {
+    user.getIdToken().then(idToken =>
+      fetch('/api/udlaeg-config.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }).then(r => r.json()).then(d => { if (d.afventer) setUdlaegBadge(d.afventer) }).catch(() => {})
+    )
+  }, [])
 
   async function handleRefresh() {
     setRefreshing(true)
@@ -393,6 +405,10 @@ function DashboardScreen({ user, displayName, holds, onLogout, onRefresh }) {
 
   if (showSupport) {
     return <SupportScreen user={user} onBack={() => setShowSupport(false)} />
+  }
+
+  if (showUdlaeg) {
+    return <UdlaegScreen user={user} onBack={() => setShowUdlaeg(false)} />
   }
 
   return (
@@ -464,6 +480,34 @@ function DashboardScreen({ user, displayName, holds, onLogout, onRefresh }) {
             ))}
           </div>
         )}
+
+        {/* Udlæg BETA */}
+        <div style={{ marginTop: 16 }}>
+          <button onClick={() => setShowUdlaeg(true)} style={{
+            display: 'flex', alignItems: 'center', gap: 12,
+            width: '100%', background: 'var(--bg)', border: '1.5px solid var(--border)',
+            borderRadius: 12, padding: '14px 16px', cursor: 'pointer', textAlign: 'left',
+          }}>
+            <span style={{ fontSize: 24, lineHeight: 1, flexShrink: 0 }}>🧾</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                Udlæg
+                <span style={{
+                  fontSize: 10, fontWeight: 700, background: '#ea8c00', color: '#fff',
+                  borderRadius: 6, padding: '2px 6px', letterSpacing: '0.5px',
+                }}>BETA</span>
+                {udlaegBadge > 0 && (
+                  <span style={{
+                    fontSize: 11, fontWeight: 700, background: 'var(--green)', color: '#fff',
+                    borderRadius: 10, padding: '2px 7px', marginLeft: 2,
+                  }}>{udlaegBadge}</span>
+                )}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>Indsend og godkend udlæg for din afdeling</div>
+            </div>
+            <ChevronIcon />
+          </button>
+        </div>
 
         {/* Support */}
         <div style={{ marginTop: 8, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
@@ -2938,5 +2982,522 @@ function GoogleIcon() {
       <path d="M3.96 10.71a5.4 5.4 0 0 1 0-3.42V4.95H.96a9 9 0 0 0 0 8.1l3-2.34z" fill="#FBBC05"/>
       <path d="M9 3.58a4.86 4.86 0 0 1 3.44 1.35L14.56 2.9A8.65 8.65 0 0 0 9 0 9 9 0 0 0 .96 4.95l3 2.34A5.36 5.36 0 0 1 9 3.58z" fill="#EA4335"/>
     </svg>
+  )
+}
+
+// ── UdlaegScreen ──────────────────────────────────────────────────────────────
+
+const STATUS_LABEL = {
+  afventer_formand: 'Afventer formand',
+  afventer_hb:      'Afventer HB',
+  godkendt:         'Godkendt',
+  afvist:           'Afvist',
+}
+const STATUS_COLOR = {
+  afventer_formand: '#ea8c00',
+  afventer_hb:      '#7c3aed',
+  godkendt:         '#1a5c2a',
+  afvist:           '#dc2626',
+}
+
+function UdlaegScreen({ user, onBack }) {
+  const [tab,          setTab]          = useState('mine') // 'mine' | 'godkend'
+  const [mine,         setMine]         = useState([])
+  const [tilGodkendelse, setTilGodkendelse] = useState([])
+  const [loading,      setLoading]      = useState(true)
+  const [error,        setError]        = useState('')
+  const [showForm,     setShowForm]     = useState(false)
+  const [godkendItem,  setGodkendItem]  = useState(null)
+
+  useEffect(() => { loadData() }, [])
+
+  async function loadData() {
+    setLoading(true); setError('')
+    try {
+      const idToken = await user.getIdToken()
+      const res = await fetch('/api/udlaeg-liste.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const data = await res.json()
+      if (data.error) { setError(data.error); return }
+      setMine(data.mine || [])
+      setTilGodkendelse(data.tilGodkendelse || [])
+    } catch { setError('Kunne ikke hente udlæg') }
+    finally { setLoading(false) }
+  }
+
+  if (showForm) {
+    return <UdlaegFormScreen user={user} onBack={() => setShowForm(false)} onSaved={() => { setShowForm(false); loadData() }} />
+  }
+  if (godkendItem) {
+    return <UdlaegGodkendScreen user={user} udlaeg={godkendItem} onBack={() => setGodkendItem(null)} onDone={() => { setGodkendItem(null); loadData() }} />
+  }
+
+  const BetaTag = () => (
+    <span style={{ fontSize: 10, fontWeight: 700, background: '#ea8c00', color: '#fff', borderRadius: 6, padding: '2px 6px', marginLeft: 8, letterSpacing: '0.5px' }}>BETA</span>
+  )
+
+  return (
+    <div className="screen">
+      <NavHeader title={<>Udlæg <BetaTag /></>} onBack={onBack} right={
+        <button onClick={() => setShowForm(true)} style={{
+          background: 'var(--green)', color: '#fff', border: 'none',
+          borderRadius: 10, padding: '7px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+        }}>+ Nyt</button>
+      } />
+      <main style={{ padding: '0 0 24px', maxWidth: 600, margin: '0 auto', width: '100%', flex: 1 }}>
+
+        {tilGodkendelse.length > 0 && (
+          <div style={{ display: 'flex', borderBottom: '1px solid var(--border)' }}>
+            {['mine', 'godkend'].map(t => (
+              <button key={t} onClick={() => setTab(t)} style={{
+                flex: 1, padding: '13px 0', fontSize: 14, fontWeight: tab === t ? 700 : 500,
+                color: tab === t ? 'var(--green)' : 'var(--text3)',
+                background: 'none', border: 'none', borderBottom: tab === t ? '2px solid var(--green)' : '2px solid transparent',
+                cursor: 'pointer',
+              }}>
+                {t === 'mine' ? 'Mine udlæg' : <>Til godkendelse {tilGodkendelse.length > 0 && <span style={{ background: 'var(--green)', color: '#fff', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700, marginLeft: 4 }}>{tilGodkendelse.length}</span>}</>}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {loading ? (
+          <div style={{ padding: 40, textAlign: 'center', color: 'var(--text3)' }}>Henter…</div>
+        ) : error ? (
+          <div style={{ padding: 20 }}><p style={{ color: 'var(--red)', fontSize: 14 }}>{error}</p></div>
+        ) : tab === 'mine' ? (
+          mine.length === 0 ? (
+            <div className="empty-state" style={{ margin: '40px 16px' }}>
+              <h3>Ingen udlæg endnu</h3>
+              <p>Tryk på "+ Nyt" for at indsende dit første udlæg.</p>
+            </div>
+          ) : (
+            <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {mine.map(u => (
+                <div key={u.id} style={{
+                  background: 'var(--bg)', border: '1.5px solid var(--border)',
+                  borderRadius: 12, padding: '14px 16px',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>
+                        {u.belob.toLocaleString('da-DK', { minimumFractionDigits: 2 })} kr.
+                      </div>
+                      <div style={{ fontSize: 13, color: 'var(--text3)', marginTop: 2 }}>{u.afdeling}</div>
+                      <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 4, lineHeight: 1.4 }}>{u.beskrivelse}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 4 }}>
+                        {new Date(u.indsendt).toLocaleDateString('da-DK')}
+                      </div>
+                    </div>
+                    <span style={{
+                      fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 8, flexShrink: 0,
+                      background: (STATUS_COLOR[u.status] || '#888') + '1a',
+                      color: STATUS_COLOR[u.status] || '#888',
+                    }}>
+                      {STATUS_LABEL[u.status] || u.status}
+                    </span>
+                  </div>
+                  {u.status === 'afvist' && u.afvisningsBeskrivelse && (
+                    <div style={{ marginTop: 10, padding: '10px 12px', background: '#fef2f2', borderRadius: 8, fontSize: 13, color: '#dc2626' }}>
+                      <strong>Afvist:</strong> {u.afvisningsBeskrivelse}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )
+        ) : (
+          tilGodkendelse.length === 0 ? (
+            <div className="empty-state" style={{ margin: '40px 16px' }}>
+              <h3>Ingen afventende udlæg</h3>
+              <p>Der er ingen udlæg der venter på din godkendelse.</p>
+            </div>
+          ) : (
+            <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {tilGodkendelse.map(u => (
+                <button key={u.id} onClick={() => setGodkendItem(u)} style={{
+                  display: 'block', width: '100%', textAlign: 'left',
+                  background: 'var(--bg)', border: '1.5px solid var(--border)',
+                  borderRadius: 12, padding: '14px 16px', cursor: 'pointer',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>
+                        {u.afsenderNavn} — {u.belob.toLocaleString('da-DK', { minimumFractionDigits: 2 })} kr.
+                      </div>
+                      <div style={{ fontSize: 13, color: 'var(--text3)', marginTop: 2 }}>{u.afdeling}</div>
+                      <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 4, lineHeight: 1.4 }}>{u.beskrivelse}</div>
+                    </div>
+                    <ChevronIcon />
+                  </div>
+                </button>
+              ))}
+            </div>
+          )
+        )}
+      </main>
+    </div>
+  )
+}
+
+// ── UdlaegFormScreen ──────────────────────────────────────────────────────────
+
+function UdlaegFormScreen({ user, onBack, onSaved }) {
+  const [step,         setStep]      = useState(1)
+  const [config,       setConfig]    = useState(null)
+  const [configErr,    setConfigErr] = useState('')
+
+  const [afdeling,     setAfdeling]  = useState('')
+  const [belob,        setBelob]     = useState('')
+  const [beskrivelse,  setBeskrivelse] = useState('')
+  const [kvitFile,     setKvitFile]  = useState(null)
+  const [kvitUrl,      setKvitUrl]   = useState('')
+  const [uploading,    setUploading] = useState(false)
+  const [regNr,        setRegNr]     = useState('')
+  const [kontoNr,      setKontoNr]   = useState('')
+  const [sending,      setSending]   = useState(false)
+  const [error,        setError]     = useState('')
+
+  useEffect(() => {
+    user.getIdToken().then(idToken =>
+      fetch('/api/udlaeg-config.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }).then(r => r.json()).then(d => {
+        if (d.error) { setConfigErr(d.error); return }
+        setConfig(d)
+        if (d.afdelinger?.length === 1) setAfdeling(d.afdelinger[0].id)
+      }).catch(() => setConfigErr('Kunne ikke hente konfiguration'))
+    )
+  }, [])
+
+  async function uploadKvittering(file) {
+    setUploading(true); setError('')
+    try {
+      const idToken = await user.getIdToken()
+      const fd = new FormData()
+      fd.append('image', file)
+      const res = await fetch('/api/upload-image.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}` },
+        body: fd,
+      })
+      const data = await res.json()
+      if (data.url) { setKvitUrl(data.url) }
+      else setError(data.error || 'Upload fejlede')
+    } catch { setError('Upload fejlede') }
+    finally { setUploading(false) }
+  }
+
+  async function handleIndsend() {
+    setSending(true); setError('')
+    try {
+      const idToken = await user.getIdToken()
+      const res = await fetch('/api/udlaeg-gem.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ afdeling, belob: parseFloat(belob.replace(',', '.')), beskrivelse, kvitteringUrl: kvitUrl, regNr, kontoNr }),
+      })
+      const data = await res.json()
+      if (data.ok) { onSaved() }
+      else setError(data.error || 'Indsendelse fejlede')
+    } catch { setError('Indsendelse fejlede') }
+    finally { setSending(false) }
+  }
+
+  const BetaTag = () => (
+    <span style={{ fontSize: 10, fontWeight: 700, background: '#ea8c00', color: '#fff', borderRadius: 6, padding: '2px 6px', marginLeft: 8, letterSpacing: '0.5px' }}>BETA</span>
+  )
+
+  if (configErr) return (
+    <div className="screen">
+      <NavHeader title="Nyt udlæg" onBack={onBack} />
+      <main style={{ padding: '20px 16px' }}>
+        <p style={{ color: 'var(--red)', fontSize: 14 }}>{configErr}</p>
+      </main>
+    </div>
+  )
+
+  if (!config) return (
+    <div className="screen">
+      <NavHeader title="Nyt udlæg" onBack={onBack} />
+      <main style={{ padding: '20px 16px', textAlign: 'center', color: 'var(--text3)' }}>Henter…</main>
+    </div>
+  )
+
+  const stepBar = (
+    <div style={{ display: 'flex', gap: 6, padding: '12px 16px 0', maxWidth: 500 }}>
+      {[1, 2, 3].map(s => (
+        <div key={s} style={{
+          flex: 1, height: 4, borderRadius: 2,
+          background: s <= step ? 'var(--green)' : 'var(--border)',
+          transition: 'background .2s',
+        }} />
+      ))}
+    </div>
+  )
+
+  if (step === 1) return (
+    <div className="screen">
+      <NavHeader title={<>Nyt udlæg <BetaTag /></>} onBack={onBack} />
+      {stepBar}
+      <main style={{ padding: '20px 16px', maxWidth: 500, margin: '0 auto', width: '100%', flex: 1 }}>
+        <h2 style={{ fontSize: 16, fontWeight: 800, marginBottom: 16 }}>Trin 1 af 3 — Detaljer</h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div className="form-field">
+            <label className="form-label">Afdeling</label>
+            <select className="form-input" value={afdeling} onChange={e => setAfdeling(e.target.value)}>
+              <option value="">Vælg afdeling…</option>
+              {config.afdelinger.map(a => <option key={a.id} value={a.id}>{a.navn}</option>)}
+            </select>
+          </div>
+          <div className="form-field">
+            <label className="form-label">Beløb (kr.)</label>
+            <input className="form-input" type="text" inputMode="decimal"
+              placeholder="0,00"
+              value={belob} onChange={e => setBelob(e.target.value)} />
+          </div>
+          <div className="form-field">
+            <label className="form-label">Beskrivelse</label>
+            <textarea className="form-input" rows={3} style={{ resize: 'vertical' }}
+              placeholder="Hvad er udlægget til?"
+              value={beskrivelse} onChange={e => setBeskrivelse(e.target.value)} />
+          </div>
+          {error && <p style={{ color: 'var(--red)', fontSize: 13, margin: 0 }}>{error}</p>}
+          <button className="btn btn-primary"
+            disabled={!afdeling || !belob || !beskrivelse.trim()}
+            onClick={() => setStep(2)}>
+            Næste →
+          </button>
+        </div>
+      </main>
+    </div>
+  )
+
+  if (step === 2) return (
+    <div className="screen">
+      <NavHeader title={<>Nyt udlæg <BetaTag /></>} onBack={() => setStep(1)} />
+      {stepBar}
+      <main style={{ padding: '20px 16px', maxWidth: 500, margin: '0 auto', width: '100%', flex: 1 }}>
+        <h2 style={{ fontSize: 16, fontWeight: 800, marginBottom: 16 }}>Trin 2 af 3 — Kvittering og konto</h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div className="form-field">
+            <label className="form-label">Kvittering (billede eller PDF)</label>
+            {kvitUrl ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 13, color: 'var(--green)', fontWeight: 600 }}>✓ Uploadet</span>
+                <button type="button" onClick={() => { setKvitUrl(''); setKvitFile(null) }} style={{ fontSize: 12, color: 'var(--red)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Fjern</button>
+              </div>
+            ) : (
+              <label style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+                border: '2px dashed var(--border)', borderRadius: 10, padding: '20px 16px',
+                cursor: 'pointer', background: uploading ? 'var(--bg)' : '#fff',
+              }}>
+                <span style={{ fontSize: 28 }}>{uploading ? '⏳' : '📎'}</span>
+                <span style={{ fontSize: 13, color: 'var(--text3)' }}>
+                  {uploading ? 'Uploader…' : 'Tryk for at vælge fil'}
+                </span>
+                <input type="file" accept="image/*,.pdf" style={{ display: 'none' }}
+                  onChange={e => { const f = e.target.files?.[0]; if (f) { setKvitFile(f); uploadKvittering(f) } }} />
+              </label>
+            )}
+          </div>
+
+          <div style={{ padding: '12px 14px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, fontSize: 13, color: '#78350f' }}>
+            🔒 Dine bankoplysninger sendes direkte til bogholderen og gemmes ikke i systemet.
+          </div>
+
+          <div className="form-field">
+            <label className="form-label">REG-NR</label>
+            <input className="form-input" type="text" inputMode="numeric" maxLength={4}
+              placeholder="1234"
+              value={regNr} onChange={e => setRegNr(e.target.value.replace(/\D/g, ''))} />
+          </div>
+          <div className="form-field">
+            <label className="form-label">KONTO-NR</label>
+            <input className="form-input" type="text" inputMode="numeric" maxLength={12}
+              placeholder="12345678"
+              value={kontoNr} onChange={e => setKontoNr(e.target.value.replace(/\D/g, ''))} />
+          </div>
+          {error && <p style={{ color: 'var(--red)', fontSize: 13, margin: 0 }}>{error}</p>}
+          <button className="btn btn-primary"
+            disabled={!kvitUrl || !regNr || !kontoNr || uploading}
+            onClick={() => setStep(3)}>
+            Næste →
+          </button>
+        </div>
+      </main>
+    </div>
+  )
+
+  // Step 3: Gennemgang
+  return (
+    <div className="screen">
+      <NavHeader title={<>Nyt udlæg <BetaTag /></>} onBack={() => setStep(2)} />
+      {stepBar}
+      <main style={{ padding: '20px 16px', maxWidth: 500, margin: '0 auto', width: '100%', flex: 1 }}>
+        <h2 style={{ fontSize: 16, fontWeight: 800, marginBottom: 16 }}>Trin 3 af 3 — Gennemgang</h2>
+        <div style={{ background: 'var(--bg)', border: '1.5px solid var(--border)', borderRadius: 12, overflow: 'hidden', marginBottom: 20 }}>
+          {[
+            ['Afdeling', afdeling],
+            ['Beløb', parseFloat(belob.replace(',', '.')).toLocaleString('da-DK', { minimumFractionDigits: 2 }) + ' kr.'],
+            ['Beskrivelse', beskrivelse],
+            ['Bankoplysninger', `REG ${regNr} / KONTO ${kontoNr}`],
+          ].map(([k, v]) => (
+            <div key={k} style={{ display: 'flex', padding: '10px 14px', borderBottom: '1px solid var(--border)', gap: 12 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', width: 120, flexShrink: 0 }}>{k}</span>
+              <span style={{ fontSize: 13, color: 'var(--text)', flex: 1 }}>{v}</span>
+            </div>
+          ))}
+          <div style={{ display: 'flex', padding: '10px 14px', gap: 12 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', width: 120, flexShrink: 0 }}>Kvittering</span>
+            <a href={kvitUrl} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: 'var(--green)', fontWeight: 600 }}>Se kvittering →</a>
+          </div>
+        </div>
+        {error && <p style={{ color: 'var(--red)', fontSize: 13, marginBottom: 12 }}>{error}</p>}
+        <button className="btn btn-primary" disabled={sending} onClick={handleIndsend} style={{ width: '100%' }}>
+          {sending ? 'Sender…' : 'Indsend udlæg'}
+        </button>
+      </main>
+    </div>
+  )
+}
+
+// ── UdlaegGodkendScreen ───────────────────────────────────────────────────────
+
+function UdlaegGodkendScreen({ user, udlaeg, onBack, onDone }) {
+  const [config,       setConfig]      = useState(null)
+  const [kontering,    setKontering]   = useState('')
+  const [konteringNavn,setKonteringNavn] = useState('')
+  const [visAfvis,     setVisAfvis]    = useState(false)
+  const [begrundelse,  setBegrundelse] = useState('')
+  const [sending,      setSending]     = useState(false)
+  const [error,        setError]       = useState('')
+
+  useEffect(() => {
+    user.getIdToken().then(idToken =>
+      fetch('/api/udlaeg-config.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }).then(r => r.json()).then(d => { if (!d.error) setConfig(d) }).catch(() => {})
+    )
+  }, [])
+
+  async function handleGodkend() {
+    if (!kontering) { setError('Vælg kontering'); return }
+    setSending(true); setError('')
+    try {
+      const idToken = await user.getIdToken()
+      const res = await fetch('/api/udlaeg-godkend.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ udlaegId: udlaeg.id, kontering, konteringNavn }),
+      })
+      const data = await res.json()
+      if (data.ok) { onDone() }
+      else setError(data.error || 'Fejl ved godkendelse')
+    } catch { setError('Fejl ved godkendelse') }
+    finally { setSending(false) }
+  }
+
+  async function handleAfvis() {
+    if (!begrundelse.trim()) { setError('Angiv begrundelse'); return }
+    setSending(true); setError('')
+    try {
+      const idToken = await user.getIdToken()
+      const res = await fetch('/api/udlaeg-afvis.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ udlaegId: udlaeg.id, begrundelse }),
+      })
+      const data = await res.json()
+      if (data.ok) { onDone() }
+      else setError(data.error || 'Fejl ved afvisning')
+    } catch { setError('Fejl ved afvisning') }
+    finally { setSending(false) }
+  }
+
+  const kontoOptions = config?.kontoplan || []
+
+  return (
+    <div className="screen">
+      <NavHeader title="Godkend udlæg" onBack={onBack} />
+      <main style={{ padding: '20px 16px', maxWidth: 500, margin: '0 auto', width: '100%', flex: 1 }}>
+
+        {/* Detaljer */}
+        <div style={{ background: 'var(--bg)', border: '1.5px solid var(--border)', borderRadius: 12, overflow: 'hidden', marginBottom: 20 }}>
+          {[
+            ['Indsendt af', udlaeg.afsenderNavn],
+            ['Afdeling',    udlaeg.afdeling],
+            ['Beløb',       udlaeg.belob.toLocaleString('da-DK', { minimumFractionDigits: 2 }) + ' kr.'],
+            ['Beskrivelse', udlaeg.beskrivelse],
+          ].map(([k, v]) => (
+            <div key={k} style={{ display: 'flex', padding: '10px 14px', borderBottom: '1px solid var(--border)', gap: 12 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', width: 120, flexShrink: 0 }}>{k}</span>
+              <span style={{ fontSize: 13, color: 'var(--text)', flex: 1, lineHeight: 1.4 }}>{v}</span>
+            </div>
+          ))}
+          {udlaeg.kvitteringUrl && (
+            <div style={{ padding: '10px 14px', display: 'flex', gap: 12 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', width: 120, flexShrink: 0 }}>Kvittering</span>
+              <a href={udlaeg.kvitteringUrl} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: 'var(--green)', fontWeight: 600 }}>Åbn →</a>
+            </div>
+          )}
+        </div>
+
+        {!visAfvis ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div className="form-field">
+              <label className="form-label">Kontering</label>
+              <select className="form-input" value={kontering} onChange={e => {
+                const val = e.target.value
+                setKontering(val)
+                if (val === '__bogholder__') {
+                  setKonteringNavn('Konteres af bogholder')
+                } else {
+                  const konto = kontoOptions.find(k => k.nummer === val)
+                  setKonteringNavn(konto ? `${konto.navn} (${konto.nummer})` : val)
+                }
+              }}>
+                <option value="">Vælg kontering…</option>
+                <option value="__bogholder__">Konteres af bogholder</option>
+                {kontoOptions.map(k => (
+                  <option key={k.nummer} value={k.nummer}>{k.nummer} — {k.navn}</option>
+                ))}
+              </select>
+            </div>
+            {error && <p style={{ color: 'var(--red)', fontSize: 13, margin: 0 }}>{error}</p>}
+            <button className="btn btn-primary" disabled={sending || !kontering} onClick={handleGodkend} style={{ width: '100%' }}>
+              {sending ? 'Godkender…' : 'Godkend udlæg ✓'}
+            </button>
+            <button className="btn btn-ghost" style={{ color: 'var(--red)', width: '100%' }} onClick={() => { setVisAfvis(true); setError('') }}>
+              Afvis udlæg
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div className="form-field">
+              <label className="form-label">Begrundelse for afvisning</label>
+              <textarea className="form-input" rows={4} style={{ resize: 'vertical' }}
+                placeholder="Forklar hvorfor udlægget afvises…"
+                value={begrundelse} onChange={e => setBegrundelse(e.target.value)} />
+            </div>
+            {error && <p style={{ color: 'var(--red)', fontSize: 13, margin: 0 }}>{error}</p>}
+            <button className="btn btn-primary" style={{ background: '#dc2626', width: '100%' }} disabled={sending || !begrundelse.trim()} onClick={handleAfvis}>
+              {sending ? 'Afviser…' : 'Bekræft afvisning'}
+            </button>
+            <button className="btn btn-ghost" style={{ width: '100%' }} onClick={() => { setVisAfvis(false); setError('') }}>
+              ← Tilbage
+            </button>
+          </div>
+        )}
+      </main>
+    </div>
   )
 }

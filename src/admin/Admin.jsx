@@ -318,6 +318,7 @@ const BACKOFFICE_PAGES = [
   { group: 'Træner app',    id: 'ta_kommunikation', label: 'Kommunikation',     icon: 'sms'      },
   { group: 'Træner app',    id: 'traener_app',      label: 'Indstillinger',     icon: 'phone'    },
   { group: 'Træner app',    id: 'support',          label: 'Support',           icon: 'message'  },
+  { group: 'Træner app',    id: 'udlaeg',           label: 'Udlæg (BETA)',      icon: 'star'     },
   { group: 'Arkiv',         id: 'dashboard',       label: 'Dashboard',      icon: 'home'     },
   { group: 'Arkiv',         id: 'news',            label: 'Nyheder',        icon: 'news'     },
   { group: 'Arkiv',         id: 'events',          label: 'Begivenheder',   icon: 'calendar' },
@@ -7478,6 +7479,7 @@ const PAGE_TITLES = {
   appusers:        'App-brugere',
   users:           'Adgang',
   support:         'Support',
+  udlaeg:          'Udlæg (BETA)',
 }
 
 export default function AdminApp() {
@@ -7591,6 +7593,7 @@ export default function AdminApp() {
       case 'support':      return <SupportPage       authUser={authUser} />
       case 'appusers':     return <AppUsersPage />
       case 'infoscreens':  return <InfoScreensPage   authUser={authUser} />
+      case 'udlaeg':       return <UdlaegAdminPage   authUser={authUser} />
       default:             return null
     }
   }
@@ -7612,6 +7615,228 @@ export default function AdminApp() {
           {renderPage()}
         </main>
       </div>
+    </div>
+  )
+}
+
+// ── UdlaegAdminPage ───────────────────────────────────────────────────────────
+
+const UDLAEG_STATUS_LABEL = {
+  afventer_formand: 'Afventer formand',
+  afventer_hb:      'Afventer HB',
+  godkendt:         'Godkendt',
+  afvist:           'Afvist',
+}
+const UDLAEG_STATUS_COLOR = {
+  afventer_formand: '#ea8c00',
+  afventer_hb:      '#7c3aed',
+  godkendt:         '#1a5c2a',
+  afvist:           '#dc2626',
+}
+
+function UdlaegAdminPage({ authUser }) {
+  const [udlaeg,     setUdlaeg]     = useState([])
+  const [loading,    setLoading]    = useState(true)
+  const [error,      setError]      = useState('')
+  const [selected,   setSelected]   = useState(null)
+  const [filterStatus, setFilterStatus] = useState('alle')
+  const [kontering,  setKontering]  = useState('')
+  const [konteringNavn, setKonteringNavn] = useState('')
+  const [begrundelse,setBegrundelse] = useState('')
+  const [modalMode,  setModalMode]  = useState('godkend') // 'godkend' | 'afvis'
+  const [saving,     setSaving]     = useState(false)
+  const [saveError,  setSaveError]  = useState('')
+
+  useEffect(() => { loadData() }, [])
+
+  async function loadData() {
+    setLoading(true); setError('')
+    try {
+      const snap = await getDocs(query(collection(db, 'udlaeg'), orderBy('indsendt', 'desc')))
+      setUdlaeg(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    } catch (e) { setError('Kunne ikke hente udlæg: ' + e.message) }
+    finally { setLoading(false) }
+  }
+
+  async function handleGodkend() {
+    if (!kontering) { setSaveError('Vælg kontering'); return }
+    setSaving(true); setSaveError('')
+    try {
+      const idToken = await authUser.getIdToken()
+      const res = await fetch('/api/udlaeg-godkend.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ udlaegId: selected.id, kontering, konteringNavn }),
+      })
+      const data = await res.json()
+      if (data.ok) { setSelected(null); loadData() }
+      else setSaveError(data.error || 'Fejl')
+    } catch { setSaveError('Fejl ved godkendelse') }
+    finally { setSaving(false) }
+  }
+
+  async function handleAfvis() {
+    if (!begrundelse.trim()) { setSaveError('Angiv begrundelse'); return }
+    setSaving(true); setSaveError('')
+    try {
+      const idToken = await authUser.getIdToken()
+      const res = await fetch('/api/udlaeg-afvis.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ udlaegId: selected.id, begrundelse }),
+      })
+      const data = await res.json()
+      if (data.ok) { setSelected(null); loadData() }
+      else setSaveError(data.error || 'Fejl')
+    } catch { setSaveError('Fejl ved afvisning') }
+    finally { setSaving(false) }
+  }
+
+  const statusOptions = ['alle', 'afventer_formand', 'afventer_hb', 'godkendt', 'afvist']
+  const filtered = filterStatus === 'alle' ? udlaeg : udlaeg.filter(u => u.status === filterStatus)
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+        <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>Udlæg</h1>
+        <span style={{ fontSize: 11, fontWeight: 700, background: '#ea8c00', color: '#fff', borderRadius: 6, padding: '3px 8px' }}>BETA</span>
+        <div style={{ flex: 1 }} />
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{
+          border: '1px solid var(--border)', borderRadius: 8, padding: '6px 10px', fontSize: 13, background: 'var(--bg)',
+        }}>
+          {statusOptions.map(s => (
+            <option key={s} value={s}>{s === 'alle' ? 'Alle statusser' : UDLAEG_STATUS_LABEL[s]}</option>
+          ))}
+        </select>
+        <button className="btn btn-ghost" onClick={loadData} style={{ fontSize: 13 }}>↺ Opdater</button>
+      </div>
+
+      {loading ? <p>Henter…</p> : error ? <p style={{ color: 'red' }}>{error}</p> : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid var(--border)' }}>
+                {['Dato', 'Afsender', 'Afdeling', 'Beløb', 'Kontering', 'Status', ''].map(h => (
+                  <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700, color: 'var(--text3)', whiteSpace: 'nowrap' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(u => (
+                <tr key={u.id} style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                  onClick={() => { setSelected(u); setKontering(''); setKonteringNavn(''); setBegrundelse(''); setSaveError(''); setModalMode('godkend') }}>
+                  <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
+                    {u.indsendt?.toDate?.().toLocaleDateString('da-DK') || (u.indsendt ? new Date(u.indsendt).toLocaleDateString('da-DK') : '–')}
+                  </td>
+                  <td style={{ padding: '10px 12px' }}>{u.afsenderNavn}</td>
+                  <td style={{ padding: '10px 12px' }}>{u.afdeling}</td>
+                  <td style={{ padding: '10px 12px', whiteSpace: 'nowrap', fontWeight: 700 }}>
+                    {(u.belob || 0).toLocaleString('da-DK', { minimumFractionDigits: 2 })} kr.
+                  </td>
+                  <td style={{ padding: '10px 12px', color: 'var(--text3)' }}>{u.konteringNavn || '–'}</td>
+                  <td style={{ padding: '10px 12px' }}>
+                    <span style={{
+                      fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 7,
+                      background: (UDLAEG_STATUS_COLOR[u.status] || '#888') + '1a',
+                      color: UDLAEG_STATUS_COLOR[u.status] || '#888',
+                    }}>{UDLAEG_STATUS_LABEL[u.status] || u.status}</span>
+                  </td>
+                  <td style={{ padding: '10px 12px' }}>
+                    {u.kvitteringUrl && <a href={u.kvitteringUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} style={{ color: 'var(--green)', fontSize: 12 }}>Kvittering</a>}
+                  </td>
+                </tr>
+              ))}
+              {filtered.length === 0 && (
+                <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: 'var(--text3)' }}>Ingen udlæg at vise</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Modal */}
+      {selected && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 1000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+        }} onClick={e => { if (e.target === e.currentTarget) setSelected(null) }}>
+          <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 480, padding: 24, maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <h2 style={{ fontSize: 17, fontWeight: 800, margin: 0 }}>Udlæg — detaljer</h2>
+              <button onClick={() => setSelected(null)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--text3)' }}>×</button>
+            </div>
+
+            <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 16 }}>
+              {[
+                ['Afsender', selected.afsenderNavn + (selected.afsenderEmail ? ` (${selected.afsenderEmail})` : '')],
+                ['Afdeling', selected.afdeling],
+                ['Beløb', (selected.belob || 0).toLocaleString('da-DK', { minimumFractionDigits: 2 }) + ' kr.'],
+                ['Beskrivelse', selected.beskrivelse],
+                ['Status', UDLAEG_STATUS_LABEL[selected.status] || selected.status],
+                selected.godkendtAf ? ['Godkendt af', selected.godkendtAf] : null,
+                selected.afvistAf   ? ['Afvist af',   selected.afvistAf]   : null,
+                selected.afvisningsBeskrivelse ? ['Afvisningsbegrundelse', selected.afvisningsBeskrivelse] : null,
+              ].filter(Boolean).map(([k, v]) => (
+                <tr key={k} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <td style={{ padding: '8px 10px', fontSize: 12, fontWeight: 700, color: 'var(--text3)', width: 140 }}>{k}</td>
+                  <td style={{ padding: '8px 10px', fontSize: 13, color: 'var(--text)' }}>{v}</td>
+                </tr>
+              ))}
+              {selected.kvitteringUrl && (
+                <tr>
+                  <td style={{ padding: '8px 10px', fontSize: 12, fontWeight: 700, color: 'var(--text3)' }}>Kvittering</td>
+                  <td style={{ padding: '8px 10px' }}><a href={selected.kvitteringUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--green)', fontSize: 13 }}>Åbn →</a></td>
+                </tr>
+              )}
+            </table>
+
+            {(selected.status === 'afventer_hb') && (
+              <>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                  {['godkend', 'afvis'].map(m => (
+                    <button key={m} onClick={() => { setModalMode(m); setSaveError('') }} style={{
+                      flex: 1, padding: '8px 0', fontSize: 13, fontWeight: 600, borderRadius: 8, cursor: 'pointer',
+                      background: modalMode === m ? (m === 'afvis' ? '#dc2626' : 'var(--green)') : 'var(--bg)',
+                      color: modalMode === m ? '#fff' : 'var(--text)',
+                      border: '1.5px solid ' + (m === 'afvis' ? '#dc2626' : 'var(--green)'),
+                    }}>
+                      {m === 'godkend' ? 'Godkend' : 'Afvis'}
+                    </button>
+                  ))}
+                </div>
+                {modalMode === 'godkend' ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', display: 'block', marginBottom: 4 }}>Kontering</label>
+                      <select value={kontering} onChange={e => { setKontering(e.target.value); setKonteringNavn(e.target.options[e.target.selectedIndex]?.text || '') }}
+                        style={{ width: '100%', border: '1.5px solid var(--border)', borderRadius: 8, padding: '8px 10px', fontSize: 13 }}>
+                        <option value="">Vælg kontering…</option>
+                        <option value="__bogholder__">Konteres af bogholder</option>
+                      </select>
+                    </div>
+                    {saveError && <p style={{ color: 'red', fontSize: 13, margin: 0 }}>{saveError}</p>}
+                    <button className="btn btn-primary" disabled={saving || !kontering} onClick={handleGodkend}>
+                      {saving ? 'Godkender…' : 'Godkend udlæg (HB)'}
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', display: 'block', marginBottom: 4 }}>Begrundelse</label>
+                      <textarea rows={3} value={begrundelse} onChange={e => setBegrundelse(e.target.value)}
+                        style={{ width: '100%', border: '1.5px solid var(--border)', borderRadius: 8, padding: '8px 10px', fontSize: 13, resize: 'vertical' }} />
+                    </div>
+                    {saveError && <p style={{ color: 'red', fontSize: 13, margin: 0 }}>{saveError}</p>}
+                    <button className="btn btn-primary" style={{ background: '#dc2626' }} disabled={saving || !begrundelse.trim()} onClick={handleAfvis}>
+                      {saving ? 'Afviser…' : 'Bekræft afvisning'}
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

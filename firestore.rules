@@ -198,5 +198,29 @@ service cloud.firestore {
       allow read:  if isAdmin();
       allow write: if false;
     }
+
+    // ── Udlæg (refusioner/udlæg fra trænere) ─────────────────────────────────
+    // Skrives KUN via PHP service account. Afsender kan læse egne; admin kan
+    // læse alle. Formand-godkendelse sker via PHP (service account).
+    match /udlaeg/{id} {
+      allow read: if isAdmin()
+        || (isRealUser() && resource.data.afsenderUid == request.auth.uid);
+      allow write: if false; // kun via PHP service account
+    }
+
+    // ── Udlæg bank-oplysninger (midlertidig opbevaring, slettes efter godkendelse)
+    // Fuldstændigt utilgængeligt fra klienten — kun service account via PHP.
+    match /udlaeg_bank/{id} {
+      allow read:  if false;
+      allow write: if false;
+    }
+
+    // ── Udlæg-konfiguration ───────────────────────────────────────────────────
+    // Indeholder formand-emails, bogholder-email og afdeling-liste.
+    // Alle trænere/admin kan læse; kun admin kan skrive.
+    match /settings/udlaeg_config {
+      allow read: if isRealUser();
+      allow write: if isAdmin();
+    }
   }
 }

@@ -60,9 +60,9 @@ $finfo = finfo_open(FILEINFO_MIME_TYPE);
 $mime  = finfo_file($finfo, $file['tmp_name']);
 finfo_close($finfo);
 
-$allowed = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/gif' => 'gif', 'image/webp' => 'webp'];
+$allowed = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/gif' => 'gif', 'image/webp' => 'webp', 'application/pdf' => 'pdf'];
 if (!isset($allowed[$mime])) {
-    http_response_code(400); echo json_encode(['error' => 'Kun JPEG, PNG, GIF og WebP er tilladt']); exit;
+    http_response_code(400); echo json_encode(['error' => 'Kun JPEG, PNG, GIF, WebP og PDF er tilladt']); exit;
 }
 
 // ── Gem filen ─────────────────────────────────────────────────────────────────
@@ -74,7 +74,8 @@ if (!is_dir($uploadDir)) {
 }
 
 $ext      = $allowed[$mime];
-$filename = uniqid('img_', true) . '.' . $ext;
+$prefix   = $mime === 'application/pdf' ? 'doc_' : 'img_';
+$filename = uniqid($prefix, true) . '.' . $ext;
 $dest     = $uploadDir . $filename;
 
 if (!move_uploaded_file($file['tmp_name'], $dest)) {

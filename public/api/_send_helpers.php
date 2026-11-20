@@ -233,6 +233,138 @@ function smtp_send_html(string $to, string $subject, string $html, string $fra =
 function smtp_r($s): string { $o = ''; while ($l = fgets($s, 512)) { $o = $l; if (isset($l[3]) && $l[3] === ' ') break; } return $o; }
 function smtp_c($s, string $c): string { fwrite($s, $c . "\r\n"); return smtp_r($s); }
 
+// ── Udlæg-mailskabeloner ───────────────────────────────────────────────────────
+
+function byg_udlaeg_notif_html(array $u): string {
+    $afs   = htmlspecialchars($u['afsenderNavn']);
+    $afd   = htmlspecialchars($u['afdeling']);
+    $bel   = number_format((float)$u['belob'], 2, ',', '.');
+    $besk  = nl2br(htmlspecialchars($u['beskrivelse']));
+    $link  = htmlspecialchars($u['kvitteringUrl'] ?? '');
+    $appUrl = 'https://app.sejssvejbaek-if.dk';
+    $linkHtml = $link ? "<tr><td style=\"padding:9px 14px;font-size:12px;font-weight:700;color:#888;width:30%;border-bottom:1px solid #dde5dd\">Kvittering</td><td style=\"padding:9px 14px;font-size:14px;border-bottom:1px solid #dde5dd\"><a href=\"{$link}\" style=\"color:#1a5c2a;font-weight:600\">Se kvittering &rarr;</a></td></tr>" : '';
+    return <<<HTML
+<!DOCTYPE html><html lang="da"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f4f6f4;font-family:system-ui,-apple-system,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:24px 16px">
+<table width="100%" style="max-width:480px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 6px rgba(0,0,0,.08)">
+  <tr><td style="background:#1a5c2a;padding:18px 24px">
+    <p style="margin:0;color:#fff;font-size:18px;font-weight:800">&#9917; SSIF Udl&aelig;g</p>
+    <p style="margin:4px 0 0;color:rgba(255,255,255,.85);font-size:13px;font-weight:600">Nyt udl&aelig;g afventer godkendelse</p>
+  </td></tr>
+  <tr><td style="padding:24px">
+    <p style="margin:0 0 16px;font-size:14px;color:#4a4a4a">Et nyt udl&aelig;g er indsendt og afventer din godkendelse.</p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #dde5dd;border-radius:10px;overflow:hidden;margin-bottom:20px">
+      <tr><td style="padding:9px 14px;font-size:12px;font-weight:700;color:#888;width:30%;border-bottom:1px solid #dde5dd">Indsendt af</td><td style="padding:9px 14px;font-size:14px;font-weight:600;color:#1a1a1a;border-bottom:1px solid #dde5dd">{$afs}</td></tr>
+      <tr><td style="padding:9px 14px;font-size:12px;font-weight:700;color:#888;width:30%;border-bottom:1px solid #dde5dd">Afdeling</td><td style="padding:9px 14px;font-size:14px;font-weight:600;color:#1a1a1a;border-bottom:1px solid #dde5dd">{$afd}</td></tr>
+      <tr><td style="padding:9px 14px;font-size:12px;font-weight:700;color:#888;width:30%;border-bottom:1px solid #dde5dd">Bel&oslash;b</td><td style="padding:9px 14px;font-size:14px;font-weight:600;color:#1a1a1a;border-bottom:1px solid #dde5dd">{$bel} kr.</td></tr>
+      <tr><td style="padding:9px 14px;font-size:12px;font-weight:700;color:#888;width:30%;border-bottom:1px solid #dde5dd">Beskrivelse</td><td style="padding:9px 14px;font-size:14px;color:#333;border-bottom:1px solid #dde5dd">{$besk}</td></tr>
+      {$linkHtml}
+    </table>
+    <table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
+      <a href="{$appUrl}" style="display:inline-block;background:#1a5c2a;color:#fff;text-decoration:none;font-size:15px;font-weight:700;padding:13px 28px;border-radius:11px">Godkend i appen &rarr;</a>
+    </td></tr></table>
+    <p style="margin:20px 0 0;font-size:12px;color:#aaa;text-align:center">Venlig hilsen &middot; Sejs-Svejb&aelig;k IF</p>
+  </td></tr>
+</table></td></tr></table></body></html>
+HTML;
+}
+
+function byg_udlaeg_bogholder_html(array $u): string {
+    $afs    = htmlspecialchars($u['afsenderNavn']);
+    $afsEmail = htmlspecialchars($u['afsenderEmail']);
+    $afd    = htmlspecialchars($u['afdeling']);
+    $bel    = number_format((float)$u['belob'], 2, ',', '.');
+    $besk   = nl2br(htmlspecialchars($u['beskrivelse']));
+    $kont   = htmlspecialchars($u['kontering'] ?? '');
+    $kontNavn = htmlspecialchars($u['konteringNavn'] ?? '');
+    $kontRow  = $kont ? "<tr><td style=\"padding:9px 14px;font-size:12px;font-weight:700;color:#888;width:30%;border-bottom:1px solid #dde5dd\">Kontering</td><td style=\"padding:9px 14px;font-size:14px;font-weight:600;color:#1a1a1a;border-bottom:1px solid #dde5dd\">{$kontNavn} ({$kont})</td></tr>" : "<tr><td style=\"padding:9px 14px;font-size:12px;font-weight:700;color:#888;width:30%;border-bottom:1px solid #dde5dd\">Kontering</td><td style=\"padding:9px 14px;font-size:14px;color:#888;border-bottom:1px solid #dde5dd\">Konteres af bogholder</td></tr>";
+    $reg    = htmlspecialchars($u['regNr'] ?? '');
+    $konto  = htmlspecialchars($u['kontoNr'] ?? '');
+    $link   = htmlspecialchars($u['kvitteringUrl'] ?? '');
+    $dato   = htmlspecialchars($u['indsendt'] ?? date('Y-m-d'));
+    $linkHtml = $link ? "<tr><td style=\"padding:9px 14px;font-size:12px;font-weight:700;color:#888;width:30%;border-bottom:1px solid #dde5dd\">Kvittering</td><td style=\"padding:9px 14px;font-size:14px;border-bottom:1px solid #dde5dd\"><a href=\"{$link}\" style=\"color:#1a5c2a;font-weight:600\">Download kvittering &rarr;</a></td></tr>" : '';
+    return <<<HTML
+<!DOCTYPE html><html lang="da"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f4f6f4;font-family:system-ui,-apple-system,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:24px 16px">
+<table width="100%" style="max-width:480px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 6px rgba(0,0,0,.08)">
+  <tr><td style="background:#1a5c2a;padding:18px 24px">
+    <p style="margin:0;color:#fff;font-size:18px;font-weight:800">&#9917; SSIF Udl&aelig;g — klar til bogf&oslash;ring</p>
+  </td></tr>
+  <tr><td style="padding:24px">
+    <p style="margin:0 0 16px;font-size:14px;color:#4a4a4a">F&oslash;lgende udl&aelig;g er godkendt og klar til udbetaling:</p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #dde5dd;border-radius:10px;overflow:hidden;margin-bottom:20px">
+      <tr><td style="padding:9px 14px;font-size:12px;font-weight:700;color:#888;width:30%;border-bottom:1px solid #dde5dd">Dato</td><td style="padding:9px 14px;font-size:14px;font-weight:600;color:#1a1a1a;border-bottom:1px solid #dde5dd">{$dato}</td></tr>
+      <tr><td style="padding:9px 14px;font-size:12px;font-weight:700;color:#888;width:30%;border-bottom:1px solid #dde5dd">Modtager</td><td style="padding:9px 14px;font-size:14px;font-weight:600;color:#1a1a1a;border-bottom:1px solid #dde5dd">{$afs} ({$afsEmail})</td></tr>
+      <tr><td style="padding:9px 14px;font-size:12px;font-weight:700;color:#888;width:30%;border-bottom:1px solid #dde5dd">Afdeling</td><td style="padding:9px 14px;font-size:14px;font-weight:600;color:#1a1a1a;border-bottom:1px solid #dde5dd">{$afd}</td></tr>
+      <tr><td style="padding:9px 14px;font-size:12px;font-weight:700;color:#888;width:30%;border-bottom:1px solid #dde5dd">Bel&oslash;b</td><td style="padding:9px 14px;font-size:14px;font-weight:800;color:#1a5c2a;border-bottom:1px solid #dde5dd">{$bel} kr.</td></tr>
+      {$kontRow}
+      <tr><td style="padding:9px 14px;font-size:12px;font-weight:700;color:#888;width:30%;border-bottom:1px solid #dde5dd">Beskrivelse</td><td style="padding:9px 14px;font-size:14px;color:#333;border-bottom:1px solid #dde5dd">{$besk}</td></tr>
+      <tr><td style="padding:9px 14px;font-size:12px;font-weight:700;color:#888;width:30%;border-bottom:1px solid #dde5dd">REG-NR</td><td style="padding:9px 14px;font-size:14px;font-weight:600;color:#1a1a1a;border-bottom:1px solid #dde5dd">{$reg}</td></tr>
+      <tr><td style="padding:9px 14px;font-size:12px;font-weight:700;color:#888;width:30%;border-bottom:1px solid #dde5dd">KONTO-NR</td><td style="padding:9px 14px;font-size:14px;font-weight:600;color:#1a1a1a;border-bottom:1px solid #dde5dd">{$konto}</td></tr>
+      {$linkHtml}
+    </table>
+    <p style="margin:20px 0 0;font-size:12px;color:#aaa;text-align:center">Venlig hilsen &middot; Sejs-Svejb&aelig;k IF</p>
+  </td></tr>
+</table></td></tr></table></body></html>
+HTML;
+}
+
+function byg_udlaeg_godkendt_html(array $u): string {
+    $bel    = number_format((float)$u['belob'], 2, ',', '.');
+    $besk   = nl2br(htmlspecialchars($u['beskrivelse']));
+    $afd    = htmlspecialchars($u['afdeling']);
+    return <<<HTML
+<!DOCTYPE html><html lang="da"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f4f6f4;font-family:system-ui,-apple-system,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:24px 16px">
+<table width="100%" style="max-width:480px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 6px rgba(0,0,0,.08)">
+  <tr><td style="background:#1a5c2a;padding:18px 24px">
+    <p style="margin:0;color:#fff;font-size:18px;font-weight:800">&#9917; SSIF Udl&aelig;g godkendt &#10003;</p>
+  </td></tr>
+  <tr><td style="padding:24px">
+    <p style="margin:0 0 16px;font-size:14px;color:#4a4a4a">Dit udl&aelig;g er godkendt og sendt til bogf&oslash;ren for udbetaling.</p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #dde5dd;border-radius:10px;overflow:hidden;margin-bottom:20px">
+      <tr><td style="padding:9px 14px;font-size:12px;font-weight:700;color:#888;width:30%;border-bottom:1px solid #dde5dd">Afdeling</td><td style="padding:9px 14px;font-size:14px;font-weight:600;color:#1a1a1a;border-bottom:1px solid #dde5dd">{$afd}</td></tr>
+      <tr><td style="padding:9px 14px;font-size:12px;font-weight:700;color:#888;width:30%;border-bottom:1px solid #dde5dd">Bel&oslash;b</td><td style="padding:9px 14px;font-size:14px;font-weight:800;color:#1a5c2a;border-bottom:1px solid #dde5dd">{$bel} kr.</td></tr>
+      <tr><td style="padding:9px 14px;font-size:12px;font-weight:700;color:#888;width:30%">Beskrivelse</td><td style="padding:9px 14px;font-size:14px;color:#333">{$besk}</td></tr>
+    </table>
+    <p style="margin:0 0 20px;font-size:13px;color:#555">Udbetalingen sker via vores s&aelig;dvanlige ugentlige bogf&oslash;ringsrunde.</p>
+    <p style="margin:0;font-size:12px;color:#aaa;text-align:center">Venlig hilsen &middot; Sejs-Svejb&aelig;k IF</p>
+  </td></tr>
+</table></td></tr></table></body></html>
+HTML;
+}
+
+function byg_udlaeg_afvist_html(array $u): string {
+    $bel    = number_format((float)$u['belob'], 2, ',', '.');
+    $besk   = nl2br(htmlspecialchars($u['beskrivelse']));
+    $afd    = htmlspecialchars($u['afdeling']);
+    $grund  = nl2br(htmlspecialchars($u['afvisningsBeskrivelse'] ?? ''));
+    return <<<HTML
+<!DOCTYPE html><html lang="da"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f4f6f4;font-family:system-ui,-apple-system,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:24px 16px">
+<table width="100%" style="max-width:480px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 6px rgba(0,0,0,.08)">
+  <tr><td style="background:#dc2626;padding:18px 24px">
+    <p style="margin:0;color:#fff;font-size:18px;font-weight:800">SSIF Udl&aelig;g afvist</p>
+  </td></tr>
+  <tr><td style="padding:24px">
+    <p style="margin:0 0 16px;font-size:14px;color:#4a4a4a">Dit udl&aelig;g er desv&aelig;rre blevet afvist.</p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #dde5dd;border-radius:10px;overflow:hidden;margin-bottom:20px">
+      <tr><td style="padding:9px 14px;font-size:12px;font-weight:700;color:#888;width:30%;border-bottom:1px solid #dde5dd">Afdeling</td><td style="padding:9px 14px;font-size:14px;font-weight:600;color:#1a1a1a;border-bottom:1px solid #dde5dd">{$afd}</td></tr>
+      <tr><td style="padding:9px 14px;font-size:12px;font-weight:700;color:#888;width:30%;border-bottom:1px solid #dde5dd">Bel&oslash;b</td><td style="padding:9px 14px;font-size:14px;font-weight:600;color:#1a1a1a;border-bottom:1px solid #dde5dd">{$bel} kr.</td></tr>
+      <tr><td style="padding:9px 14px;font-size:12px;font-weight:700;color:#888;width:30%;border-bottom:1px solid #dde5dd">Beskrivelse</td><td style="padding:9px 14px;font-size:14px;color:#333;border-bottom:1px solid #dde5dd">{$besk}</td></tr>
+      <tr><td style="padding:9px 14px;font-size:12px;font-weight:700;color:#888;width:30%">Begrundelse</td><td style="padding:9px 14px;font-size:14px;color:#dc2626">{$grund}</td></tr>
+    </table>
+    <p style="margin:0 0 20px;font-size:13px;color:#555">Kontakt din afdeling&aelig;formand for yderligere information.</p>
+    <p style="margin:0;font-size:12px;color:#aaa;text-align:center">Venlig hilsen &middot; Sejs-Svejb&aelig;k IF</p>
+  </td></tr>
+</table></td></tr></table></body></html>
+HTML;
+}
+
 // Omdanner holdnavn til gyldigt SMS-afsendernavn (GatewayAPI: maks 11 ASCII-tegn).
 // æ→ae, ø→oe, å→aa, mellemrum og specialtegn fjernes.
 function sms_afsender(string $holdTitel): string {
