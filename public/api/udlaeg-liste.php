@@ -49,16 +49,15 @@ function fmt_udlaeg(array $doc): array {
     ];
 }
 
-// ── Mine egne udlæg ───────────────────────────────────────────────────────────
+// ── Mine egne udlæg (ingen orderBy = ingen composite index nødvendig) ─────────
 $mineRows = fs_run_query($projectId, $fsToken, ['structuredQuery' => [
-    'from'    => [['collectionId' => 'udlaeg']],
-    'where'   => ['fieldFilter' => [
+    'from'  => [['collectionId' => 'udlaeg']],
+    'where' => ['fieldFilter' => [
         'field' => ['fieldPath' => 'afsenderUid'],
         'op'    => 'EQUAL',
         'value' => ['stringValue' => $uid],
     ]],
-    'orderBy' => [['field' => ['fieldPath' => 'indsendt'], 'direction' => 'DESCENDING']],
-    'limit'   => 50,
+    'limit' => 50,
 ]]);
 
 $mine = [];
@@ -66,6 +65,7 @@ foreach ($mineRows as $r) {
     if (!isset($r['document'])) continue;
     $mine[] = fmt_udlaeg($r['document']);
 }
+usort($mine, fn($a, $b) => strcmp($b['indsendt'], $a['indsendt']));
 
 // ── Til godkendelse (formand-view) ────────────────────────────────────────────
 $tilGodkendelse = [];
@@ -75,22 +75,32 @@ if ($email) {
     $afdelinger = json_decode($config['afdelinger']['stringValue'] ?? '{}', true) ?: [];
     $hbEmail    = $config['hb_formand_email']['stringValue'] ?? '';
 
-    // Formand for disse afdelinger
     $formandFor = [];
     foreach ($afdelinger as $afdId => $afd) {
         if (($afd['formand_email'] ?? '') === $email) $formandFor[] = $afdId;
     }
+    $erHB = ($hbEmail && $email === $hbEmail);
 
-    // Formand-afventer_formand
-    foreach ($formandFor as $afdNavn) {
+    // Formand: hent afventer_formand og filtrer til egne afdelinger i PHP
+    if (!empty($formandFor)) {
         $rows = fs_run_query($projectId, $fsToken, ['structuredQuery' => [
             'from'  => [['collectionId' => 'udlaeg']],
-            'where' => ['compositeFilter' => ['op' => 'AND', 'filters' => [
-                ['fieldFilter' => ['field' => ['fieldPath' => 'afdeling'], 'op' => 'EQUAL', 'value' => ['stringValue' => $afdNavn]]],
-                ['fieldFilter' => ['field' => ['fieldPath' => 'status'],   'op' => 'EQUAL', 'value' => ['stringValue' => 'afventer_formand']]],
-            ]]],
-            'orderBy' => [['field' => ['fieldPath' => 'indsendt'], 'direction' => 'DESCENDING']],
-            'limit'   => 50,
+            'where' => ['fieldFilter' => ['field' => ['fieldPath' => 'status'], 'op' => 'EQUAL', 'value' => ['stringValue' => 'afventer_formand']]],
+            'limit' => 200,
+        ]]);
+        foreach ($rows as $r) {
+            if (!isset($r['document'])) continue;
+            $u = fmt_udlaeg($r['document']);
+            if (in_array($u['afdeling'], $formandFor)) $tilGodkendelse[] = $u;
+        }
+    }
+
+    // HB-formand: hent afventer_hb
+    if ($erHB) {
+        $rows = fs_run_query($projectId, $fsToken, ['structuredQuery' => [
+            'from'  => [['collectionId' => 'udlaeg']],
+            'where' => ['fieldFilter' => ['field' => ['fieldPath' => 'status'], 'op' => 'EQUAL', 'value' => ['stringValue' => 'afventer_hb']]],
+            'limit' => 200,
         ]]);
         foreach ($rows as $r) {
             if (!isset($r['document'])) continue;
@@ -98,19 +108,7 @@ if ($email) {
         }
     }
 
-    // HB-formand ser afventer_hb
-    if ($hbEmail && $email === $hbEmail) {
-        $rows = fs_run_query($projectId, $fsToken, ['structuredQuery' => [
-            'from'    => [['collectionId' => 'udlaeg']],
-            'where'   => ['fieldFilter' => ['field' => ['fieldPath' => 'status'], 'op' => 'EQUAL', 'value' => ['stringValue' => 'afventer_hb']]],
-            'orderBy' => [['field' => ['fieldPath' => 'indsendt'], 'direction' => 'DESCENDING']],
-            'limit'   => 50,
-        ]]);
-        foreach ($rows as $r) {
-            if (!isset($r['document'])) continue;
-            $tilGodkendelse[] = fmt_udlaeg($r['document']);
-        }
-    }
+    usort($tilGodkendelse, fn($a, $b) => strcmp($b['indsendt'], $a['indsendt']));
 }
 
 echo json_encode(['mine' => $mine, 'tilGodkendelse' => $tilGodkendelse], JSON_UNESCAPED_UNICODE);
