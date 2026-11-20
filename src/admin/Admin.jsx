@@ -7889,11 +7889,11 @@ function UdlaegKonfig({ authUser }) {
   const [afdNavne,        setAfdNavne]        = useState([]) // [{label, value}] til dropdowns
 
   useEffect(() => {
-    // Hent alle brugere der har logget ind til formand-dropdown
-    getDocs(collection(db, 'users'))
+    // Hent trænere (isLeder=true i members) til formand-dropdown — samme kilde som Trænere-oversigten
+    getDocs(query(collection(db, 'members'), where('isLeder', '==', true)))
       .then(snap => {
         const list = snap.docs
-          .map(d => ({ navn: d.data().navn || d.data().displayName || '', email: d.data().email || '' }))
+          .map(d => ({ navn: d.data().name || '', email: (d.data().allEmails || [])[0] || '' }))
           .filter(l => l.email)
           .sort((a, b) => (a.navn || a.email).localeCompare(b.navn || b.email, 'da'))
         setLedere(list.map(l => ({ label: l.navn ? `${l.navn} — ${l.email}` : l.email, value: l.email })))
