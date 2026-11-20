@@ -3241,49 +3241,13 @@ function UdlaegFormScreen({ user, onBack, onSaved }) {
     </div>
   )
 
+  // Trin 1: Bilag + bankoplysninger
   if (step === 1) return (
     <div className="screen">
       <NavHeader title={<>Nyt udlæg <BetaTag /></>} onBack={onBack} />
       {stepBar}
       <main style={{ padding: '20px 16px', maxWidth: 500, margin: '0 auto', width: '100%', flex: 1 }}>
-        <h2 style={{ fontSize: 16, fontWeight: 800, marginBottom: 16 }}>Trin 1 af 3 — Detaljer</h2>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div className="form-field">
-            <label className="form-label">Afdeling</label>
-            <select className="form-input" value={afdeling} onChange={e => setAfdeling(e.target.value)}>
-              <option value="">Vælg afdeling…</option>
-              {config.afdelinger.map(a => <option key={a.id} value={a.id}>{a.navn}</option>)}
-            </select>
-          </div>
-          <div className="form-field">
-            <label className="form-label">Beløb (kr.)</label>
-            <input className="form-input" type="text" inputMode="decimal"
-              placeholder="0,00"
-              value={belob} onChange={e => setBelob(e.target.value)} />
-          </div>
-          <div className="form-field">
-            <label className="form-label">Beskrivelse</label>
-            <textarea className="form-input" rows={3} style={{ resize: 'vertical' }}
-              placeholder="Hvad er udlægget til?"
-              value={beskrivelse} onChange={e => setBeskrivelse(e.target.value)} />
-          </div>
-          {error && <p style={{ color: 'var(--red)', fontSize: 13, margin: 0 }}>{error}</p>}
-          <button className="btn btn-primary"
-            disabled={!afdeling || !belob || !beskrivelse.trim()}
-            onClick={() => setStep(2)}>
-            Næste →
-          </button>
-        </div>
-      </main>
-    </div>
-  )
-
-  if (step === 2) return (
-    <div className="screen">
-      <NavHeader title={<>Nyt udlæg <BetaTag /></>} onBack={() => setStep(1)} />
-      {stepBar}
-      <main style={{ padding: '20px 16px', maxWidth: 500, margin: '0 auto', width: '100%', flex: 1 }}>
-        <h2 style={{ fontSize: 16, fontWeight: 800, marginBottom: 16 }}>Trin 2 af 3 — Kvittering og konto</h2>
+        <h2 style={{ fontSize: 16, fontWeight: 800, marginBottom: 16 }}>Trin 1 af 3 — Bilag</h2>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div className="form-field">
             <label className="form-label">Kvittering (billede eller PDF)</label>
@@ -3327,6 +3291,38 @@ function UdlaegFormScreen({ user, onBack, onSaved }) {
           {error && <p style={{ color: 'var(--red)', fontSize: 13, margin: 0 }}>{error}</p>}
           <button className="btn btn-primary"
             disabled={!kvitUrl || !regNr || !kontoNr || uploading}
+            onClick={() => setStep(2)}>
+            Næste →
+          </button>
+        </div>
+      </main>
+    </div>
+  )
+
+  // Trin 2: Afdeling + beløb
+  if (step === 2) return (
+    <div className="screen">
+      <NavHeader title={<>Nyt udlæg <BetaTag /></>} onBack={() => setStep(1)} />
+      {stepBar}
+      <main style={{ padding: '20px 16px', maxWidth: 500, margin: '0 auto', width: '100%', flex: 1 }}>
+        <h2 style={{ fontSize: 16, fontWeight: 800, marginBottom: 16 }}>Trin 2 af 3 — Beløb</h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div className="form-field">
+            <label className="form-label">Afdeling</label>
+            <select className="form-input" value={afdeling} onChange={e => setAfdeling(e.target.value)}>
+              <option value="">Vælg afdeling…</option>
+              {config.afdelinger.map(a => <option key={a.id} value={a.id}>{a.navn}</option>)}
+            </select>
+          </div>
+          <div className="form-field">
+            <label className="form-label">Beløb (kr.)</label>
+            <input className="form-input" type="text" inputMode="decimal"
+              placeholder="0,00"
+              value={belob} onChange={e => setBelob(e.target.value)} />
+          </div>
+          {error && <p style={{ color: 'var(--red)', fontSize: 13, margin: 0 }}>{error}</p>}
+          <button className="btn btn-primary"
+            disabled={!afdeling || !belob}
             onClick={() => setStep(3)}>
             Næste →
           </button>
@@ -3335,34 +3331,43 @@ function UdlaegFormScreen({ user, onBack, onSaved }) {
     </div>
   )
 
-  // Step 3: Gennemgang
+  // Trin 3: Kommentar + gennemgang + indsend
   return (
     <div className="screen">
       <NavHeader title={<>Nyt udlæg <BetaTag /></>} onBack={() => setStep(2)} />
       {stepBar}
       <main style={{ padding: '20px 16px', maxWidth: 500, margin: '0 auto', width: '100%', flex: 1 }}>
-        <h2 style={{ fontSize: 16, fontWeight: 800, marginBottom: 16 }}>Trin 3 af 3 — Gennemgang</h2>
-        <div style={{ background: 'var(--bg)', border: '1.5px solid var(--border)', borderRadius: 12, overflow: 'hidden', marginBottom: 20 }}>
-          {[
-            ['Afdeling', afdeling],
-            ['Beløb', parseFloat(belob.replace(',', '.')).toLocaleString('da-DK', { minimumFractionDigits: 2 }) + ' kr.'],
-            ['Beskrivelse', beskrivelse],
-            ['Bankoplysninger', `REG ${regNr} / KONTO ${kontoNr}`],
-          ].map(([k, v]) => (
-            <div key={k} style={{ display: 'flex', padding: '10px 14px', borderBottom: '1px solid var(--border)', gap: 12 }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', width: 120, flexShrink: 0 }}>{k}</span>
-              <span style={{ fontSize: 13, color: 'var(--text)', flex: 1 }}>{v}</span>
-            </div>
-          ))}
-          <div style={{ display: 'flex', padding: '10px 14px', gap: 12 }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', width: 120, flexShrink: 0 }}>Kvittering</span>
-            <a href={kvitUrl} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: 'var(--green)', fontWeight: 600 }}>Se kvittering →</a>
+        <h2 style={{ fontSize: 16, fontWeight: 800, marginBottom: 16 }}>Trin 3 af 3 — Kommentar</h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div className="form-field">
+            <label className="form-label">Kommentar (hvad er udlægget til?)</label>
+            <textarea className="form-input" rows={3} style={{ resize: 'vertical' }}
+              placeholder="F.eks. forplejning til kamp, kegler til træning…"
+              value={beskrivelse} onChange={e => setBeskrivelse(e.target.value)} />
           </div>
+
+          <div style={{ background: 'var(--bg)', border: '1.5px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
+            {[
+              ['Afdeling', afdeling],
+              ['Beløb', parseFloat(belob.replace(',', '.')).toLocaleString('da-DK', { minimumFractionDigits: 2 }) + ' kr.'],
+              ['Bankoplysninger', `REG ${regNr} / KONTO ${kontoNr}`],
+            ].map(([k, v]) => (
+              <div key={k} style={{ display: 'flex', padding: '10px 14px', borderBottom: '1px solid var(--border)', gap: 12 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', width: 120, flexShrink: 0 }}>{k}</span>
+                <span style={{ fontSize: 13, color: 'var(--text)', flex: 1 }}>{v}</span>
+              </div>
+            ))}
+            <div style={{ display: 'flex', padding: '10px 14px', gap: 12 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', width: 120, flexShrink: 0 }}>Kvittering</span>
+              <a href={kvitUrl} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: 'var(--green)', fontWeight: 600 }}>Se kvittering →</a>
+            </div>
+          </div>
+
+          {error && <p style={{ color: 'var(--red)', fontSize: 13, margin: 0 }}>{error}</p>}
+          <button className="btn btn-primary" disabled={sending || !beskrivelse.trim()} onClick={handleIndsend} style={{ width: '100%' }}>
+            {sending ? 'Sender…' : 'Indsend udlæg'}
+          </button>
         </div>
-        {error && <p style={{ color: 'var(--red)', fontSize: 13, marginBottom: 12 }}>{error}</p>}
-        <button className="btn btn-primary" disabled={sending} onClick={handleIndsend} style={{ width: '100%' }}>
-          {sending ? 'Sender…' : 'Indsend udlæg'}
-        </button>
       </main>
     </div>
   )

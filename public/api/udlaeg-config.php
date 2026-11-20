@@ -40,22 +40,30 @@ $godkGraense      = (int)($config['godkendelse_graense']['integerValue'] ?? 1000
 
 // ── Find brugerens leder-holds og de tilknyttede afdelinger ──────────────────
 $lederHoldIds = get_leder_holds($email, $conventus, $projectId, $fsToken);
-$brugerAfdelinger = [];
+$brugerAfdelinger = []; // [afdNavn => afdNavn]
+$seenAfdIds       = []; // undgå dobbelt opslag
 
 if (!empty($lederHoldIds)) {
     foreach (array_keys($lederHoldIds) as $holdId) {
         $holdDoc = fs_get("{$base}/holds/{$holdId}", $fsToken);
         if (!$holdDoc) continue;
-        $afdeling = $holdDoc['fields']['afdeling']['stringValue'] ?? '';
-        if ($afdeling && isset($afdelingerRaw[$afdeling])) {
-            $brugerAfdelinger[$afdeling] = $afdelingerRaw[$afdeling]['navn'] ?? $afdeling;
-        }
+        // holds gemmer afdelings-id som integerValue eller stringValue
+        $afdId = (string)(
+            $holdDoc['fields']['afdeling_id']['integerValue'] ??
+            $holdDoc['fields']['afdeling_id']['stringValue']  ?? ''
+        );
+        if ($afdId === '' || isset($seenAfdIds[$afdId])) continue;
+        $seenAfdIds[$afdId] = true;
+        $afdDoc  = fs_get("{$base}/afdelinger/{$afdId}", $fsToken);
+        if (!$afdDoc) continue;
+        $afdNavn = $afdDoc['fields']['navn']['stringValue'] ?? '';
+        if ($afdNavn) $brugerAfdelinger[$afdNavn] = $afdNavn;
     }
 }
 
 $afdelingerListe = [];
-foreach ($brugerAfdelinger as $id => $navn) {
-    $afdelingerListe[] = ['id' => $id, 'navn' => $navn];
+foreach ($brugerAfdelinger as $navn) {
+    $afdelingerListe[] = ['id' => $navn, 'navn' => $navn];
 }
 usort($afdelingerListe, fn($a, $b) => strcmp($a['navn'], $b['navn']));
 
