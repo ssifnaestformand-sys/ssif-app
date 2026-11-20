@@ -415,7 +415,7 @@ function DashboardScreen({ user, displayName, holds, onLogout, onRefresh }) {
     <div className="screen">
       <header style={{
         background: 'var(--green)', color: '#fff',
-        paddingTop: 'max(13px, env(safe-area-inset-top))',
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 13px)',
         paddingBottom: '14px', paddingLeft: '16px', paddingRight: '14px',
         display: 'flex', alignItems: 'center', gap: 8,
       }}>
@@ -621,7 +621,7 @@ function HoldScreen({ hold, user, onBack }) {
       <div className="screen">
         <header style={{
           background: 'var(--green)', color: '#fff',
-          paddingTop: 'max(13px, env(safe-area-inset-top))',
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 13px)',
           paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
           display: 'flex', alignItems: 'center', gap: 12,
         }}>
@@ -1306,7 +1306,7 @@ function BegivenhedDetailScreen({ begivenhedId, user, onBack, onEdit, onDeleted,
     <div className="screen">
       <header style={{
         background: 'var(--green)', color: '#fff',
-        paddingTop: 'max(13px, env(safe-area-inset-top))',
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 13px)',
         paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
         display: 'flex', alignItems: 'center', gap: 12,
       }}>
@@ -1915,7 +1915,7 @@ function KontingentScreen({ hold, user, onBack }) {
     <div className="screen">
       <header style={{
         background: 'var(--green)', color: '#fff',
-        paddingTop: 'max(13px, env(safe-area-inset-top))',
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 13px)',
         paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
         display: 'flex', alignItems: 'center', gap: 12,
       }}>
@@ -2140,7 +2140,7 @@ function TilkendegivelseListeScreen({ hold, user, onBack, onNy, onOpen }) {
     <div className="screen">
       <header style={{
         background: 'var(--green)', color: '#fff',
-        paddingTop: 'max(13px, env(safe-area-inset-top))',
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 13px)',
         paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
         display: 'flex', alignItems: 'center', gap: 12,
       }}>
@@ -2473,7 +2473,7 @@ function TilkendegivelseDetailScreen({ tilkendegivelse, hold, user, onBack, onEd
     <div className="screen">
       <header style={{
         background: 'var(--green)', color: '#fff',
-        paddingTop: 'max(13px, env(safe-area-inset-top))',
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 13px)',
         paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
         display: 'flex', alignItems: 'center', gap: 12,
       }}>
@@ -2748,7 +2748,7 @@ function FordelScreen({ hold, user, fordelData, onBack, onSendt }) {
     <div className="screen">
       <header style={{
         background: 'var(--green)', color: '#fff',
-        paddingTop: 'max(13px, env(safe-area-inset-top))',
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 13px)',
         paddingBottom: '13px', paddingLeft: '18px', paddingRight: '18px',
         display: 'flex', alignItems: 'center', gap: 12,
       }}>
@@ -2922,7 +2922,7 @@ function NavHeader({ title, onBack, right = null }) {
   return (
     <header style={{
       background: 'var(--green)', color: '#fff',
-      paddingTop: 'max(13px, env(safe-area-inset-top))',
+      paddingTop: 'calc(env(safe-area-inset-top, 0px) + 13px)',
       paddingBottom: '14px',
       paddingLeft: 0, paddingRight: right ? 10 : 18,
       display: 'flex', alignItems: 'center', gap: 8,
