@@ -54,8 +54,14 @@ $harAdgang = false;
 foreach (array_keys($lederHoldIds) as $holdId) {
     $holdDoc = fs_get("{$base}/holds/{$holdId}", $fsToken);
     if (!$holdDoc) continue;
-    $holdAfd = $holdDoc['fields']['afdeling']['stringValue'] ?? '';
-    if ($holdAfd === $afdeling) { $harAdgang = true; break; }
+    $afdId = (string)(
+        $holdDoc['fields']['afdeling_id']['integerValue'] ??
+        $holdDoc['fields']['afdeling_id']['stringValue']  ?? ''
+    );
+    if (!$afdId) continue;
+    $afdDoc  = fs_get("{$base}/afdelinger/{$afdId}", $fsToken);
+    $afdNavn = $afdDoc['fields']['navn']['stringValue'] ?? '';
+    if ($afdNavn === $afdeling) { $harAdgang = true; break; }
 }
 if (!$harAdgang) {
     http_response_code(403);
