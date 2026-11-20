@@ -7635,6 +7635,30 @@ const UDLAEG_STATUS_COLOR = {
 }
 
 function UdlaegAdminPage({ authUser }) {
+  const [tab, setTab] = useState('oversigt') // 'oversigt' | 'config'
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 0, flexWrap: 'wrap' }}>
+        <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>Udlæg</h1>
+        <span style={{ fontSize: 11, fontWeight: 700, background: '#ea8c00', color: '#fff', borderRadius: 6, padding: '3px 8px' }}>BETA</span>
+      </div>
+      <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', margin: '16px 0 20px' }}>
+        {[['oversigt', 'Oversigt'], ['config', 'Konfiguration']].map(([t, l]) => (
+          <button key={t} onClick={() => setTab(t)} style={{
+            padding: '10px 18px', fontSize: 14, fontWeight: tab === t ? 700 : 500,
+            color: tab === t ? 'var(--green)' : 'var(--text3)',
+            background: 'none', border: 'none',
+            borderBottom: tab === t ? '2px solid var(--green)' : '2px solid transparent',
+            cursor: 'pointer',
+          }}>{l}</button>
+        ))}
+      </div>
+      {tab === 'oversigt' ? <UdlaegOversigt authUser={authUser} /> : <UdlaegKonfig authUser={authUser} />}
+    </div>
+  )
+}
+
+function UdlaegOversigt({ authUser }) {
   const [udlaeg,     setUdlaeg]     = useState([])
   const [loading,    setLoading]    = useState(true)
   const [error,      setError]      = useState('')
@@ -7643,7 +7667,7 @@ function UdlaegAdminPage({ authUser }) {
   const [kontering,  setKontering]  = useState('')
   const [konteringNavn, setKonteringNavn] = useState('')
   const [begrundelse,setBegrundelse] = useState('')
-  const [modalMode,  setModalMode]  = useState('godkend') // 'godkend' | 'afvis'
+  const [modalMode,  setModalMode]  = useState('godkend')
   const [saving,     setSaving]     = useState(false)
   const [saveError,  setSaveError]  = useState('')
 
@@ -7697,10 +7721,7 @@ function UdlaegAdminPage({ authUser }) {
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
-        <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>Udlæg</h1>
-        <span style={{ fontSize: 11, fontWeight: 700, background: '#ea8c00', color: '#fff', borderRadius: 6, padding: '3px 8px' }}>BETA</span>
-        <div style={{ flex: 1 }} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{
           border: '1px solid var(--border)', borderRadius: 8, padding: '6px 10px', fontSize: 13, background: 'var(--bg)',
         }}>
@@ -7754,7 +7775,6 @@ function UdlaegAdminPage({ authUser }) {
         </div>
       )}
 
-      {/* Modal */}
       {selected && (
         <div style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 1000,
@@ -7765,7 +7785,6 @@ function UdlaegAdminPage({ authUser }) {
               <h2 style={{ fontSize: 17, fontWeight: 800, margin: 0 }}>Udlæg — detaljer</h2>
               <button onClick={() => setSelected(null)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--text3)' }}>×</button>
             </div>
-
             <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 16 }}>
               {[
                 ['Afsender', selected.afsenderNavn + (selected.afsenderEmail ? ` (${selected.afsenderEmail})` : '')],
@@ -7789,7 +7808,6 @@ function UdlaegAdminPage({ authUser }) {
                 </tr>
               )}
             </table>
-
             {(selected.status === 'afventer_hb') && (
               <>
                 <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
@@ -7799,9 +7817,7 @@ function UdlaegAdminPage({ authUser }) {
                       background: modalMode === m ? (m === 'afvis' ? '#dc2626' : 'var(--green)') : 'var(--bg)',
                       color: modalMode === m ? '#fff' : 'var(--text)',
                       border: '1.5px solid ' + (m === 'afvis' ? '#dc2626' : 'var(--green)'),
-                    }}>
-                      {m === 'godkend' ? 'Godkend' : 'Afvis'}
-                    </button>
+                    }}>{m === 'godkend' ? 'Godkend' : 'Afvis'}</button>
                   ))}
                 </div>
                 {modalMode === 'godkend' ? (
@@ -7837,6 +7853,130 @@ function UdlaegAdminPage({ authUser }) {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function UdlaegKonfig({ authUser }) {
+  const [loading,    setLoading]    = useState(true)
+  const [saving,     setSaving]     = useState(false)
+  const [error,      setError]      = useState('')
+  const [saved,      setSaved]      = useState(false)
+
+  const [bogholderEmail,  setBogholderEmail]  = useState('')
+  const [hbEmail,         setHbEmail]         = useState('')
+  const [graense,         setGraense]         = useState('100000')
+  const [journalNr,       setJournalNr]       = useState('')
+  const [contraKonto,     setContraKonto]     = useState('')
+  const [afdelinger,      setAfdelinger]      = useState([]) // [{navn, formand_email}]
+  const [nyAfdNavn,       setNyAfdNavn]       = useState('')
+  const [nyAfdEmail,      setNyAfdEmail]      = useState('')
+
+  useEffect(() => {
+    getDoc(doc(db, 'settings', 'udlaeg_config')).then(snap => {
+      if (!snap.exists()) { setLoading(false); return }
+      const d = snap.data()
+      setBogholderEmail(d.bogholder_email || '')
+      setHbEmail(d.hb_formand_email || '')
+      setGraense(String(d.godkendelse_graense || 100000))
+      setJournalNr(String(d.economic_journal_nr || ''))
+      setContraKonto(String(d.economic_contra_account || ''))
+      try {
+        const afd = JSON.parse(d.afdelinger || '{}')
+        setAfdelinger(Object.entries(afd).map(([navn, v]) => ({ navn, formand_email: v.formand_email || '' })))
+      } catch {}
+    }).catch(e => setError(e.message)).finally(() => setLoading(false))
+  }, [])
+
+  async function handleGem() {
+    setSaving(true); setSaved(false); setError('')
+    const afdelingerObj = {}
+    for (const a of afdelinger) {
+      if (a.navn.trim()) afdelingerObj[a.navn.trim()] = { navn: a.navn.trim(), formand_email: a.formand_email.trim() }
+    }
+    try {
+      const idToken = await authUser.getIdToken()
+      const res = await fetch('/api/udlaeg-config-save.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bogholder_email:         bogholderEmail.trim(),
+          hb_formand_email:        hbEmail.trim(),
+          godkendelse_graense:     parseInt(graense) || 100000,
+          economic_journal_nr:     parseInt(journalNr) || 0,
+          economic_contra_account: parseInt(contraKonto) || 0,
+          afdelinger:              afdelingerObj,
+        }),
+      })
+      const data = await res.json()
+      if (data.ok) { setSaved(true); setTimeout(() => setSaved(false), 3000) }
+      else setError(data.error || 'Fejl')
+    } catch { setError('Netværksfejl') }
+    finally { setSaving(false) }
+  }
+
+  function tilføjAfdeling() {
+    if (!nyAfdNavn.trim()) return
+    setAfdelinger(prev => [...prev, { navn: nyAfdNavn.trim(), formand_email: nyAfdEmail.trim() }])
+    setNyAfdNavn(''); setNyAfdEmail('')
+  }
+
+  if (loading) return <p>Henter konfiguration…</p>
+
+  const LabelInput = ({ label, value, onChange, type = 'text', placeholder = '' }) => (
+    <div>
+      <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', display: 'block', marginBottom: 4 }}>{label}</label>
+      <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+        style={{ width: '100%', border: '1.5px solid var(--border)', borderRadius: 8, padding: '8px 10px', fontSize: 14, boxSizing: 'border-box' }} />
+    </div>
+  )
+
+  return (
+    <div style={{ maxWidth: 640 }}>
+      <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>
+        Disse indstillinger bestemmer hvem der modtager notifikationer, og hvem der er formand for hvilken afdeling.
+      </p>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 28 }}>
+        <LabelInput label="Bogholderens email (Pia)" value={bogholderEmail} onChange={setBogholderEmail} type="email" placeholder="pia@sejssvejbaek-if.dk" />
+        <LabelInput label="HB-formands email (godkender udlæg >100.000 kr.)" value={hbEmail} onChange={setHbEmail} type="email" placeholder="hb@sejssvejbaek-if.dk" />
+        <LabelInput label="Beløbsgrænse for HB-godkendelse (kr.)" value={graense} onChange={setGraense} type="number" placeholder="100000" />
+        <LabelInput label="e-conomic journal-nummer (valgfrit)" value={journalNr} onChange={setJournalNr} type="number" placeholder="1" />
+        <LabelInput label="e-conomic modkonto (valgfrit, f.eks. 6610)" value={contraKonto} onChange={setContraKonto} type="number" placeholder="6610" />
+      </div>
+
+      <h3 style={{ fontSize: 15, fontWeight: 800, marginBottom: 12 }}>Afdelinger og formænd</h3>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+        {afdelinger.map((a, i) => (
+          <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input value={a.navn} onChange={e => setAfdelinger(prev => prev.map((x, j) => j === i ? { ...x, navn: e.target.value } : x))}
+              placeholder="Afdelingnavn" style={{ flex: 2, border: '1.5px solid var(--border)', borderRadius: 8, padding: '7px 10px', fontSize: 13 }} />
+            <input value={a.formand_email} onChange={e => setAfdelinger(prev => prev.map((x, j) => j === i ? { ...x, formand_email: e.target.value } : x))}
+              placeholder="Formand email" type="email" style={{ flex: 3, border: '1.5px solid var(--border)', borderRadius: 8, padding: '7px 10px', fontSize: 13 }} />
+            <button onClick={() => setAfdelinger(prev => prev.filter((_, j) => j !== i))}
+              style={{ background: 'none', border: 'none', color: '#dc2626', fontSize: 18, cursor: 'pointer', padding: '0 4px', flexShrink: 0 }}>×</button>
+          </div>
+        ))}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input value={nyAfdNavn} onChange={e => setNyAfdNavn(e.target.value)}
+            placeholder="Ny afdeling…" style={{ flex: 2, border: '1.5px dashed var(--border)', borderRadius: 8, padding: '7px 10px', fontSize: 13, background: 'var(--bg)' }} />
+          <input value={nyAfdEmail} onChange={e => setNyAfdEmail(e.target.value)}
+            placeholder="Formand email" type="email" style={{ flex: 3, border: '1.5px dashed var(--border)', borderRadius: 8, padding: '7px 10px', fontSize: 13, background: 'var(--bg)' }} />
+          <button onClick={tilføjAfdeling} disabled={!nyAfdNavn.trim()}
+            style={{ background: 'var(--green)', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
+            + Tilføj
+          </button>
+        </div>
+      </div>
+      <p style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 20 }}>
+        Afdelingsnavnet skal matche præcist det navn der bruges på holdene i Conventus (feltet "afdeling").
+      </p>
+
+      {error && <p style={{ color: 'red', fontSize: 13, marginBottom: 12 }}>{error}</p>}
+      {saved && <p style={{ color: 'var(--green)', fontSize: 13, marginBottom: 12 }}>✓ Gemt</p>}
+      <button className="btn btn-primary" disabled={saving} onClick={handleGem} style={{ minWidth: 160 }}>
+        {saving ? 'Gemmer…' : 'Gem konfiguration'}
+      </button>
     </div>
   )
 }
