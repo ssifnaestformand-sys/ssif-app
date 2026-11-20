@@ -7889,8 +7889,8 @@ function UdlaegKonfig({ authUser }) {
   const [afdNavne,        setAfdNavne]        = useState([]) // [{label, value}] til dropdowns
 
   useEffect(() => {
-    // Hent trænere og admins til formand-dropdown
-    getDocs(query(collection(db, 'users'), where('role', 'in', ['admin', 'trainer'])))
+    // Hent alle brugere der har logget ind til formand-dropdown
+    getDocs(collection(db, 'users'))
       .then(snap => {
         const list = snap.docs
           .map(d => ({ navn: d.data().navn || d.data().displayName || '', email: d.data().email || '' }))
