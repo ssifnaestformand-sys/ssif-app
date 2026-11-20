@@ -7858,39 +7858,15 @@ function UdlaegOversigt({ authUser }) {
 }
 
 function SearchCombobox({ value, onChange, options, placeholder, style }) {
-  const [q, setQ]       = useState('')
-  const [open, setOpen] = useState(false)
-
-  const displayOpt = options.find(o => o.value === value)
-  const display    = open ? q : (displayOpt ? displayOpt.label : value)
-  const filtered   = q.length > 0
-    ? options.filter(o =>
-        o.label.toLowerCase().includes(q.toLowerCase()) ||
-        o.value.toLowerCase().includes(q.toLowerCase()))
-    : options
-
+  const [listId] = useState(() => 'dl-' + Math.random().toString(36).slice(2))
   return (
-    <div style={{ position: 'relative', ...style }}>
-      <input value={display}
-        onChange={e => { setQ(e.target.value); onChange(e.target.value); setOpen(true) }}
-        onFocus={() => { setQ(''); setOpen(true) }}
-        onBlur={() => { setOpen(false); setQ('') }}
-        placeholder={placeholder}
-        autoComplete="off"
+    <div style={style}>
+      <input value={value} onChange={e => onChange(e.target.value)}
+        list={listId} placeholder={placeholder} autoComplete="off"
         style={{ width: '100%', border: '1.5px solid var(--border)', borderRadius: 8, padding: '7px 10px', fontSize: 13, boxSizing: 'border-box', background: 'var(--card)' }} />
-      {open && filtered.length > 0 && (
-        <div style={{ position: 'absolute', zIndex: 200, top: 'calc(100% + 2px)', left: 0, right: 0, background: 'var(--card)', border: '1.5px solid var(--border)', borderRadius: 8, boxShadow: '0 6px 24px rgba(0,0,0,.14)', maxHeight: 220, overflowY: 'auto' }}>
-          {filtered.map((o, i) => (
-            <div key={i}
-              onMouseDown={e => { e.preventDefault(); onChange(o.value); setOpen(false); setQ('') }}
-              style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13, borderBottom: i < filtered.length - 1 ? '1px solid var(--border)' : 'none' }}
-              onMouseEnter={e => e.currentTarget.style.background = 'var(--bg)'}
-              onMouseLeave={e => e.currentTarget.style.background = ''}>
-              {o.label}
-            </div>
-          ))}
-        </div>
-      )}
+      <datalist id={listId}>
+        {options.map((o, i) => <option key={i} value={o.value}>{o.label !== o.value ? o.label : null}</option>)}
+      </datalist>
     </div>
   )
 }
@@ -7925,7 +7901,7 @@ function UdlaegKonfig({ authUser }) {
     // Hent afdelinger til afdeling-dropdown
     getDocs(collection(db, 'afdelinger'))
       .then(snap => {
-        const names = snap.docs.map(d => d.data().titel || d.id).sort((a, b) => a.localeCompare(b, 'da'))
+        const names = snap.docs.map(d => d.data().navn || d.id).sort((a, b) => a.localeCompare(b, 'da'))
         setAfdNavne(names.map(n => ({ label: n, value: n })))
       })
     getDoc(doc(db, 'settings', 'udlaeg_config')).then(snap => {
