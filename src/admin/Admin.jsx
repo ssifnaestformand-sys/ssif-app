@@ -7857,6 +7857,44 @@ function UdlaegOversigt({ authUser }) {
   )
 }
 
+function SearchCombobox({ value, onChange, options, placeholder, style }) {
+  const [q, setQ]       = useState('')
+  const [open, setOpen] = useState(false)
+
+  const displayOpt = options.find(o => o.value === value)
+  const display    = open ? q : (displayOpt ? displayOpt.label : value)
+  const filtered   = q.length > 0
+    ? options.filter(o =>
+        o.label.toLowerCase().includes(q.toLowerCase()) ||
+        o.value.toLowerCase().includes(q.toLowerCase()))
+    : options
+
+  return (
+    <div style={{ position: 'relative', ...style }}>
+      <input value={display}
+        onChange={e => { setQ(e.target.value); onChange(e.target.value); setOpen(true) }}
+        onFocus={() => { setQ(''); setOpen(true) }}
+        onBlur={() => { setOpen(false); setQ('') }}
+        placeholder={placeholder}
+        autoComplete="off"
+        style={{ width: '100%', border: '1.5px solid var(--border)', borderRadius: 8, padding: '7px 10px', fontSize: 13, boxSizing: 'border-box', background: 'var(--card)' }} />
+      {open && filtered.length > 0 && (
+        <div style={{ position: 'absolute', zIndex: 200, top: 'calc(100% + 2px)', left: 0, right: 0, background: 'var(--card)', border: '1.5px solid var(--border)', borderRadius: 8, boxShadow: '0 6px 24px rgba(0,0,0,.14)', maxHeight: 220, overflowY: 'auto' }}>
+          {filtered.map((o, i) => (
+            <div key={i}
+              onMouseDown={e => { e.preventDefault(); onChange(o.value); setOpen(false); setQ('') }}
+              style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13, borderBottom: i < filtered.length - 1 ? '1px solid var(--border)' : 'none' }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--bg)'}
+              onMouseLeave={e => e.currentTarget.style.background = ''}>
+              {o.label}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function UdlaegKonfig({ authUser }) {
   const [loading,    setLoading]    = useState(true)
   const [saving,     setSaving]     = useState(false)
@@ -7871,8 +7909,25 @@ function UdlaegKonfig({ authUser }) {
   const [afdelinger,      setAfdelinger]      = useState([]) // [{navn, formand_email}]
   const [nyAfdNavn,       setNyAfdNavn]       = useState('')
   const [nyAfdEmail,      setNyAfdEmail]      = useState('')
+  const [ledere,          setLedere]          = useState([]) // [{label, value}] til dropdowns
+  const [afdNavne,        setAfdNavne]        = useState([]) // [{label, value}] til dropdowns
 
   useEffect(() => {
+    // Hent trænere og admins til formand-dropdown
+    getDocs(query(collection(db, 'users'), where('role', 'in', ['admin', 'trainer'])))
+      .then(snap => {
+        const list = snap.docs
+          .map(d => ({ navn: d.data().navn || d.data().displayName || '', email: d.data().email || '' }))
+          .filter(l => l.email)
+          .sort((a, b) => (a.navn || a.email).localeCompare(b.navn || b.email, 'da'))
+        setLedere(list.map(l => ({ label: l.navn ? `${l.navn} — ${l.email}` : l.email, value: l.email })))
+      })
+    // Hent afdelinger til afdeling-dropdown
+    getDocs(collection(db, 'afdelinger'))
+      .then(snap => {
+        const names = snap.docs.map(d => d.data().titel || d.id).sort((a, b) => a.localeCompare(b, 'da'))
+        setAfdNavne(names.map(n => ({ label: n, value: n })))
+      })
     getDoc(doc(db, 'settings', 'udlaeg_config')).then(snap => {
       if (!snap.exists()) { setLoading(false); return }
       const d = snap.data()
@@ -7939,7 +7994,10 @@ function UdlaegKonfig({ authUser }) {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 28 }}>
         <LabelInput label="Bogholderens email (Pia)" value={bogholderEmail} onChange={setBogholderEmail} type="email" placeholder="pia@sejssvejbaek-if.dk" />
-        <LabelInput label="HB-formands email (godkender udlæg >100.000 kr.)" value={hbEmail} onChange={setHbEmail} type="email" placeholder="hb@sejssvejbaek-if.dk" />
+        <div>
+          <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', display: 'block', marginBottom: 4 }}>HB-formands email (godkender udlæg &gt;100.000 kr.)</label>
+          <SearchCombobox value={hbEmail} onChange={setHbEmail} options={ledere} placeholder="Vælg HB-formand…" />
+        </div>
         <LabelInput label="Beløbsgrænse for HB-godkendelse (kr.)" value={graense} onChange={setGraense} type="number" placeholder="100000" />
         <LabelInput label="e-conomic journal-nummer (valgfrit)" value={journalNr} onChange={setJournalNr} type="number" placeholder="1" />
         <LabelInput label="e-conomic modkonto (valgfrit, f.eks. 6610)" value={contraKonto} onChange={setContraKonto} type="number" placeholder="6610" />
@@ -7949,19 +8007,21 @@ function UdlaegKonfig({ authUser }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
         {afdelinger.map((a, i) => (
           <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <input value={a.navn} onChange={e => setAfdelinger(prev => prev.map((x, j) => j === i ? { ...x, navn: e.target.value } : x))}
-              placeholder="Afdelingnavn" style={{ flex: 2, border: '1.5px solid var(--border)', borderRadius: 8, padding: '7px 10px', fontSize: 13 }} />
-            <input value={a.formand_email} onChange={e => setAfdelinger(prev => prev.map((x, j) => j === i ? { ...x, formand_email: e.target.value } : x))}
-              placeholder="Formand email" type="email" style={{ flex: 3, border: '1.5px solid var(--border)', borderRadius: 8, padding: '7px 10px', fontSize: 13 }} />
+            <SearchCombobox value={a.navn}
+              onChange={v => setAfdelinger(prev => prev.map((x, j) => j === i ? { ...x, navn: v } : x))}
+              options={afdNavne} placeholder="Afdelingsnavn" style={{ flex: 2 }} />
+            <SearchCombobox value={a.formand_email}
+              onChange={v => setAfdelinger(prev => prev.map((x, j) => j === i ? { ...x, formand_email: v } : x))}
+              options={ledere} placeholder="Vælg formand…" style={{ flex: 3 }} />
             <button onClick={() => setAfdelinger(prev => prev.filter((_, j) => j !== i))}
               style={{ background: 'none', border: 'none', color: '#dc2626', fontSize: 18, cursor: 'pointer', padding: '0 4px', flexShrink: 0 }}>×</button>
           </div>
         ))}
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input value={nyAfdNavn} onChange={e => setNyAfdNavn(e.target.value)}
-            placeholder="Ny afdeling…" style={{ flex: 2, border: '1.5px dashed var(--border)', borderRadius: 8, padding: '7px 10px', fontSize: 13, background: 'var(--bg)' }} />
-          <input value={nyAfdEmail} onChange={e => setNyAfdEmail(e.target.value)}
-            placeholder="Formand email" type="email" style={{ flex: 3, border: '1.5px dashed var(--border)', borderRadius: 8, padding: '7px 10px', fontSize: 13, background: 'var(--bg)' }} />
+          <SearchCombobox value={nyAfdNavn} onChange={setNyAfdNavn}
+            options={afdNavne} placeholder="Ny afdeling…" style={{ flex: 2 }} />
+          <SearchCombobox value={nyAfdEmail} onChange={setNyAfdEmail}
+            options={ledere} placeholder="Vælg formand…" style={{ flex: 3 }} />
           <button onClick={tilføjAfdeling} disabled={!nyAfdNavn.trim()}
             style={{ background: 'var(--green)', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
             + Tilføj
