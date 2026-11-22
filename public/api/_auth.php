@@ -334,14 +334,25 @@ function trainer_auth(): array {
     if (!$fsToken) { http_response_code(500); echo json_encode(['error' => 'OAuth fejlede']); exit; }
 
     // conventus_id og displayName er ikke Firebase JWT-claims — hent fra Firestore users-doc
-    $userDoc      = fs_get("https://firestore.googleapis.com/v1/projects/{$projectId}/databases/(default)/documents/users/{$uid}", $fsToken);
+    $base         = "https://firestore.googleapis.com/v1/projects/{$projectId}/databases/(default)/documents";
+    $userDoc      = fs_get("{$base}/users/{$uid}", $fsToken);
     if ($conventus_id === '') {
         $conventus_id = $userDoc['fields']['conventus_id']['stringValue'] ?? '';
     }
     $displayName = $userDoc['fields']['displayName']['stringValue'] ?? '';
 
-    // Hvis conventus_id stadig mangler (f.eks. admin der ikke har logget ind i træner-appen),
-    // find member-doc via email og udled conventus_id + Conventus-navn derfra
+    // "conventus_XXXXXX" er et placeholder-navn sat af Conventus-login — ikke et rigtigt navn.
+    // Behandl det som tomt og hent det rigtige navn fra members-collection i stedet.
+    if (preg_match('/^conventus_\d+$/i', $displayName)) $displayName = '';
+
+    // Hent autoritativt Conventus-navn fra members-collection
+    if ($conventus_id !== '' && $displayName === '') {
+        $memberDoc   = fs_get("{$base}/members/{$conventus_id}", $fsToken);
+        $membersName = $memberDoc['fields']['name']['stringValue'] ?? '';
+        if ($membersName !== '') $displayName = $membersName;
+    }
+
+    // Sidst: fallback via email (f.eks. admin uden Conventus-konto)
     if ($conventus_id === '' && $email !== '') {
         $memberRows = fs_run_query($projectId, $fsToken, ['structuredQuery' => [
             'from'  => [['collectionId' => 'members']],
@@ -355,8 +366,8 @@ function trainer_auth(): array {
         foreach ($memberRows as $mr) {
             if (!isset($mr['document']['fields'])) continue;
             $conventus_id = basename($mr['document']['name'] ?? '');
-            $conventus_displayName = $mr['document']['fields']['name']['stringValue'] ?? '';
-            if ($conventus_displayName !== '') $displayName = $conventus_displayName;
+            $membersName  = $mr['document']['fields']['name']['stringValue'] ?? '';
+            if ($membersName !== '') $displayName = $membersName;
             break;
         }
     }
