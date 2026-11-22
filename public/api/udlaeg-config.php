@@ -71,10 +71,10 @@ usort($afdelingerListe, fn($a, $b) => strcmp($a['navn'], $b['navn']));
 $erFormand = false;
 if ($email) {
     foreach ($afdelingerRaw as $afd) {
-        if (($afd['formand_email'] ?? '') === $email) { $erFormand = true; break; }
+        if (strtolower($afd['formand_email'] ?? '') === $email) { $erFormand = true; break; }
     }
     // HB-formand
-    if (!$erFormand && ($config['hb_formand_email']['stringValue'] ?? '') === $email) {
+    if (!$erFormand && strtolower($config['hb_formand_email']['stringValue'] ?? '') === $email) {
         $erFormand = true;
     }
 }
@@ -132,11 +132,10 @@ $afventer = 0;
 if ($erFormand && $email) {
     $formandAfdelinger = [];
     foreach ($afdelingerRaw as $afdId => $afd) {
-        if (($afd['formand_email'] ?? '') === $email) $formandAfdelinger[] = $afdId;
+        if (strtolower($afd['formand_email'] ?? '') === $email) $formandAfdelinger[] = $afdId;
     }
-    $erHB = ($config['hb_formand_email']['stringValue'] ?? '') === $email;
+    $erHB = strtolower($config['hb_formand_email']['stringValue'] ?? '') === $email;
 
-    // Tæl afventer_formand for formand-afdelinger
     foreach ($formandAfdelinger as $afdNavn) {
         $rows = fs_run_query($projectId, $fsToken, ['structuredQuery' => [
             'from'  => [['collectionId' => 'udlaeg']],

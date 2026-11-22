@@ -52,7 +52,8 @@ $godkGraense = (int)($config['godkendelse_graense']['integerValue'] ?? 100000);
 
 $afdeling            = $uf['afdeling']['stringValue']      ?? '';
 $status              = $uf['status']['stringValue']        ?? '';
-$formandEmail        = $afdelinger[$afdeling]['formand_email'] ?? '';
+$formandEmail        = strtolower($afdelinger[$afdeling]['formand_email'] ?? '');
+$hbEmail             = strtolower($hbEmail);
 $godkenderEmailOverride = strtolower(trim($uf['godkenderEmail']['stringValue'] ?? ''));
 
 // ── Autorisationstjek ─────────────────────────────────────────────────────────

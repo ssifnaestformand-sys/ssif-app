@@ -77,9 +77,9 @@ if ($email) {
 
     $formandFor = [];
     foreach ($afdelinger as $afdId => $afd) {
-        if (($afd['formand_email'] ?? '') === $email) $formandFor[] = $afdId;
+        if (strtolower($afd['formand_email'] ?? '') === $email) $formandFor[] = $afdId;
     }
-    $erHB = ($hbEmail && $email === $hbEmail);
+    $erHB = ($hbEmail && $email === strtolower($hbEmail));
 
     // Formand: hent afventer_formand og filtrer til egne afdelinger i PHP
     if (!empty($formandFor)) {
