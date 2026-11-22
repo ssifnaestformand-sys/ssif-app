@@ -20,38 +20,14 @@ set_cors_headers();
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(200); exit; }
 if ($_SERVER['REQUEST_METHOD'] !== 'POST')    { http_response_code(405); echo json_encode(['error' => 'Kun POST']); exit; }
 
-// ── Auth via trainer_auth() — verificerer Firebase-token og members-collection ─
-// Accepterer admin (users.isAdmin / users.role='admin') OG trænere/ledere
-// (members.isLeder=true). Afhænger ikke af den udfasede users.role='trainer'.
+// ── Auth: verificerer Firebase ID-token — samme kriterium som app-adgang ──────
+// Alle med et gyldigt token (dvs. er logget ind i træner-appen) har lov til
+// at uploade. trainer_auth() kaster HTTP 401 ved ugyldigt token.
 $auth      = trainer_auth();
 $uid       = $auth['uid'];
 $fsToken   = $auth['fsToken'];
 $projectId = $auth['projectId'];
 $base      = $auth['base'];
-
-// Tillad admin-flag fra users-collection (backoffice) eller isLeder fra members (trænere)
-$userDoc = fs_get("{$base}/users/{$uid}", $fsToken);
-$role    = $userDoc['fields']['role']['stringValue']    ?? '';
-$isAdmin = $userDoc['fields']['isAdmin']['booleanValue']?? false;
-if (!$isAdmin && $role !== 'admin' && $role !== 'trainer') {
-    $email  = $auth['email'];
-    $erLeder = false;
-    if ($email) {
-        $mRows = fs_run_query($projectId, $fsToken, ['structuredQuery' => [
-            'from'  => [['collectionId' => 'members']],
-            'where' => ['fieldFilter' => ['field' => ['fieldPath' => 'allEmails'], 'op' => 'ARRAY_CONTAINS', 'value' => ['stringValue' => $email]]],
-            'limit' => 1,
-        ]]);
-        foreach ($mRows as $mr) {
-            if ($mr['document']['fields']['isLeder']['booleanValue'] ?? false) { $erLeder = true; break; }
-        }
-    }
-    if (!$erLeder) {
-        http_response_code(403);
-        echo json_encode(['error' => 'Adgang nægtet — kræver admin- eller træner-rolle']);
-        exit;
-    }
-}
 
 // ── Validér fil ───────────────────────────────────────────────────────────────
 if (empty($_FILES['image']) || $_FILES['image']['error'] !== UPLOAD_ERR_OK) {
