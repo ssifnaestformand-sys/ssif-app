@@ -7670,8 +7670,20 @@ function UdlaegOversigt({ authUser }) {
   const [modalMode,  setModalMode]  = useState('godkend')
   const [saving,     setSaving]     = useState(false)
   const [saveError,  setSaveError]  = useState('')
+  const [ledere,     setLedere]     = useState([])
+  const [videresendEmail, setVideresendEmail] = useState('')
 
-  useEffect(() => { loadData() }, [])
+  useEffect(() => {
+    loadData()
+    getDocs(query(collection(db, 'members'), where('isLeder', '==', true)))
+      .then(snap => {
+        const list = snap.docs
+          .map(d => ({ navn: d.data().name || '', email: (d.data().allEmails || [])[0] || '' }))
+          .filter(l => l.email)
+          .sort((a, b) => (a.navn || a.email).localeCompare(b.navn || b.email, 'da'))
+        setLedere(list.map(l => ({ label: l.navn ? `${l.navn} — ${l.email}` : l.email, value: l.email })))
+      })
+  }, [])
 
   async function loadData() {
     setLoading(true); setError('')
@@ -7716,6 +7728,23 @@ function UdlaegOversigt({ authUser }) {
     finally { setSaving(false) }
   }
 
+  async function handleVideresend() {
+    if (!videresendEmail.trim()) { setSaveError('Vælg en godkender'); return }
+    setSaving(true); setSaveError('')
+    try {
+      const idToken = await authUser.getIdToken()
+      const res = await fetch('/api/udlaeg-videresend.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ udlaegId: selected.id, godkenderEmail: videresendEmail }),
+      })
+      const data = await res.json()
+      if (data.ok) { setSelected(null); loadData() }
+      else setSaveError(data.error || 'Fejl')
+    } catch { setSaveError('Fejl ved videresendelse') }
+    finally { setSaving(false) }
+  }
+
   const statusOptions = ['alle', 'afventer_formand', 'afventer_hb', 'godkendt', 'afvist']
   const filtered = filterStatus === 'alle' ? udlaeg : udlaeg.filter(u => u.status === filterStatus)
 
@@ -7745,7 +7774,7 @@ function UdlaegOversigt({ authUser }) {
             <tbody>
               {filtered.map(u => (
                 <tr key={u.id} style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
-                  onClick={() => { setSelected(u); setKontering(''); setKonteringNavn(''); setBegrundelse(''); setSaveError(''); setModalMode('godkend') }}>
+                  onClick={() => { setSelected(u); setKontering(''); setKonteringNavn(''); setBegrundelse(''); setSaveError(''); setVideresendEmail(''); setModalMode(u.status === 'afventer_formand' ? 'videresend' : 'godkend') }}>
                   <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
                     {u.indsendt?.toDate?.().toLocaleDateString('da-DK') || (u.indsendt ? new Date(u.indsendt).toLocaleDateString('da-DK') : '–')}
                   </td>
@@ -7808,19 +7837,22 @@ function UdlaegOversigt({ authUser }) {
                 </tr>
               )}
             </table>
-            {(selected.status === 'afventer_hb') && (
+            {['afventer_formand', 'afventer_hb'].includes(selected.status) && (
               <>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                  {['godkend', 'afvis'].map(m => (
+                <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+                  {[
+                    ...(selected.status === 'afventer_hb' ? [['godkend', 'Godkend'], ['afvis', 'Afvis']] : []),
+                    ['videresend', 'Videresend'],
+                  ].map(([m, label]) => (
                     <button key={m} onClick={() => { setModalMode(m); setSaveError('') }} style={{
                       flex: 1, padding: '8px 0', fontSize: 13, fontWeight: 600, borderRadius: 8, cursor: 'pointer',
-                      background: modalMode === m ? (m === 'afvis' ? '#dc2626' : 'var(--green)') : 'var(--bg)',
+                      background: modalMode === m ? (m === 'afvis' ? '#dc2626' : m === 'videresend' ? '#1d4ed8' : 'var(--green)') : 'var(--bg)',
                       color: modalMode === m ? '#fff' : 'var(--text)',
-                      border: '1.5px solid ' + (m === 'afvis' ? '#dc2626' : 'var(--green)'),
-                    }}>{m === 'godkend' ? 'Godkend' : 'Afvis'}</button>
+                      border: '1.5px solid ' + (m === 'afvis' ? '#dc2626' : m === 'videresend' ? '#1d4ed8' : 'var(--green)'),
+                    }}>{label}</button>
                   ))}
                 </div>
-                {modalMode === 'godkend' ? (
+                {modalMode === 'godkend' && selected.status === 'afventer_hb' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                     <div>
                       <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', display: 'block', marginBottom: 4 }}>Kontering</label>
@@ -7835,7 +7867,8 @@ function UdlaegOversigt({ authUser }) {
                       {saving ? 'Godkender…' : 'Godkend udlæg (HB)'}
                     </button>
                   </div>
-                ) : (
+                )}
+                {modalMode === 'afvis' && selected.status === 'afventer_hb' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                     <div>
                       <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', display: 'block', marginBottom: 4 }}>Begrundelse</label>
@@ -7845,6 +7878,26 @@ function UdlaegOversigt({ authUser }) {
                     {saveError && <p style={{ color: 'red', fontSize: 13, margin: 0 }}>{saveError}</p>}
                     <button className="btn btn-primary" style={{ background: '#dc2626' }} disabled={saving || !begrundelse.trim()} onClick={handleAfvis}>
                       {saving ? 'Afviser…' : 'Bekræft afvisning'}
+                    </button>
+                  </div>
+                )}
+                {modalMode === 'videresend' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <p style={{ fontSize: 13, color: 'var(--text3)', margin: 0 }}>
+                      Send udlægget til en anden træner/leder som godkender. Den valgte person modtager en mail og kan godkende i appen.
+                    </p>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', display: 'block', marginBottom: 4 }}>Videresend til</label>
+                      <SearchCombobox
+                        value={videresendEmail}
+                        onChange={setVideresendEmail}
+                        options={ledere}
+                        placeholder="Søg på navn eller email…"
+                      />
+                    </div>
+                    {saveError && <p style={{ color: 'red', fontSize: 13, margin: 0 }}>{saveError}</p>}
+                    <button className="btn btn-primary" style={{ background: '#1d4ed8' }} disabled={saving || !videresendEmail.trim()} onClick={handleVideresend}>
+                      {saving ? 'Sender…' : 'Send til godkendelse'}
                     </button>
                   </div>
                 )}

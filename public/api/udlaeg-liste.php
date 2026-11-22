@@ -108,6 +108,22 @@ if ($email) {
         }
     }
 
+    // Videresentde udlæg: hent alle hvor godkenderEmail == brugeren og status afventer
+    $rows = fs_run_query($projectId, $fsToken, ['structuredQuery' => [
+        'from'  => [['collectionId' => 'udlaeg']],
+        'where' => ['fieldFilter' => ['field' => ['fieldPath' => 'godkenderEmail'], 'op' => 'EQUAL', 'value' => ['stringValue' => $email]]],
+        'limit' => 50,
+    ]]);
+    $allIds = array_column($tilGodkendelse, 'id');
+    foreach ($rows as $r) {
+        if (!isset($r['document'])) continue;
+        $u = fmt_udlaeg($r['document']);
+        if (in_array($u['status'], ['afventer_formand', 'afventer_hb'], true) && !in_array($u['id'], $allIds, true)) {
+            $tilGodkendelse[] = $u;
+            $allIds[]         = $u['id'];
+        }
+    }
+
     usort($tilGodkendelse, fn($a, $b) => strcmp($b['indsendt'], $a['indsendt']));
 }
 

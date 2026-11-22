@@ -50,13 +50,17 @@ $hbEmail    = $config['hb_formand_email']['stringValue'] ?? '';
 $bogholderEmail = $config['bogholder_email']['stringValue'] ?? '';
 $godkGraense = (int)($config['godkendelse_graense']['integerValue'] ?? 100000);
 
-$afdeling     = $uf['afdeling']['stringValue'] ?? '';
-$status       = $uf['status']['stringValue']   ?? '';
-$formandEmail = $afdelinger[$afdeling]['formand_email'] ?? '';
+$afdeling            = $uf['afdeling']['stringValue']      ?? '';
+$status              = $uf['status']['stringValue']        ?? '';
+$formandEmail        = $afdelinger[$afdeling]['formand_email'] ?? '';
+$godkenderEmailOverride = strtolower(trim($uf['godkenderEmail']['stringValue'] ?? ''));
 
 // ── Autorisationstjek ─────────────────────────────────────────────────────────
-$erFormand = $email && $email === $formandEmail;
-$erHB      = $email && $email === $hbEmail;
+// godkenderEmail-feltet (sat af admin via videresend) har forrang frem for
+// afdelingens konfigurerede formand_email.
+$erTildelteGodkender = $email && $godkenderEmailOverride && $email === $godkenderEmailOverride;
+$erFormand = $email && ($email === $formandEmail || $erTildelteGodkender);
+$erHB      = $email && ($email === $hbEmail      || $erTildelteGodkender);
 
 $maaGodkende = ($status === 'afventer_formand' && $erFormand)
             || ($status === 'afventer_hb'      && $erHB);
