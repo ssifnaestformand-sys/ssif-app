@@ -7935,11 +7935,14 @@ function UdlaegKonfig({ authUser }) {
   const [graense,         setGraense]         = useState('100000')
   const [journalNr,       setJournalNr]       = useState('')
   const [contraKonto,     setContraKonto]     = useState('')
-  const [afdelinger,      setAfdelinger]      = useState([]) // [{navn, formand_email}]
+  const [afdelinger,      setAfdelinger]      = useState([]) // [{navn, formand_email, kontoplan:[]}]
   const [nyAfdNavn,       setNyAfdNavn]       = useState('')
   const [nyAfdEmail,      setNyAfdEmail]      = useState('')
   const [ledere,          setLedere]          = useState([]) // [{label, value}] til dropdowns
   const [afdNavne,        setAfdNavne]        = useState([]) // [{label, value}] til dropdowns
+  const [kontoplan,       setKontoplan]       = useState([]) // [{nummer, navn}] fra e-conomic cache
+  const [expandedAfd,     setExpandedAfd]     = useState(null) // index af udvidet afdeling
+  const [kontoFilter,     setKontoFilter]     = useState('')
 
   useEffect(() => {
     // Hent trænere (isLeder=true i members) til formand-dropdown — samme kilde som Trænere-oversigten
@@ -7957,6 +7960,11 @@ function UdlaegKonfig({ authUser }) {
         const names = snap.docs.map(d => d.data().navn || d.id).sort((a, b) => a.localeCompare(b, 'da'))
         setAfdNavne(names.map(n => ({ label: n, value: n })))
       })
+    // Hent kontoplan fra e-conomic cache
+    getDoc(doc(db, 'settings', 'economic_accounts_cache')).then(snap => {
+      if (!snap.exists()) return
+      try { setKontoplan(JSON.parse(snap.data().data || '[]') || []) } catch {}
+    })
     getDoc(doc(db, 'settings', 'udlaeg_config')).then(snap => {
       if (!snap.exists()) { setLoading(false); return }
       const d = snap.data()
@@ -7967,7 +7975,11 @@ function UdlaegKonfig({ authUser }) {
       setContraKonto(String(d.economic_contra_account || ''))
       try {
         const afd = JSON.parse(d.afdelinger || '{}')
-        setAfdelinger(Object.entries(afd).map(([navn, v]) => ({ navn, formand_email: v.formand_email || '' })))
+        setAfdelinger(Object.entries(afd).map(([navn, v]) => ({
+          navn,
+          formand_email: v.formand_email || '',
+          kontoplan: Array.isArray(v.kontoplan) ? v.kontoplan : [],
+        })))
       } catch {}
     }).catch(e => setError(e.message)).finally(() => setLoading(false))
   }, [])
@@ -7976,7 +7988,11 @@ function UdlaegKonfig({ authUser }) {
     setSaving(true); setSaved(false); setError('')
     const afdelingerObj = {}
     for (const a of afdelinger) {
-      if (a.navn.trim()) afdelingerObj[a.navn.trim()] = { navn: a.navn.trim(), formand_email: a.formand_email.trim() }
+      if (a.navn.trim()) afdelingerObj[a.navn.trim()] = {
+        navn: a.navn.trim(),
+        formand_email: a.formand_email.trim(),
+        kontoplan: a.kontoplan || [],
+      }
     }
     try {
       const idToken = await authUser.getIdToken()
@@ -8001,7 +8017,7 @@ function UdlaegKonfig({ authUser }) {
 
   function tilføjAfdeling() {
     if (!nyAfdNavn.trim()) return
-    setAfdelinger(prev => [...prev, { navn: nyAfdNavn.trim(), formand_email: nyAfdEmail.trim() }])
+    setAfdelinger(prev => [...prev, { navn: nyAfdNavn.trim(), formand_email: nyAfdEmail.trim(), kontoplan: [] }])
     setNyAfdNavn(''); setNyAfdEmail('')
   }
 
@@ -8034,18 +8050,73 @@ function UdlaegKonfig({ authUser }) {
 
       <h3 style={{ fontSize: 15, fontWeight: 800, marginBottom: 12 }}>Afdelinger og formænd</h3>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
-        {afdelinger.map((a, i) => (
-          <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <SearchCombobox value={a.navn}
-              onChange={v => setAfdelinger(prev => prev.map((x, j) => j === i ? { ...x, navn: v } : x))}
-              options={afdNavne} placeholder="Afdelingsnavn" style={{ flex: 2 }} />
-            <SearchCombobox value={a.formand_email}
-              onChange={v => setAfdelinger(prev => prev.map((x, j) => j === i ? { ...x, formand_email: v } : x))}
-              options={ledere} placeholder="Vælg formand…" style={{ flex: 3 }} />
-            <button onClick={() => setAfdelinger(prev => prev.filter((_, j) => j !== i))}
-              style={{ background: 'none', border: 'none', color: '#dc2626', fontSize: 18, cursor: 'pointer', padding: '0 4px', flexShrink: 0 }}>×</button>
+        {afdelinger.map((a, i) => {
+          const isExpanded = expandedAfd === i
+          const valgte = a.kontoplan || []
+          const filteredKontoplan = kontoplan.filter(k =>
+            !kontoFilter || k.nummer.includes(kontoFilter) || k.navn.toLowerCase().includes(kontoFilter.toLowerCase())
+          )
+          return (
+          <div key={i} style={{ border: isExpanded ? '1.5px solid var(--green)' : '1.5px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 10px', background: isExpanded ? 'rgba(74,222,128,0.06)' : 'transparent' }}>
+              <SearchCombobox value={a.navn}
+                onChange={v => setAfdelinger(prev => prev.map((x, j) => j === i ? { ...x, navn: v } : x))}
+                options={afdNavne} placeholder="Afdelingsnavn" style={{ flex: 2 }} />
+              <SearchCombobox value={a.formand_email}
+                onChange={v => setAfdelinger(prev => prev.map((x, j) => j === i ? { ...x, formand_email: v } : x))}
+                options={ledere} placeholder="Vælg formand…" style={{ flex: 3 }} />
+              <button onClick={() => { setExpandedAfd(isExpanded ? null : i); setKontoFilter('') }}
+                title="Administrer kontoplan for denne afdeling"
+                style={{ background: isExpanded ? 'var(--green)' : 'var(--bg)', border: '1.5px solid var(--border)', borderRadius: 7, padding: '5px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer', flexShrink: 0, color: isExpanded ? '#fff' : 'var(--text3)', whiteSpace: 'nowrap' }}>
+                {valgte.length ? `Konti (${valgte.length})` : 'Konti (alle)'}
+              </button>
+              <button onClick={() => setAfdelinger(prev => prev.filter((_, j) => j !== i))}
+                style={{ background: 'none', border: 'none', color: '#dc2626', fontSize: 18, cursor: 'pointer', padding: '0 4px', flexShrink: 0 }}>×</button>
+            </div>
+            {isExpanded && (
+              <div style={{ padding: '12px 14px', borderTop: '1px solid var(--border)', background: 'var(--bg)' }}>
+                <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10 }}>
+                  {valgte.length === 0
+                    ? '✓ Alle konti vises (ingen begrænsning). Sæt flueben for at begrænse til specifikke konti.'
+                    : `✓ ${valgte.length} ud af ${kontoplan.length} konti er valgt. Kun disse vises i appen.`}
+                </div>
+                {kontoplan.length === 0 && (
+                  <p style={{ fontSize: 12, color: 'var(--text3)' }}>Ingen kontoplan tilgængelig endnu — synkroniseres automatisk fra e-conomic ved næste godkendelse.</p>
+                )}
+                {kontoplan.length > 0 && (
+                  <>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 10, alignItems: 'center' }}>
+                      <input
+                        value={kontoFilter} onChange={e => setKontoFilter(e.target.value)}
+                        placeholder="Søg konto…"
+                        style={{ flex: 1, border: '1.5px solid var(--border)', borderRadius: 7, padding: '6px 10px', fontSize: 13 }} />
+                      <button onClick={() => setAfdelinger(prev => prev.map((x, j) => j === i ? { ...x, kontoplan: kontoplan.map(k => k.nummer) } : x))}
+                        style={{ fontSize: 12, border: '1.5px solid var(--border)', borderRadius: 7, padding: '5px 10px', cursor: 'pointer', background: 'none', whiteSpace: 'nowrap' }}>Vælg alle</button>
+                      <button onClick={() => setAfdelinger(prev => prev.map((x, j) => j === i ? { ...x, kontoplan: [] } : x))}
+                        style={{ fontSize: 12, border: '1.5px solid var(--border)', borderRadius: 7, padding: '5px 10px', cursor: 'pointer', background: 'none', color: '#dc2626', whiteSpace: 'nowrap' }}>Ryd valg</button>
+                    </div>
+                    <div style={{ maxHeight: 260, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      {filteredKontoplan.map(k => (
+                        <label key={k.nummer} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 6px', borderRadius: 6, cursor: 'pointer', background: valgte.includes(k.nummer) ? 'rgba(74,222,128,0.1)' : 'transparent' }}>
+                          <input type="checkbox" checked={valgte.includes(k.nummer)}
+                            onChange={e => {
+                              const updated = e.target.checked
+                                ? [...valgte, k.nummer]
+                                : valgte.filter(n => n !== k.nummer)
+                              setAfdelinger(prev => prev.map((x, j) => j === i ? { ...x, kontoplan: updated } : x))
+                            }} />
+                          <span style={{ fontSize: 13 }}><strong>{k.nummer}</strong> — {k.navn}</span>
+                        </label>
+                      ))}
+                      {filteredKontoplan.length === 0 && <p style={{ fontSize: 12, color: 'var(--text3)' }}>Ingen konti matcher søgningen.</p>}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
-        ))}
+        )})}
+
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <SearchCombobox value={nyAfdNavn} onChange={setNyAfdNavn}
             options={afdNavne} placeholder="Ny afdeling…" style={{ flex: 2 }} />

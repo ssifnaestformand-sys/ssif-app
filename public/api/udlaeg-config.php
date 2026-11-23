@@ -23,6 +23,9 @@ set_cors_headers();
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(200); exit; }
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') { http_response_code(405); echo json_encode(['error' => 'Kun POST']); exit; }
 
+$raw        = json_decode(file_get_contents('php://input'), true) ?: [];
+$reqAfdeling = trim($raw['afdeling'] ?? '');
+
 $auth       = trainer_auth();
 $uid        = $auth['uid'];
 $email      = $auth['email'];
@@ -125,6 +128,14 @@ if ($econAppToken && $econAgrToken) {
                     'ignore_errors' => true,
                 ]]));
         }
+    }
+}
+
+// ── Filtrer kontoplan til afdeling (hvis angivet) ────────────────────────────
+if ($reqAfdeling !== '' && !empty($kontoplan) && isset($afdelingerRaw[$reqAfdeling])) {
+    $whitelist = $afdelingerRaw[$reqAfdeling]['kontoplan'] ?? [];
+    if (!empty($whitelist)) {
+        $kontoplan = array_values(array_filter($kontoplan, fn($k) => in_array($k['nummer'], $whitelist, true)));
     }
 }
 

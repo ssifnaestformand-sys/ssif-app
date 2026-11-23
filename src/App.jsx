@@ -3419,7 +3419,7 @@ function UdlaegGodkendScreen({ user, udlaeg, onBack, onDone }) {
       fetch('/api/udlaeg-config.php', {
         method: 'POST',
         headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ afdeling: udlaeg.afdeling }),
       }).then(r => r.json()).then(d => { if (!d.error) setConfig(d) }).catch(() => {})
     )
   }, [])
