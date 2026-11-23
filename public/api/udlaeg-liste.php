@@ -70,7 +70,7 @@ usort($mine, fn($a, $b) => strcmp($b['indsendt'], $a['indsendt']));
 
 // ── Til godkendelse (formand-view) ────────────────────────────────────────────
 $tilGodkendelse = [];
-if ($email) {
+if (!empty($allEmails)) {
     $configDoc  = fs_get("{$base}/settings/udlaeg_config", $fsToken);
     $config     = $configDoc['fields'] ?? [];
     $afdelinger = json_decode($config['afdelinger']['stringValue'] ?? '{}', true) ?: [];

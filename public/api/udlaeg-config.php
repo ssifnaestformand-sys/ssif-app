@@ -70,7 +70,7 @@ usort($afdelingerListe, fn($a, $b) => strcmp($a['navn'], $b['navn']));
 
 // ── Tjek om brugeren er formand for en afdeling ──────────────────────────────
 $erFormand = false;
-if ($email) {
+if (!empty($allEmails)) {
     foreach ($afdelingerRaw as $afd) {
         if (in_array(strtolower($afd['formand_email'] ?? ''), $allEmails, true)) { $erFormand = true; break; }
     }
@@ -130,7 +130,7 @@ if ($econAppToken && $econAgrToken) {
 
 // ── Antal afventende godkendelser (formand-view) ──────────────────────────────
 $afventer = 0;
-if ($erFormand && $email) {
+if ($erFormand && !empty($allEmails)) {
     $formandAfdelinger = [];
     foreach ($afdelingerRaw as $afdId => $afd) {
         if (in_array(strtolower($afd['formand_email'] ?? ''), $allEmails, true)) $formandAfdelinger[] = $afdId;
