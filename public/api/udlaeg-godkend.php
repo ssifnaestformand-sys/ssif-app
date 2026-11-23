@@ -25,6 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') { http_response_code(405); echo json_
 $auth       = trainer_auth();
 $uid        = $auth['uid'];
 $email      = $auth['email'];
+$allEmails  = $auth['allEmails'];
 $displayName = $auth['displayName'] ?: $email;
 $fsToken    = $auth['fsToken'];
 $projectId  = $auth['projectId'];
@@ -59,9 +60,9 @@ $godkenderEmailOverride = strtolower(trim($uf['godkenderEmail']['stringValue'] ?
 // ── Autorisationstjek ─────────────────────────────────────────────────────────
 // godkenderEmail-feltet (sat af admin via videresend) har forrang frem for
 // afdelingens konfigurerede formand_email.
-$erTildelteGodkender = $email && $godkenderEmailOverride && $email === $godkenderEmailOverride;
-$erFormand = $email && ($email === $formandEmail || $erTildelteGodkender);
-$erHB      = $email && ($email === $hbEmail      || $erTildelteGodkender);
+$erTildelteGodkender = $godkenderEmailOverride && in_array($godkenderEmailOverride, $allEmails, true);
+$erFormand = in_array($formandEmail, $allEmails, true) || $erTildelteGodkender;
+$erHB      = in_array($hbEmail,      $allEmails, true) || $erTildelteGodkender;
 
 $maaGodkende = ($status === 'afventer_formand' && $erFormand)
             || ($status === 'afventer_hb'      && $erHB);

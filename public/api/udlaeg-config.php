@@ -26,6 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') { http_response_code(405); echo json_
 $auth       = trainer_auth();
 $uid        = $auth['uid'];
 $email      = $auth['email'];
+$allEmails  = $auth['allEmails'];
 $conventus  = $auth['conventus_id'];
 $fsToken    = $auth['fsToken'];
 $projectId  = $auth['projectId'];
@@ -71,10 +72,10 @@ usort($afdelingerListe, fn($a, $b) => strcmp($a['navn'], $b['navn']));
 $erFormand = false;
 if ($email) {
     foreach ($afdelingerRaw as $afd) {
-        if (strtolower($afd['formand_email'] ?? '') === $email) { $erFormand = true; break; }
+        if (in_array(strtolower($afd['formand_email'] ?? ''), $allEmails, true)) { $erFormand = true; break; }
     }
     // HB-formand
-    if (!$erFormand && strtolower($config['hb_formand_email']['stringValue'] ?? '') === $email) {
+    if (!$erFormand && in_array(strtolower($config['hb_formand_email']['stringValue'] ?? ''), $allEmails, true)) {
         $erFormand = true;
     }
 }
@@ -132,9 +133,9 @@ $afventer = 0;
 if ($erFormand && $email) {
     $formandAfdelinger = [];
     foreach ($afdelingerRaw as $afdId => $afd) {
-        if (strtolower($afd['formand_email'] ?? '') === $email) $formandAfdelinger[] = $afdId;
+        if (in_array(strtolower($afd['formand_email'] ?? ''), $allEmails, true)) $formandAfdelinger[] = $afdId;
     }
-    $erHB = strtolower($config['hb_formand_email']['stringValue'] ?? '') === $email;
+    $erHB = in_array(strtolower($config['hb_formand_email']['stringValue'] ?? ''), $allEmails, true);
 
     foreach ($formandAfdelinger as $afdNavn) {
         $rows = fs_run_query($projectId, $fsToken, ['structuredQuery' => [

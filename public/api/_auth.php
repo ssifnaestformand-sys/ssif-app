@@ -342,18 +342,26 @@ function trainer_auth(): array {
     $displayName = $userDoc['fields']['displayName']['stringValue'] ?? '';
 
     // "conventus_XXXXXX" er et placeholder-navn sat af Conventus-login — ikke et rigtigt navn.
-    // Behandl det som tomt og hent det rigtige navn fra members-collection i stedet.
     if (preg_match('/^conventus_\d+$/i', $displayName)) $displayName = '';
 
-    // Hent autoritativt Conventus-navn fra members-collection
-    if ($conventus_id !== '' && $displayName === '') {
-        $memberDoc   = fs_get("{$base}/members/{$conventus_id}", $fsToken);
-        $membersName = $memberDoc['fields']['name']['stringValue'] ?? '';
-        if ($membersName !== '') $displayName = $membersName;
-    }
+    // allEmails: samling af alle kendte emails for brugeren (lowercase).
+    // JWT-emailen er altid med; members.allEmails tilføjes via Firestore-opslag.
+    // Bruges til formand-matching, da admin kan have gemt en anden email end JWT-emailen.
+    $allEmails = $email !== '' ? [$email] : [];
 
-    // Sidst: fallback via email (f.eks. admin uden Conventus-konto)
-    if ($conventus_id === '' && $email !== '') {
+    if ($conventus_id !== '') {
+        $memberDoc = fs_get("{$base}/members/{$conventus_id}", $fsToken);
+        if ($memberDoc) {
+            if ($displayName === '') {
+                $displayName = $memberDoc['fields']['name']['stringValue'] ?? '';
+            }
+            foreach ($memberDoc['fields']['allEmails']['arrayValue']['values'] ?? [] as $v) {
+                $e = strtolower(trim($v['stringValue'] ?? ''));
+                if ($e !== '' && !in_array($e, $allEmails, true)) $allEmails[] = $e;
+            }
+        }
+    } elseif ($email !== '') {
+        // Fallback: find member-doc via email (f.eks. admin uden Conventus-konto)
         $memberRows = fs_run_query($projectId, $fsToken, ['structuredQuery' => [
             'from'  => [['collectionId' => 'members']],
             'where' => ['fieldFilter' => [
@@ -366,8 +374,13 @@ function trainer_auth(): array {
         foreach ($memberRows as $mr) {
             if (!isset($mr['document']['fields'])) continue;
             $conventus_id = basename($mr['document']['name'] ?? '');
-            $membersName  = $mr['document']['fields']['name']['stringValue'] ?? '';
-            if ($membersName !== '') $displayName = $membersName;
+            if ($displayName === '') {
+                $displayName = $mr['document']['fields']['name']['stringValue'] ?? '';
+            }
+            foreach ($mr['document']['fields']['allEmails']['arrayValue']['values'] ?? [] as $v) {
+                $e = strtolower(trim($v['stringValue'] ?? ''));
+                if ($e !== '' && !in_array($e, $allEmails, true)) $allEmails[] = $e;
+            }
             break;
         }
     }
@@ -375,6 +388,7 @@ function trainer_auth(): array {
     return [
         'uid'          => $uid,
         'email'        => $email,
+        'allEmails'    => $allEmails,
         'conventus_id' => $conventus_id,
         'displayName'  => $displayName,
         'fsToken'      => $fsToken,

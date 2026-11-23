@@ -23,6 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') { http_response_code(405); echo json_
 $auth       = trainer_auth();
 $uid        = $auth['uid'];
 $email      = $auth['email'];
+$allEmails  = $auth['allEmails'];
 $fsToken    = $auth['fsToken'];
 $projectId  = $auth['projectId'];
 $base       = $auth['base'];
@@ -77,9 +78,9 @@ if ($email) {
 
     $formandFor = [];
     foreach ($afdelinger as $afdId => $afd) {
-        if (strtolower($afd['formand_email'] ?? '') === $email) $formandFor[] = $afdId;
+        if (in_array(strtolower($afd['formand_email'] ?? ''), $allEmails, true)) $formandFor[] = $afdId;
     }
-    $erHB = ($hbEmail && $email === strtolower($hbEmail));
+    $erHB = ($hbEmail && in_array(strtolower($hbEmail), $allEmails, true));
 
     // Formand: hent afventer_formand og filtrer til egne afdelinger i PHP
     if (!empty($formandFor)) {
@@ -108,19 +109,21 @@ if ($email) {
         }
     }
 
-    // Videresentde udlæg: hent alle hvor godkenderEmail == brugeren og status afventer
-    $rows = fs_run_query($projectId, $fsToken, ['structuredQuery' => [
-        'from'  => [['collectionId' => 'udlaeg']],
-        'where' => ['fieldFilter' => ['field' => ['fieldPath' => 'godkenderEmail'], 'op' => 'EQUAL', 'value' => ['stringValue' => $email]]],
-        'limit' => 50,
-    ]]);
-    $allIds = array_column($tilGodkendelse, 'id');
-    foreach ($rows as $r) {
-        if (!isset($r['document'])) continue;
-        $u = fmt_udlaeg($r['document']);
-        if (in_array($u['status'], ['afventer_formand', 'afventer_hb'], true) && !in_array($u['id'], $allIds, true)) {
-            $tilGodkendelse[] = $u;
-            $allIds[]         = $u['id'];
+    // Videresentde udlæg: hent for hver af brugerens kendte emails
+    $seenIds = array_column($tilGodkendelse, 'id');
+    foreach ($allEmails as $checkEmail) {
+        $rows = fs_run_query($projectId, $fsToken, ['structuredQuery' => [
+            'from'  => [['collectionId' => 'udlaeg']],
+            'where' => ['fieldFilter' => ['field' => ['fieldPath' => 'godkenderEmail'], 'op' => 'EQUAL', 'value' => ['stringValue' => $checkEmail]]],
+            'limit' => 50,
+        ]]);
+        foreach ($rows as $r) {
+            if (!isset($r['document'])) continue;
+            $u = fmt_udlaeg($r['document']);
+            if (in_array($u['status'], ['afventer_formand', 'afventer_hb'], true) && !in_array($u['id'], $seenIds, true)) {
+                $tilGodkendelse[] = $u;
+                $seenIds[]        = $u['id'];
+            }
         }
     }
 
