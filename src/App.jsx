@@ -3160,6 +3160,7 @@ function UdlaegFormScreen({ user, onBack, onSaved }) {
   const [kontoNr,      setKontoNr]   = useState('')
   const [sending,      setSending]   = useState(false)
   const [error,        setError]     = useState('')
+  const [visKvittering, setVisKvittering] = useState(false)
 
   useEffect(() => {
     user.getIdToken().then(idToken =>
@@ -3333,6 +3334,7 @@ function UdlaegFormScreen({ user, onBack, onSaved }) {
 
   // Trin 3: Kommentar + gennemgang + indsend
   return (
+    <>
     <div className="screen">
       <NavHeader title={<>Nyt udlæg <BetaTag /></>} onBack={() => setStep(2)} />
       {stepBar}
@@ -3359,10 +3361,13 @@ function UdlaegFormScreen({ user, onBack, onSaved }) {
             ))}
             <div style={{ display: 'flex', padding: '10px 14px', gap: 12 }}>
               <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', width: 120, flexShrink: 0 }}>Kvittering</span>
-              <a href={kvitUrl} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: 'var(--green)', fontWeight: 600 }}>Se kvittering →</a>
+              <button type="button" onClick={() => setVisKvittering(true)} style={{ fontSize: 13, color: 'var(--green)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Se kvittering →</button>
             </div>
           </div>
 
+          <div style={{ padding: '12px 14px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, fontSize: 13, color: '#1e40af' }}>
+            💡 Der kan gå op til 14 dage fra udgiften er godkendt til den udbetales.
+          </div>
           {error && <p style={{ color: 'var(--red)', fontSize: 13, margin: 0 }}>{error}</p>}
           <button className="btn btn-primary" disabled={sending || !beskrivelse.trim()} onClick={handleIndsend} style={{ width: '100%' }}>
             {sending ? 'Sender…' : 'Indsend udlæg'}
@@ -3370,6 +3375,30 @@ function UdlaegFormScreen({ user, onBack, onSaved }) {
         </div>
       </main>
     </div>
+    {visKvittering && (
+      <div onClick={() => setVisKvittering(false)} style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', zIndex: 9998,
+        display: 'flex', flexDirection: 'column',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '12px 16px' }}>
+          <button onClick={() => setVisKvittering(false)} style={{
+            color: '#fff', background: 'none', border: 'none', fontSize: 28, cursor: 'pointer', lineHeight: 1,
+          }}>✕</button>
+        </div>
+        <div style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 12px 32px' }}
+          onClick={e => e.stopPropagation()}>
+          <img src={kvitUrl} alt="Kvittering"
+            style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: 8, objectFit: 'contain' }}
+            onError={e => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }} />
+          <a href={kvitUrl} target="_blank" rel="noreferrer"
+            style={{ display: 'none', color: '#fff', fontSize: 16, fontWeight: 600, flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontSize: 40 }}>📄</span>
+            Åbn PDF i browser →
+          </a>
+        </div>
+      </div>
+    )}
+    </>
   )
 }
 
@@ -3383,6 +3412,7 @@ function UdlaegGodkendScreen({ user, udlaeg, onBack, onDone }) {
   const [begrundelse,  setBegrundelse] = useState('')
   const [sending,      setSending]     = useState(false)
   const [error,        setError]       = useState('')
+  const [visKvittering, setVisKvittering] = useState(false)
 
   useEffect(() => {
     user.getIdToken().then(idToken =>
@@ -3431,6 +3461,7 @@ function UdlaegGodkendScreen({ user, udlaeg, onBack, onDone }) {
   const kontoOptions = config?.kontoplan || []
 
   return (
+    <>
     <div className="screen">
       <NavHeader title="Godkend udlæg" onBack={onBack} />
       <main style={{ padding: '20px 16px', maxWidth: 500, margin: '0 auto', width: '100%', flex: 1 }}>
@@ -3451,7 +3482,7 @@ function UdlaegGodkendScreen({ user, udlaeg, onBack, onDone }) {
           {udlaeg.kvitteringUrl && (
             <div style={{ padding: '10px 14px', display: 'flex', gap: 12 }}>
               <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', width: 120, flexShrink: 0 }}>Kvittering</span>
-              <a href={udlaeg.kvitteringUrl} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: 'var(--green)', fontWeight: 600 }}>Åbn →</a>
+              <button type="button" onClick={() => setVisKvittering(true)} style={{ fontSize: 13, color: 'var(--green)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Åbn →</button>
             </div>
           )}
         </div>
@@ -3504,5 +3535,31 @@ function UdlaegGodkendScreen({ user, udlaeg, onBack, onDone }) {
         )}
       </main>
     </div>
+    {visKvittering && (
+      <div onClick={() => setVisKvittering(false)} style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', zIndex: 9998,
+        display: 'flex', flexDirection: 'column',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '12px 16px' }}>
+          <button onClick={() => setVisKvittering(false)} style={{
+            color: '#fff', background: 'none', border: 'none', fontSize: 28, cursor: 'pointer', lineHeight: 1,
+          }}>✕</button>
+        </div>
+        <div style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 12px 32px' }}
+          onClick={e => e.stopPropagation()}>
+          <img src={udlaeg.kvitteringUrl} alt="Kvittering"
+            style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: 8, objectFit: 'contain' }}
+            onError={e => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }} />
+          <a href={udlaeg.kvitteringUrl} target="_blank" rel="noreferrer"
+            style={{ display: 'none', color: '#fff', fontSize: 16, fontWeight: 600, flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontSize: 40 }}>📄</span>
+            Åbn PDF i browser →
+          </a>
+        </div>
+      </div>
+    )}
+    </>
   )
 }
+
+
