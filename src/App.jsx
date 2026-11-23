@@ -3380,10 +3380,10 @@ function UdlaegFormScreen({ user, onBack, onSaved }) {
         position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', zIndex: 9998,
         display: 'flex', flexDirection: 'column',
       }}>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '12px 16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '12px 16px', paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}>
           <button onClick={() => setVisKvittering(false)} style={{
-            color: '#fff', background: 'none', border: 'none', fontSize: 28, cursor: 'pointer', lineHeight: 1,
-          }}>✕</button>
+            color: '#fff', background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 20, fontSize: 20, cursor: 'pointer', lineHeight: 1, padding: '6px 12px', fontWeight: 700,
+          }}>✕ Luk</button>
         </div>
         <div style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 12px 32px' }}
           onClick={e => e.stopPropagation()}>
@@ -3540,10 +3540,10 @@ function UdlaegGodkendScreen({ user, udlaeg, onBack, onDone }) {
         position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', zIndex: 9998,
         display: 'flex', flexDirection: 'column',
       }}>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '12px 16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '12px 16px', paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}>
           <button onClick={() => setVisKvittering(false)} style={{
-            color: '#fff', background: 'none', border: 'none', fontSize: 28, cursor: 'pointer', lineHeight: 1,
-          }}>✕</button>
+            color: '#fff', background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 20, fontSize: 20, cursor: 'pointer', lineHeight: 1, padding: '6px 12px', fontWeight: 700,
+          }}>✕ Luk</button>
         </div>
         <div style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 12px 32px' }}
           onClick={e => e.stopPropagation()}>
