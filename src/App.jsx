@@ -3274,7 +3274,7 @@ function UdlaegFormScreen({ user, onBack, onSaved }) {
           </div>
 
           <div style={{ padding: '12px 14px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, fontSize: 13, color: '#78350f' }}>
-            🔒 Dine bankoplysninger sendes direkte til bogholderen og gemmes ikke i systemet.
+            🔒 Dine bankoplysninger gemmes kortvarigt og slettes når udlægget er behandlet.
           </div>
 
           <div className="form-field">
