@@ -163,33 +163,92 @@ if ($afsenderEmail) {
 // ── e-conomic (feature-gated) ─────────────────────────────────────────────────
 $econAppToken = getenv('ECONOMIC_APP_SECRET_TOKEN') ?: '';
 $econAgrToken = getenv('ECONOMIC_AGREEMENT_GRANT_TOKEN') ?: '';
+$econMode     = $config['economic_mode']['stringValue'] ?? 'kladde';
 $econResult   = null;
+$econRaw      = '';
 
 if ($econAppToken && $econAgrToken && $kontering && $kontering !== '__bogholder__') {
-    // Simpelt bilag som råpost — journal-nummer hentes fra config
     $journalNr = (int)($config['economic_journal_nr']['integerValue'] ?? 1);
-    $voucherBody = json_encode([
-        'accountingYear'  => ['year' => date('Y', strtotime(substr($now, 0, 10)))],
-        'date'    => substr($now, 0, 10),
-        'entries' => ['financeVouchers' => [[
-            'date'          => substr($now, 0, 10),
-            'text'          => substr($uf['beskrivelse']['stringValue'] ?? '', 0, 250),
-            'amount'        => $belob,
-            'account'       => ['accountNumber' => (int)$kontering],
-            'contraAccount' => ['accountNumber' => (int)($config['economic_contra_account']['integerValue'] ?? 6610)],
-        ]]],
-    ]);
-    $econRaw = @file_get_contents("https://restapi.e-conomic.com/journals/{$journalNr}/vouchers", false,
-        stream_context_create(['http' => [
-            'method'        => 'POST',
-            'header'        => "X-AppSecretToken: {$econAppToken}\r\nX-AgreementGrantToken: {$econAgrToken}\r\nContent-Type: application/json\r\n",
-            'content'       => $voucherBody,
-            'timeout'       => 15,
-            'ignore_errors' => true,
-        ]]));
-    if ($econRaw) {
-        $econResult = json_decode($econRaw, true);
+    $today     = substr($now, 0, 10);
+
+    if ($econMode === 'leverandorfaktura') {
+        // ── Trin 2: Bilagsnummer-tæller (Firestore counter, starter ved 800000) ─
+        $lastNr = (int)($config['economic_last_voucher_nr']['integerValue'] ?? 799999);
+        $nextNr = $lastNr + 1;
+        @file_get_contents("{$base}/settings/udlaeg_config?updateMask.fieldPaths=economic_last_voucher_nr", false,
+            stream_context_create(['http' => [
+                'method'        => 'PATCH',
+                'header'        => "Authorization: Bearer {$fsToken}\r\nContent-Type: application/json\r\n",
+                'content'       => json_encode(['fields' => ['economic_last_voucher_nr' => ['integerValue' => (string)$nextNr]]]),
+                'timeout'       => 5,
+                'ignore_errors' => true,
+            ]]));
+
+        // ── Trin 3: Download og base64-encod kvittering ───────────────────────
+        $kvitUrl    = $uf['kvitteringUrl']['stringValue'] ?? '';
+        $attachData = null;
+        if ($kvitUrl) {
+            $fileBytes = @file_get_contents($kvitUrl, false, stream_context_create(['http' => ['timeout' => 15, 'ignore_errors' => true]]));
+            if ($fileBytes) {
+                $ext  = strtolower(pathinfo(parse_url($kvitUrl, PHP_URL_PATH), PATHINFO_EXTENSION));
+                $mime = match($ext) { 'pdf' => 'application/pdf', 'png' => 'image/png', 'gif' => 'image/gif', default => 'image/jpeg' };
+                $attachData = ['content' => base64_encode($fileBytes), 'contentType' => $mime];
+            }
+        }
+
+        // ── Trin 4: Open API-kald ─────────────────────────────────────────────
+        $afdData   = $afdelinger[$afdeling] ?? [];
+        $econAfdNr = $afdData['econAfdelingNr'] ?? '';
+        $dueDate   = date('Y-m-d', strtotime($today . ' +14 days'));
+
+        $payload = [
+            'entryTypeNumber' => 3,
+            'currency'        => 'DKK',
+            'amount'          => $belob,
+            'date'            => $today,
+            'dueDate'         => $dueDate,
+            'accountingYear'  => (int)date('Y'),
+            'voucherNumber'   => $nextNr,
+            'accountNumber'   => (int)$kontering,
+            'vatCode'         => '',
+            'text'            => substr($uf['kommentar']['stringValue'] ?? $uf['beskrivelse']['stringValue'] ?? '', 0, 250),
+        ];
+        $creditorNr = (int)($config['economic_creditor_nr']['integerValue'] ?? 0);
+        if ($creditorNr) $payload['creditorNumber'] = $creditorNr;
+        if ($econAfdNr)  $payload['projectNumber']  = (int)$econAfdNr;
+        if ($attachData) $payload['attachment']      = $attachData;
+
+        $econRaw = @file_get_contents("https://apis.e-conomic.com/journals/{$journalNr}/vouchers", false,
+            stream_context_create(['http' => [
+                'method'        => 'POST',
+                'header'        => "X-AppSecretToken: {$econAppToken}\r\nX-AgreementGrantToken: {$econAgrToken}\r\nContent-Type: application/json\r\n",
+                'content'       => json_encode($payload),
+                'timeout'       => 20,
+                'ignore_errors' => true,
+            ]]));
+    } else {
+        // ── Kladde (finansbilag via legacy REST API) ──────────────────────────
+        $econRaw = @file_get_contents("https://restapi.e-conomic.com/journals/{$journalNr}/vouchers", false,
+            stream_context_create(['http' => [
+                'method'        => 'POST',
+                'header'        => "X-AppSecretToken: {$econAppToken}\r\nX-AgreementGrantToken: {$econAgrToken}\r\nContent-Type: application/json\r\n",
+                'content'       => json_encode([
+                    'accountingYear'  => ['year' => date('Y', strtotime($today))],
+                    'date'            => $today,
+                    'entries'         => ['financeVouchers' => [[
+                        'date'          => $today,
+                        'text'          => substr($uf['beskrivelse']['stringValue'] ?? '', 0, 250),
+                        'amount'        => $belob,
+                        'account'       => ['accountNumber' => (int)$kontering],
+                        'contraAccount' => ['accountNumber' => (int)($config['economic_contra_account']['integerValue'] ?? 6610)],
+                    ]]],
+                ]),
+                'timeout'       => 15,
+                'ignore_errors' => true,
+            ]]));
     }
+
+    if ($econRaw) $econResult = json_decode($econRaw, true);
 }
 
 // ── Gem e-conomic-svar i Firestore ────────────────────────────────────────────
@@ -203,7 +262,7 @@ if ($econAppToken && $econAgrToken && $kontering && $kontering !== '__bogholder_
         $econSvarStr   = substr(json_encode($econResult, JSON_UNESCAPED_UNICODE), 0, 800);
     } else {
         $econStatus  = 'error';
-        $econSvarStr = substr(json_encode($econResult ?? ['raw' => substr($econRaw ?? '', 0, 400)], JSON_UNESCAPED_UNICODE), 0, 800);
+        $econSvarStr = substr(json_encode($econResult ?? ['raw' => substr($econRaw, 0, 400)], JSON_UNESCAPED_UNICODE), 0, 800);
     }
 }
 $econFields = ['econStatus' => ['stringValue' => $econStatus]];

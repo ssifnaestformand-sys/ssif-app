@@ -46,6 +46,9 @@ $hbEmail         = trim($raw['hb_formand_email']        ?? '');
 $graense         = (int)($raw['godkendelse_graense']    ?? 100000);
 $journalNr       = (int)($raw['economic_journal_nr']    ?? 0);
 $contraAccount   = (int)($raw['economic_contra_account']?? 0);
+$econMode        = in_array($raw['economic_mode'] ?? '', ['kladde', 'leverandorfaktura'])
+                     ? $raw['economic_mode'] : 'kladde';
+$econCreditorNr  = (int)($raw['economic_creditor_nr']   ?? 0);
 $afdelinger      = $raw['afdelinger'] ?? [];
 
 if (!is_array($afdelinger)) $afdelinger = [];
@@ -54,10 +57,12 @@ $fields = [
     'bogholder_email'         => ['stringValue'  => $bogholderEmail],
     'hb_formand_email'        => ['stringValue'  => $hbEmail],
     'godkendelse_graense'     => ['integerValue' => (string)$graense],
+    'economic_mode'           => ['stringValue'  => $econMode],
     'afdelinger'              => ['stringValue'  => json_encode($afdelinger, JSON_UNESCAPED_UNICODE)],
 ];
-if ($journalNr)     $fields['economic_journal_nr']     = ['integerValue' => (string)$journalNr];
-if ($contraAccount) $fields['economic_contra_account'] = ['integerValue' => (string)$contraAccount];
+if ($journalNr)      $fields['economic_journal_nr']     = ['integerValue' => (string)$journalNr];
+if ($contraAccount)  $fields['economic_contra_account'] = ['integerValue' => (string)$contraAccount];
+if ($econCreditorNr) $fields['economic_creditor_nr']    = ['integerValue' => (string)$econCreditorNr];
 
 $resp = @file_get_contents("{$base}/settings/udlaeg_config", false, stream_context_create(['http' => [
     'method'        => 'PATCH',

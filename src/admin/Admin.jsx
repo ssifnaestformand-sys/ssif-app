@@ -7846,9 +7846,17 @@ function UdlaegOversigt({ authUser }) {
                 {!selected.econStatus && <p style={{ fontSize: 13, color: 'var(--text3)', margin: 0 }}>Ingen data — godkendt før logging blev tilføjet</p>}
                 {selected.econStatus === 'skipped' && <p style={{ fontSize: 13, color: 'var(--text3)', margin: 0 }}>Spring over (kontering: bogholderen)</p>}
                 {selected.econStatus === 'posted' && (
-                  <p style={{ fontSize: 13, color: '#166534', margin: 0, fontWeight: 600 }}>
-                    ✓ Bilag oprettet{selected.econVoucherId ? ` — voucher #${selected.econVoucherId}` : ''}
-                  </p>
+                  <>
+                    <p style={{ fontSize: 13, color: '#166534', margin: '0 0 6px', fontWeight: 600 }}>
+                      ✓ Bilag oprettet{selected.econVoucherId ? ` — voucher #${selected.econVoucherId}` : ''}
+                    </p>
+                    {selected.econSvar && (
+                      <pre style={{ fontSize: 11, color: '#14532d', margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+                        background: 'rgba(0,0,0,.04)', borderRadius: 6, padding: '8px 10px' }}>
+                        {selected.econSvar}
+                      </pre>
+                    )}
+                  </>
                 )}
                 {selected.econStatus === 'error' && (
                   <>
@@ -7969,6 +7977,8 @@ function UdlaegKonfig({ authUser }) {
   const [kontoplan,       setKontoplan]       = useState([]) // [{nummer, navn}] fra e-conomic cache
   const [expandedAfd,     setExpandedAfd]     = useState(null) // index af udvidet afdeling
   const [kontoFilter,     setKontoFilter]     = useState('')
+  const [econMode,        setEconMode]        = useState('kladde')
+  const [econCreditorNr,  setEconCreditorNr]  = useState('')
 
   useEffect(() => {
     // Hent trænere (isLeder=true i members) til formand-dropdown — samme kilde som Trænere-oversigten
@@ -7999,12 +8009,15 @@ function UdlaegKonfig({ authUser }) {
       setGraense(String(d.godkendelse_graense || 100000))
       setJournalNr(String(d.economic_journal_nr || ''))
       setContraKonto(String(d.economic_contra_account || ''))
+      setEconMode(d.economic_mode || 'kladde')
+      setEconCreditorNr(String(d.economic_creditor_nr || ''))
       try {
         const afd = JSON.parse(d.afdelinger || '{}')
         setAfdelinger(Object.entries(afd).map(([navn, v]) => ({
           navn,
           formand_email: v.formand_email || '',
           kontoplan: Array.isArray(v.kontoplan) ? v.kontoplan : [],
+          econAfdelingNr: v.econAfdelingNr || '',
         })))
       } catch {}
     }).catch(e => setError(e.message)).finally(() => setLoading(false))
@@ -8018,6 +8031,7 @@ function UdlaegKonfig({ authUser }) {
         navn: a.navn.trim(),
         formand_email: a.formand_email.trim(),
         kontoplan: a.kontoplan || [],
+        econAfdelingNr: a.econAfdelingNr || '',
       }
     }
     try {
@@ -8031,6 +8045,8 @@ function UdlaegKonfig({ authUser }) {
           godkendelse_graense:     parseInt(graense) || 100000,
           economic_journal_nr:     parseInt(journalNr) || 0,
           economic_contra_account: parseInt(contraKonto) || 0,
+          economic_mode:           econMode,
+          economic_creditor_nr:    parseInt(econCreditorNr) || 0,
           afdelinger:              afdelingerObj,
         }),
       })
@@ -8043,7 +8059,7 @@ function UdlaegKonfig({ authUser }) {
 
   function tilføjAfdeling() {
     if (!nyAfdNavn.trim()) return
-    setAfdelinger(prev => [...prev, { navn: nyAfdNavn.trim(), formand_email: nyAfdEmail.trim(), kontoplan: [] }])
+    setAfdelinger(prev => [...prev, { navn: nyAfdNavn.trim(), formand_email: nyAfdEmail.trim(), kontoplan: [], econAfdelingNr: '' }])
     setNyAfdNavn(''); setNyAfdEmail('')
   }
 
@@ -8070,8 +8086,24 @@ function UdlaegKonfig({ authUser }) {
           <SearchCombobox value={hbEmail} onChange={setHbEmail} options={ledere} placeholder="Vælg HB-formand…" />
         </div>
         <LabelInput label="Beløbsgrænse for HB-godkendelse (kr.)" value={graense} onChange={setGraense} type="number" placeholder="100000" />
-        <LabelInput label="e-conomic journal-nummer (valgfrit)" value={journalNr} onChange={setJournalNr} type="number" placeholder="1" />
-        <LabelInput label="e-conomic modkonto (valgfrit, f.eks. 6610)" value={contraKonto} onChange={setContraKonto} type="number" placeholder="6610" />
+        <LabelInput label="e-conomic journal-nummer" value={journalNr} onChange={setJournalNr} type="number" placeholder="1" />
+        <div>
+          <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', display: 'block', marginBottom: 8 }}>e-conomic bogføringtype</label>
+          <div style={{ display: 'flex', gap: 20 }}>
+            {[['kladde', 'Kladde (finansbilag)'], ['leverandorfaktura', 'Leverandørfaktura']].map(([val, lbl]) => (
+              <label key={val} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
+                <input type="radio" name="econMode" value={val} checked={econMode === val} onChange={() => setEconMode(val)} />
+                {lbl}
+              </label>
+            ))}
+          </div>
+        </div>
+        {econMode === 'kladde' && (
+          <LabelInput label="e-conomic modkonto (kladde, f.eks. 6610)" value={contraKonto} onChange={setContraKonto} type="number" placeholder="6610" />
+        )}
+        {econMode === 'leverandorfaktura' && (
+          <LabelInput label="e-conomic kreditornummer (f.eks. 1111)" value={econCreditorNr} onChange={setEconCreditorNr} type="number" placeholder="1111" />
+        )}
       </div>
 
       <h3 style={{ fontSize: 15, fontWeight: 800, marginBottom: 12 }}>Afdelinger og formænd</h3>
@@ -8101,6 +8133,13 @@ function UdlaegKonfig({ authUser }) {
             </div>
             {isExpanded && (
               <div style={{ padding: '12px 14px', borderTop: '1px solid var(--border)', background: 'var(--bg)' }}>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', display: 'block', marginBottom: 4 }}>Projektnr. i e-conomic (leverandørfaktura)</label>
+                  <input type="number" value={a.econAfdelingNr || ''}
+                    onChange={e => setAfdelinger(prev => prev.map((x, j) => j === i ? { ...x, econAfdelingNr: e.target.value } : x))}
+                    placeholder="f.eks. 42"
+                    style={{ width: 180, border: '1.5px solid var(--border)', borderRadius: 7, padding: '6px 10px', fontSize: 13 }} />
+                </div>
                 <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10 }}>
                   {valgte.length === 0
                     ? '✓ Alle konti vises (ingen begrænsning). Sæt flueben for at begrænse til specifikke konti.'
