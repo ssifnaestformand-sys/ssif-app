@@ -280,8 +280,6 @@ if ($econAppToken && $econAgrToken && $kontering && $kontering !== '__bogholder_
                 'journalNr'   => $journalNr ?? null,
             ];
         }
-        // Tilføj sendt payload til fejldebug (fjernes når det virker)
-        $errData['_sendt'] = $payload ?? null;
         $econSvarStr = substr(json_encode($errData, JSON_UNESCAPED_UNICODE), 0, 1200);
     }
 }
