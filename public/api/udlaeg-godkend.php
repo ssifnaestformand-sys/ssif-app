@@ -190,8 +190,34 @@ if ($econAppToken && $econAgrToken && $kontering && $kontering !== '__bogholder_
     }
 }
 
+// ── Gem e-conomic-svar i Firestore ────────────────────────────────────────────
+$econStatus    = 'skipped';
+$econSvarStr   = '';
+$econVoucherId = null;
+if ($econAppToken && $econAgrToken && $kontering && $kontering !== '__bogholder__') {
+    if ($econResult && !isset($econResult['httpStatusCode'])) {
+        $econStatus    = 'posted';
+        $econVoucherId = $econResult['voucherNumber'] ?? null;
+        $econSvarStr   = substr(json_encode($econResult, JSON_UNESCAPED_UNICODE), 0, 800);
+    } else {
+        $econStatus  = 'error';
+        $econSvarStr = substr(json_encode($econResult ?? ['raw' => substr($econRaw ?? '', 0, 400)], JSON_UNESCAPED_UNICODE), 0, 800);
+    }
+}
+$econFields = ['econStatus' => ['stringValue' => $econStatus]];
+if ($econSvarStr)   $econFields['econSvar']     = ['stringValue'  => $econSvarStr];
+if ($econVoucherId) $econFields['econVoucherId'] = ['integerValue' => (string)$econVoucherId];
+$econMask = implode('&', array_map(fn($k) => 'updateMask.fieldPaths=' . urlencode($k), array_keys($econFields)));
+@file_get_contents("{$base}/udlaeg/{$udlaegId}?{$econMask}", false, stream_context_create(['http' => [
+    'method'        => 'PATCH',
+    'header'        => "Authorization: Bearer {$fsToken}\r\nContent-Type: application/json\r\n",
+    'content'       => json_encode(['fields' => $econFields]),
+    'timeout'       => 5,
+    'ignore_errors' => true,
+]]));
+
 echo json_encode([
     'ok'       => true,
     'status'   => 'godkendt',
-    'economic' => $econResult ? 'posted' : 'skipped',
+    'economic' => $econStatus,
 ], JSON_UNESCAPED_UNICODE);

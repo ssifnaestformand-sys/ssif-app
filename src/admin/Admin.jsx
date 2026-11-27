@@ -7837,6 +7837,32 @@ function UdlaegOversigt({ authUser }) {
                 </tr>
               )}
             </table>
+            {selected.status === 'godkendt' && (
+              <div style={{ marginTop: 12, padding: '12px 14px', borderRadius: 10,
+                background: selected.econStatus === 'posted' ? '#f0fdf4' : selected.econStatus === 'error' ? '#fff1f2' : '#f9fafb',
+                border: '1px solid ' + (selected.econStatus === 'posted' ? '#bbf7d0' : selected.econStatus === 'error' ? '#fecdd3' : '#e5e7eb'),
+              }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>e-conomic</div>
+                {!selected.econStatus && <p style={{ fontSize: 13, color: 'var(--text3)', margin: 0 }}>Ingen data — godkendt før logging blev tilføjet</p>}
+                {selected.econStatus === 'skipped' && <p style={{ fontSize: 13, color: 'var(--text3)', margin: 0 }}>Spring over (kontering: bogholderen)</p>}
+                {selected.econStatus === 'posted' && (
+                  <p style={{ fontSize: 13, color: '#166534', margin: 0, fontWeight: 600 }}>
+                    ✓ Bilag oprettet{selected.econVoucherId ? ` — voucher #${selected.econVoucherId}` : ''}
+                  </p>
+                )}
+                {selected.econStatus === 'error' && (
+                  <>
+                    <p style={{ fontSize: 13, color: '#9f1239', margin: '0 0 6px', fontWeight: 600 }}>⚠ Fejl fra e-conomic</p>
+                    {selected.econSvar && (
+                      <pre style={{ fontSize: 11, color: '#7f1d1d', margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+                        background: 'rgba(0,0,0,.04)', borderRadius: 6, padding: '8px 10px' }}>
+                        {selected.econSvar}
+                      </pre>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
             {['afventer_formand', 'afventer_hb'].includes(selected.status) && (
               <>
                 <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
