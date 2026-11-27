@@ -226,6 +226,8 @@ if ($econAppToken && $econAgrToken && $kontering && $kontering !== '__bogholder_
                 'timeout'       => 20,
                 'ignore_errors' => true,
             ]]));
+        $econHttpHeaders = $http_response_header ?? [];
+        $econPhpErr      = error_get_last()['message'] ?? null;
     } else {
         // ── Kladde (finansbilag via legacy REST API) ──────────────────────────
         $econRaw = @file_get_contents("https://restapi.e-conomic.com/journals/{$journalNr}/vouchers", false,
@@ -261,8 +263,20 @@ if ($econAppToken && $econAgrToken && $kontering && $kontering !== '__bogholder_
         $econVoucherId = $econResult['voucherNumber'] ?? null;
         $econSvarStr   = substr(json_encode($econResult, JSON_UNESCAPED_UNICODE), 0, 800);
     } else {
-        $econStatus  = 'error';
-        $econSvarStr = substr(json_encode($econResult ?? ['raw' => substr($econRaw, 0, 400)], JSON_UNESCAPED_UNICODE), 0, 800);
+        $econStatus = 'error';
+        if ($econResult) {
+            $errData = $econResult;
+        } elseif ($econRaw) {
+            $errData = ['raw' => substr($econRaw, 0, 400)];
+        } else {
+            $errData = [
+                'connection_failed' => true,
+                'php_error'   => $econPhpErr ?? null,
+                'http_status' => ($econHttpHeaders[0] ?? null),
+                'journalNr'   => $journalNr ?? null,
+            ];
+        }
+        $econSvarStr = substr(json_encode($errData, JSON_UNESCAPED_UNICODE), 0, 800);
     }
 }
 $econFields = ['econStatus' => ['stringValue' => $econStatus]];
