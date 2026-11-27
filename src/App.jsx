@@ -1693,6 +1693,11 @@ function SendBeskedScreen({ hold, user, onBack }) {
                   {resultat.fejlet} kunne ikke leveres
                 </p>
               )}
+              {resultat.smsError && (
+                <p style={{ fontSize: 12, color: '#c05000', margin: 0, wordBreak: 'break-word' }}>
+                  Fejl: {resultat.smsError}
+                </p>
+              )}
             </div>
             <button className="btn btn-primary" onClick={onBack}>Tilbage til holdet</button>
           </>

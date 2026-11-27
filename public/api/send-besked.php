@@ -147,6 +147,8 @@ if ($kanal === 'sms') {
     $phoneMap = hent_conventus_telefonmap(getenv('CONVENTUS_KEY') ?: '');
     $smsParts = sms_parts_bev($besked);
 
+    $lastSmsError = null;
+
     // Hold-medlemmer via Conventus-telefonmappen
     foreach ($members as $m) {
         if (in_array($m['id'], $excludeIds, true)) continue;
@@ -164,8 +166,12 @@ if ($kanal === 'sms') {
             'content' => json_encode(['sender' => sms_afsender($holdTitel), 'message' => $sendText, 'recipients' => [['msisdn' => $msisdn]]]),
             'timeout' => 10, 'ignore_errors' => true,
         ]]));
-        $gd = json_decode($gw ?: '{}', true);
-        if (isset($gd['ids']) && !isset($gd['code'])) $smsSendt++; else $smsFejlet++;
+        $gwStatusLine = ($http_response_header ?? [''])[0] ?? '';
+        $gd = json_decode($gw ?: '{}', true) ?: [];
+        if (isset($gd['ids']) && !isset($gd['code'])) { $smsSendt++; } else {
+            $smsFejlet++;
+            $lastSmsError = $gd['message'] ?? $gd['code'] ?? ($gw ? substr($gw, 0, 400) : "Intet svar (HTTP: {$gwStatusLine})");
+        }
     }
     // Ekstra numre (manuelt tilføjet — aldrig gemt)
     foreach ($extraPhones as $msisdn) {
@@ -178,8 +184,12 @@ if ($kanal === 'sms') {
             'content' => json_encode(['sender' => sms_afsender($holdTitel), 'message' => $sendText, 'recipients' => [['msisdn' => $msisdn]]]),
             'timeout' => 10, 'ignore_errors' => true,
         ]]));
-        $gd = json_decode($gw ?: '{}', true);
-        if (isset($gd['ids']) && !isset($gd['code'])) $smsSendt++; else $smsFejlet++;
+        $gwStatusLine = ($http_response_header ?? [''])[0] ?? '';
+        $gd = json_decode($gw ?: '{}', true) ?: [];
+        if (isset($gd['ids']) && !isset($gd['code'])) { $smsSendt++; } else {
+            $smsFejlet++;
+            $lastSmsError = $gd['message'] ?? $gd['code'] ?? ($gw ? substr($gw, 0, 400) : "Intet svar (HTTP: {$gwStatusLine})");
+        }
     }
 
     log_udsendelse($projectId, $fsToken, [
@@ -194,7 +204,9 @@ if ($kanal === 'sms') {
     $fejlet += $smsFejlet;
 }
 
-echo json_encode(['ok' => true, 'sendt' => $sendt, 'fejlet' => $fejlet]);
+$resp = ['ok' => true, 'sendt' => $sendt, 'fejlet' => $fejlet];
+if (!empty($lastSmsError)) $resp['smsError'] = (string)$lastSmsError;
+echo json_encode($resp, JSON_UNESCAPED_UNICODE);
 
 // ── Hjælpere ──────────────────────────────────────────────────────────────────
 
