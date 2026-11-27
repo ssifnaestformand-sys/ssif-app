@@ -204,15 +204,16 @@ if ($econAppToken && $econAgrToken && $kontering && $kontering !== '__bogholder_
         $tekst      = substr($uf['kommentar']['stringValue'] ?? $uf['beskrivelse']['stringValue'] ?? '', 0, 250);
 
         $entry = [
-            'date'     => $today,
-            'dueDate'  => $dueDate,
-            'amount'   => $belob,
-            'currency' => ['code' => 'DKK'],
-            'text'     => $tekst,
-            'account'  => ['accountNumber' => (int)$kontering],
+            'date'         => $today,
+            'dueDate'      => $dueDate,
+            'amount'       => $belob,
+            'currency'     => ['code' => 'DKK'],
+            'text'         => $tekst,
+            'contraAccount' => ['accountNumber' => (int)$kontering],
         ];
-        if ($creditorNr) $entry['supplier']  = ['supplierNumber' => $creditorNr];
-        if ($econAfdNr)  $entry['project']   = ['projectNumber'  => (int)$econAfdNr];
+        if ($creditorNr) $entry['supplier']   = ['supplierNumber' => $creditorNr];
+        if ($econAfdNr)  $entry['project']    = ['projectNumber'  => (int)$econAfdNr];
+        if ($attachData) $entry['attachment'] = $attachData;
 
         $payload = [
             'accountingYear' => ['year' => date('Y')],
