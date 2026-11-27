@@ -245,8 +245,9 @@ if ($econAppToken && $econAgrToken && $kontering && $kontering !== '__bogholder_
             'text'         => $tekst,
             'contraAccount' => ['accountNumber' => (int)$kontering],
         ];
-        if ($creditorNr) $entry['supplier'] = ['supplierNumber' => $creditorNr];
-        if ($econAfdNr)  $entry['project']  = ['projectNumber'  => (int)$econAfdNr];
+        if ($creditorNr) $entry['supplier']       = ['supplierNumber' => $creditorNr];
+        if ($econAfdNr)  $entry['dimensionKey']   = 1;
+        if ($econAfdNr)  $entry['dimensionNumber'] = (string)$econAfdNr;
         if ($regNr && $kontoNr) {
             $bankStr = str_pad($regNr, 4, '0', STR_PAD_LEFT) . str_pad($kontoNr, 8, '0', STR_PAD_LEFT);
             $entry['supplierPaymentBank']    = $bankStr;
