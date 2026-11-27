@@ -165,27 +165,25 @@ $econAppToken = getenv('ECONOMIC_APP_SECRET_TOKEN') ?: '';
 $econAgrToken = getenv('ECONOMIC_AGREEMENT_GRANT_TOKEN') ?: '';
 $econResult   = null;
 
-$supplierNr     = (int)($config['economic_supplier_nr']['integerValue']     ?? 0);
-$paymentTermsNr = (int)($config['economic_payment_terms_nr']['integerValue'] ?? 0);
-
-if ($econAppToken && $econAgrToken && $supplierNr && $kontering && $kontering !== '__bogholder__') {
-    $invoiceBody = [
-        'date'     => substr($now, 0, 10),
-        'supplier' => ['supplierNumber' => $supplierNr],
-        'lines'    => [[
-            'lineNumber'   => 1,
-            'description'  => substr($uf['beskrivelse']['stringValue'] ?? '', 0, 250),
-            'quantity'     => 1,
-            'unitNetPrice' => $belob,
-            'account'      => ['accountNumber' => (int)$kontering],
-        ]],
-    ];
-    if ($paymentTermsNr) $invoiceBody['paymentTerms'] = ['paymentTermsNumber' => $paymentTermsNr];
-    $econRaw = @file_get_contents('https://restapi.e-conomic.com/supplier-invoices', false,
+if ($econAppToken && $econAgrToken && $kontering && $kontering !== '__bogholder__') {
+    // Simpelt bilag som råpost — journal-nummer hentes fra config
+    $journalNr = (int)($config['economic_journal_nr']['integerValue'] ?? 1);
+    $voucherBody = json_encode([
+        'accountingYear'  => ['year' => date('Y', strtotime(substr($now, 0, 10)))],
+        'date'    => substr($now, 0, 10),
+        'entries' => ['financeVouchers' => [[
+            'date'          => substr($now, 0, 10),
+            'text'          => substr($uf['beskrivelse']['stringValue'] ?? '', 0, 250),
+            'amount'        => $belob,
+            'account'       => ['accountNumber' => (int)$kontering],
+            'contraAccount' => ['accountNumber' => (int)($config['economic_contra_account']['integerValue'] ?? 6610)],
+        ]]],
+    ]);
+    $econRaw = @file_get_contents("https://restapi.e-conomic.com/journals/{$journalNr}/vouchers", false,
         stream_context_create(['http' => [
             'method'        => 'POST',
             'header'        => "X-AppSecretToken: {$econAppToken}\r\nX-AgreementGrantToken: {$econAgrToken}\r\nContent-Type: application/json\r\n",
-            'content'       => json_encode($invoiceBody),
+            'content'       => $voucherBody,
             'timeout'       => 15,
             'ignore_errors' => true,
         ]]));
@@ -198,10 +196,10 @@ if ($econAppToken && $econAgrToken && $supplierNr && $kontering && $kontering !=
 $econStatus    = 'skipped';
 $econSvarStr   = '';
 $econVoucherId = null;
-if ($econAppToken && $econAgrToken && $supplierNr && $kontering && $kontering !== '__bogholder__') {
+if ($econAppToken && $econAgrToken && $kontering && $kontering !== '__bogholder__') {
     if ($econResult && !isset($econResult['httpStatusCode'])) {
         $econStatus    = 'posted';
-        $econVoucherId = $econResult['supplierInvoiceNumber'] ?? $econResult['voucherNumber'] ?? null;
+        $econVoucherId = $econResult['voucherNumber'] ?? null;
         $econSvarStr   = substr(json_encode($econResult, JSON_UNESCAPED_UNICODE), 0, 800);
     } else {
         $econStatus  = 'error';
