@@ -246,8 +246,8 @@ if ($econAppToken && $econAgrToken && $kontering && $kontering !== '__bogholder_
             'contraAccount' => ['accountNumber' => (int)$kontering],
         ];
         if ($creditorNr) $entry['supplier']       = ['supplierNumber' => $creditorNr];
-        if ($econAfdNr)  $entry['dimensionKey']   = 1;
-        if ($econAfdNr)  $entry['dimensionNumber'] = (string)$econAfdNr;
+        if ($econAfdNr)  $entry['dimensionNumber'] = 1;
+        if ($econAfdNr)  $entry['dimensionKey']   = (string)$econAfdNr;
 
         $payload = [
             'accountingYear' => ['year' => date('Y')],
