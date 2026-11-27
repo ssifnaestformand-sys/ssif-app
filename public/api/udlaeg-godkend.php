@@ -218,7 +218,7 @@ if ($econAppToken && $econAgrToken && $kontering && $kontering !== '__bogholder_
         if ($econAfdNr)  $payload['projectNumber']  = (int)$econAfdNr;
         if ($attachData) $payload['attachment']      = $attachData;
 
-        $econRaw = @file_get_contents("https://apis.e-conomic.com/journals/{$journalNr}/vouchers", false,
+        $econRaw = @file_get_contents("https://apis.e-conomic.com/api/journals/{$journalNr}/vouchers", false,
             stream_context_create(['http' => [
                 'method'        => 'POST',
                 'header'        => "X-AppSecretToken: {$econAppToken}\r\nX-AgreementGrantToken: {$econAgrToken}\r\nContent-Type: application/json\r\n",
