@@ -248,12 +248,6 @@ if ($econAppToken && $econAgrToken && $kontering && $kontering !== '__bogholder_
         if ($creditorNr) $entry['supplier']       = ['supplierNumber' => $creditorNr];
         if ($econAfdNr)  $entry['dimensionKey']   = 1;
         if ($econAfdNr)  $entry['dimensionNumber'] = (string)$econAfdNr;
-        if ($regNr && $kontoNr) {
-            $bankStr = str_pad($regNr, 4, '0', STR_PAD_LEFT) . str_pad($kontoNr, 8, '0', STR_PAD_LEFT);
-            $entry['supplierPaymentBank']    = $bankStr;
-            $entry['supplierPaymentMessage'] = 'XXXXX';
-            $entry['supplierPaymentType']    = 7;
-        }
 
         $payload = [
             'accountingYear' => ['year' => date('Y')],
@@ -342,6 +336,7 @@ if ($econAppToken && $econAgrToken && $kontering && $kontering !== '__bogholder_
                 'Belob:        ' . number_format($belob, 2, ',', '.') . ' DKK',
                 '',
                 'Indsender:    ' . ($uf['afsenderNavn']['stringValue'] ?? ''),
+                'Reg+konto:    ' . ($regNr ? "{$regNr}-{$kontoNr}" : 'ikke opgivet'),
                 'Godkendt af:  ' . $displayName,
                 'Email:        ' . $email,
                 'Tidspunkt:    ' . substr($now, 0, 19) . ' UTC',
