@@ -7979,6 +7979,9 @@ function UdlaegKonfig({ authUser }) {
   const [kontoFilter,     setKontoFilter]     = useState('')
   const [econMode,        setEconMode]        = useState('kladde')
   const [econCreditorNr,  setEconCreditorNr]  = useState('')
+  const [journals,        setJournals]        = useState([]) // [{nr, navn}] fra e-conomic
+  const [journalsLoading, setJournalsLoading] = useState(false)
+  const [journalsError,   setJournalsError]   = useState('')
 
   useEffect(() => {
     // Hent trænere (isLeder=true i members) til formand-dropdown — samme kilde som Trænere-oversigten
@@ -8022,6 +8025,20 @@ function UdlaegKonfig({ authUser }) {
       } catch {}
     }).catch(e => setError(e.message)).finally(() => setLoading(false))
   }, [])
+
+  async function loadJournals() {
+    setJournalsLoading(true); setJournalsError('')
+    try {
+      const idToken = await authUser.getIdToken()
+      const res = await fetch('/api/udlaeg-economic-journals.php', {
+        headers: { Authorization: `Bearer ${idToken}` },
+      })
+      const data = await res.json()
+      if (data.ok) setJournals(data.journals || [])
+      else setJournalsError(data.error || 'Fejl fra e-conomic')
+    } catch { setJournalsError('Netværksfejl') }
+    finally { setJournalsLoading(false) }
+  }
 
   async function handleGem() {
     setSaving(true); setSaved(false); setError('')
@@ -8086,7 +8103,28 @@ function UdlaegKonfig({ authUser }) {
           <SearchCombobox value={hbEmail} onChange={setHbEmail} options={ledere} placeholder="Vælg HB-formand…" />
         </div>
         <LabelInput label="Beløbsgrænse for HB-godkendelse (kr.)" value={graense} onChange={setGraense} type="number" placeholder="100000" />
-        <LabelInput label="e-conomic journal-nummer" value={journalNr} onChange={setJournalNr} type="number" placeholder="1" />
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+            <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)' }}>e-conomic kladde (journal)</label>
+            <button type="button" onClick={loadJournals} disabled={journalsLoading}
+              style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', color: 'var(--text3)' }}>
+              {journalsLoading ? 'Henter…' : 'Hent liste'}
+            </button>
+          </div>
+          {journalsError && <p style={{ fontSize: 12, color: '#dc2626', margin: '0 0 4px' }}>{journalsError}</p>}
+          {journals.length > 0 ? (
+            <select value={journalNr} onChange={e => setJournalNr(e.target.value)}
+              style={{ width: '100%', border: '1.5px solid var(--border)', borderRadius: 8, padding: '8px 10px', fontSize: 14, boxSizing: 'border-box' }}>
+              <option value="">Vælg kladde…</option>
+              {journals.map(j => (
+                <option key={j.nr} value={String(j.nr)}>{j.nr} — {j.navn}</option>
+              ))}
+            </select>
+          ) : (
+            <input type="number" value={journalNr} onChange={e => setJournalNr(e.target.value)} placeholder="Klik 'Hent liste' eller skriv nummeret manuelt"
+              style={{ width: '100%', border: '1.5px solid var(--border)', borderRadius: 8, padding: '8px 10px', fontSize: 14, boxSizing: 'border-box' }} />
+          )}
+        </div>
         <div>
           <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', display: 'block', marginBottom: 8 }}>e-conomic bogføringtype</label>
           <div style={{ display: 'flex', gap: 20 }}>
