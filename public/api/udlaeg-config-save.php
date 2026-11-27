@@ -6,8 +6,8 @@
  *   bogholder_email:          string,
  *   hb_formand_email:         string,
  *   godkendelse_graense:      int,
- *   economic_journal_nr:      int,       // valgfrit
- *   economic_contra_account:  int,       // valgfrit
+ *   economic_supplier_nr:      int,       // valgfrit
+ *   economic_payment_terms_nr: int,      // valgfrit
  *   afdelinger: {
  *     "Fodbold U9": { navn: string, formand_email: string },
  *     ...
@@ -44,8 +44,8 @@ $raw = json_decode(file_get_contents('php://input'), true) ?: [];
 $bogholderEmail  = trim($raw['bogholder_email']         ?? '');
 $hbEmail         = trim($raw['hb_formand_email']        ?? '');
 $graense         = (int)($raw['godkendelse_graense']    ?? 100000);
-$journalNr       = (int)($raw['economic_journal_nr']    ?? 0);
-$contraAccount   = (int)($raw['economic_contra_account']?? 0);
+$supplierNr      = (int)($raw['economic_supplier_nr']      ?? 0);
+$paymentTermsNr  = (int)($raw['economic_payment_terms_nr'] ?? 0);
 $afdelinger      = $raw['afdelinger'] ?? [];
 
 if (!is_array($afdelinger)) $afdelinger = [];
@@ -56,8 +56,8 @@ $fields = [
     'godkendelse_graense'     => ['integerValue' => (string)$graense],
     'afdelinger'              => ['stringValue'  => json_encode($afdelinger, JSON_UNESCAPED_UNICODE)],
 ];
-if ($journalNr)     $fields['economic_journal_nr']     = ['integerValue' => (string)$journalNr];
-if ($contraAccount) $fields['economic_contra_account'] = ['integerValue' => (string)$contraAccount];
+if ($supplierNr)     $fields['economic_supplier_nr']      = ['integerValue' => (string)$supplierNr];
+if ($paymentTermsNr) $fields['economic_payment_terms_nr'] = ['integerValue' => (string)$paymentTermsNr];
 
 $resp = @file_get_contents("{$base}/settings/udlaeg_config", false, stream_context_create(['http' => [
     'method'        => 'PATCH',

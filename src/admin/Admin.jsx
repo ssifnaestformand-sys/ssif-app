@@ -7847,7 +7847,7 @@ function UdlaegOversigt({ authUser }) {
                 {selected.econStatus === 'skipped' && <p style={{ fontSize: 13, color: 'var(--text3)', margin: 0 }}>Spring over (kontering: bogholderen)</p>}
                 {selected.econStatus === 'posted' && (
                   <p style={{ fontSize: 13, color: '#166534', margin: 0, fontWeight: 600 }}>
-                    ✓ Bilag oprettet{selected.econVoucherId ? ` — voucher #${selected.econVoucherId}` : ''}
+                    ✓ Bilag oprettet{selected.econVoucherId ? ` — faktura #${selected.econVoucherId}` : ''}
                   </p>
                 )}
                 {selected.econStatus === 'error' && (
@@ -7959,8 +7959,8 @@ function UdlaegKonfig({ authUser }) {
   const [bogholderEmail,  setBogholderEmail]  = useState('')
   const [hbEmail,         setHbEmail]         = useState('')
   const [graense,         setGraense]         = useState('100000')
-  const [journalNr,       setJournalNr]       = useState('')
-  const [contraKonto,     setContraKonto]     = useState('')
+  const [supplierNr,      setSupplierNr]      = useState('')
+  const [paymentTermsNr,  setPaymentTermsNr]  = useState('')
   const [afdelinger,      setAfdelinger]      = useState([]) // [{navn, formand_email, kontoplan:[]}]
   const [nyAfdNavn,       setNyAfdNavn]       = useState('')
   const [nyAfdEmail,      setNyAfdEmail]      = useState('')
@@ -7997,8 +7997,8 @@ function UdlaegKonfig({ authUser }) {
       setBogholderEmail(d.bogholder_email || '')
       setHbEmail(d.hb_formand_email || '')
       setGraense(String(d.godkendelse_graense || 100000))
-      setJournalNr(String(d.economic_journal_nr || ''))
-      setContraKonto(String(d.economic_contra_account || ''))
+      setSupplierNr(String(d.economic_supplier_nr || ''))
+      setPaymentTermsNr(String(d.economic_payment_terms_nr || ''))
       try {
         const afd = JSON.parse(d.afdelinger || '{}')
         setAfdelinger(Object.entries(afd).map(([navn, v]) => ({
@@ -8029,8 +8029,8 @@ function UdlaegKonfig({ authUser }) {
           bogholder_email:         bogholderEmail.trim(),
           hb_formand_email:        hbEmail.trim(),
           godkendelse_graense:     parseInt(graense) || 100000,
-          economic_journal_nr:     parseInt(journalNr) || 0,
-          economic_contra_account: parseInt(contraKonto) || 0,
+          economic_supplier_nr:      parseInt(supplierNr) || 0,
+          economic_payment_terms_nr: parseInt(paymentTermsNr) || 0,
           afdelinger:              afdelingerObj,
         }),
       })
@@ -8070,8 +8070,8 @@ function UdlaegKonfig({ authUser }) {
           <SearchCombobox value={hbEmail} onChange={setHbEmail} options={ledere} placeholder="Vælg HB-formand…" />
         </div>
         <LabelInput label="Beløbsgrænse for HB-godkendelse (kr.)" value={graense} onChange={setGraense} type="number" placeholder="100000" />
-        <LabelInput label="e-conomic journal-nummer (valgfrit)" value={journalNr} onChange={setJournalNr} type="number" placeholder="1" />
-        <LabelInput label="e-conomic modkonto (valgfrit, f.eks. 6610)" value={contraKonto} onChange={setContraKonto} type="number" placeholder="6610" />
+        <LabelInput label="e-conomic leverandørnummer (valgfrit, f.eks. 1111)" value={supplierNr} onChange={setSupplierNr} type="number" placeholder="1111" />
+        <LabelInput label="e-conomic betalingsbetingelse (valgfrit)" value={paymentTermsNr} onChange={setPaymentTermsNr} type="number" placeholder="" />
       </div>
 
       <h3 style={{ fontSize: 15, fontWeight: 800, marginBottom: 12 }}>Afdelinger og formænd</h3>
