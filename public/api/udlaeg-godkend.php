@@ -169,7 +169,8 @@ if ($econAppToken && $econAgrToken && $kontering && $kontering !== '__bogholder_
     // Simpelt bilag som råpost — journal-nummer hentes fra config
     $journalNr = (int)($config['economic_journal_nr']['integerValue'] ?? 1);
     $voucherBody = json_encode([
-        'date'          => substr($now, 0, 10),
+        'accountingYear'  => ['year' => date('Y', strtotime(substr($now, 0, 10)))],
+        'date'            => substr($now, 0, 10),
         'financeVouchers' => [[
             'text'          => substr($uf['beskrivelse']['stringValue'] ?? '', 0, 250),
             'amount'        => $belob,
