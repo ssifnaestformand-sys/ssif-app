@@ -258,7 +258,8 @@ $econStatus    = 'skipped';
 $econSvarStr   = '';
 $econVoucherId = null;
 if ($econAppToken && $econAgrToken && $kontering && $kontering !== '__bogholder__') {
-    if ($econResult && !isset($econResult['httpStatusCode'])) {
+    $econIsError = isset($econResult['message']) || isset($econResult['httpStatusCode']);
+    if ($econResult && !$econIsError) {
         $econStatus    = 'posted';
         $econVoucherId = $econResult['voucherNumber'] ?? null;
         $econSvarStr   = substr(json_encode($econResult, JSON_UNESCAPED_UNICODE), 0, 800);
