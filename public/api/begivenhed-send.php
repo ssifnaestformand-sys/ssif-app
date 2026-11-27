@@ -197,12 +197,15 @@ if (in_array($kanal, ['sms', 'begge'], true)) {
             'timeout'       => 10,
             'ignore_errors' => true,
         ]]));
-        $gwData = json_decode($gwResp ?: '{}', true);
+        $gwStatusLine = ($http_response_header ?? [''])[0] ?? '';
+        $gwData = json_decode($gwResp ?: '{}', true) ?: [];
         if (isset($gwData['ids']) && !isset($gwData['code'])) {
             $smsSendt++;
         } else {
             $smsFejlet++;
-            $lastSmsError = $gwData['message'] ?? ($gwData['code'] ?? $gwResp);
+            $lastSmsError = $gwData['message']
+                ?? $gwData['code']
+                ?? ($gwResp ? substr($gwResp, 0, 400) : "Intet svar fra GatewayAPI (HTTP: {$gwStatusLine})");
         }
     }
 
