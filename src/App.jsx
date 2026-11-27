@@ -1548,7 +1548,8 @@ function SendDialog({ antalUdtaget, sending, sendFejl, sendOk, onSend, onLuk }) 
           background: 'var(--green-soft)', border: '1px solid var(--border)',
           borderRadius: 10, padding: 12, fontSize: 13, color: 'var(--green)', fontWeight: 600,
         }}>
-          Sendt til {sendOk.sendt}{sendOk.fejlet > 0 ? ` · ${sendOk.fejlet} fejlede` : ''} ✓
+          Sendt til {sendOk.sendt}{sendOk.fejlet > 0 ? ` · ${sendOk.fejlet} kunne ikke leveres` : ''} ✓
+          {sendOk.smsError && <div style={{ marginTop: 6, fontSize: 12, fontWeight: 400, color: '#c05000' }}>Fejl: {sendOk.smsError}</div>}
         </div>
       ) : (
         <button className="btn btn-primary"

@@ -170,13 +170,13 @@ if ($econAppToken && $econAgrToken && $kontering && $kontering !== '__bogholder_
     $journalNr = (int)($config['economic_journal_nr']['integerValue'] ?? 1);
     $voucherBody = json_encode([
         'accountingYear'  => ['year' => date('Y', strtotime(substr($now, 0, 10)))],
-        'date'            => substr($now, 0, 10),
-        'financeVouchers' => [[
+        'date'    => substr($now, 0, 10),
+        'entries' => ['financeVouchers' => [[
             'text'          => substr($uf['beskrivelse']['stringValue'] ?? '', 0, 250),
             'amount'        => $belob,
             'account'       => ['accountNumber' => (int)$kontering],
             'contraAccount' => ['accountNumber' => (int)($config['economic_contra_account']['integerValue'] ?? 6610)],
-        ]],
+        ]]],
     ]);
     $econRaw = @file_get_contents("https://restapi.e-conomic.com/journals/{$journalNr}/vouchers", false,
         stream_context_create(['http' => [

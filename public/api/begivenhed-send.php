@@ -174,6 +174,7 @@ if (in_array($kanal, ['sms', 'begge'], true)) {
     // Hent telefonnumre live fra Conventus: conventus_id (string) → msisdn (int)
     $phoneMap = hent_conventus_telefonmap(getenv('CONVENTUS_KEY') ?: '');
 
+    $lastSmsError = null;
     foreach ($udtagne as $deltager) {
         $msisdn = $phoneMap[$deltager['id']] ?? null;
         if (!$msisdn) continue;
@@ -197,7 +198,12 @@ if (in_array($kanal, ['sms', 'begge'], true)) {
             'ignore_errors' => true,
         ]]));
         $gwData = json_decode($gwResp ?: '{}', true);
-        if (isset($gwData['ids']) && !isset($gwData['code'])) { $smsSendt++; } else { $smsFejlet++; }
+        if (isset($gwData['ids']) && !isset($gwData['code'])) {
+            $smsSendt++;
+        } else {
+            $smsFejlet++;
+            $lastSmsError = $gwData['message'] ?? ($gwData['code'] ?? $gwResp);
+        }
     }
 
     $smsParts = sms_parts_bev($smsText ?? '');
@@ -237,6 +243,8 @@ if ($sendt > 0) {
     ]]));
 }
 
-echo json_encode(['ok' => true, 'sendt' => $sendt, 'fejlet' => $fejlet]);
+$resp = ['ok' => true, 'sendt' => $sendt, 'fejlet' => $fejlet];
+if ($lastSmsError !== null) $resp['smsError'] = (string)$lastSmsError;
+echo json_encode($resp, JSON_UNESCAPED_UNICODE);
 
 // Hjælpefunktioner er i _send_helpers.php (loaded via require_once ovenfor)
