@@ -58,9 +58,9 @@ function econ_get(string $url, string $appToken, string $agrToken): array {
 
 $results = [];
 
-// ── 1. Journal (via ny Open API — det er den vi poster til) ───────────────────
+// ── 1. Journal (via legacy REST API — det er der vi poster til) ──────────────
 if ($journalNr) {
-    $r = econ_get("https://apis.e-conomic.com/api/journals/{$journalNr}", $econAppToken, $econAgrToken);
+    $r = econ_get("https://restapi.e-conomic.com/journals/{$journalNr}", $econAppToken, $econAgrToken);
     $results['journal'] = [
         'nr'     => $journalNr,
         'ok'     => $r['status'] === 200,

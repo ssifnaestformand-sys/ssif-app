@@ -196,29 +196,32 @@ if ($econAppToken && $econAgrToken && $kontering && $kontering !== '__bogholder_
             }
         }
 
-        // ── Trin 4: Open API-kald ─────────────────────────────────────────────
-        $afdData   = $afdelinger[$afdeling] ?? [];
-        $econAfdNr = $afdData['econAfdelingNr'] ?? '';
-        $dueDate   = date('Y-m-d', strtotime($today . ' +14 days'));
+        // ── Trin 4: REST API-kald (leverandørfaktura via entries.supplierInvoices) ──
+        $afdData    = $afdelinger[$afdeling] ?? [];
+        $econAfdNr  = $afdData['econAfdelingNr'] ?? '';
+        $creditorNr = (int)($config['economic_creditor_nr']['integerValue'] ?? 0);
+        $dueDate    = date('Y-m-d', strtotime($today . ' +14 days'));
+        $tekst      = substr($uf['kommentar']['stringValue'] ?? $uf['beskrivelse']['stringValue'] ?? '', 0, 250);
+
+        $entry = [
+            'date'     => $today,
+            'dueDate'  => $dueDate,
+            'amount'   => $belob,
+            'currency' => ['code' => 'DKK'],
+            'text'     => $tekst,
+            'account'  => ['accountNumber' => (int)$kontering],
+        ];
+        if ($creditorNr) $entry['supplier']  = ['supplierNumber' => $creditorNr];
+        if ($econAfdNr)  $entry['project']   = ['projectNumber'  => (int)$econAfdNr];
 
         $payload = [
-            'entryTypeNumber' => 3,
-            'currency'        => 'DKK',
-            'amount'          => $belob,
-            'date'            => $today,
-            'dueDate'         => $dueDate,
-            'accountingYear'  => (int)date('Y'),
-            'voucherNumber'   => $nextNr,
-            'accountNumber'   => (int)$kontering,
-            'vatCode'         => '',
-            'text'            => substr($uf['kommentar']['stringValue'] ?? $uf['beskrivelse']['stringValue'] ?? '', 0, 250),
+            'accountingYear' => ['year' => date('Y')],
+            'journal'        => ['journalNumber' => $journalNr],
+            'voucherNumber'  => $nextNr,
+            'entries'        => ['supplierInvoices' => [$entry]],
         ];
-        $creditorNr = (int)($config['economic_creditor_nr']['integerValue'] ?? 0);
-        if ($creditorNr) $payload['creditorNumber'] = $creditorNr;
-        if ($econAfdNr)  $payload['projectNumber']  = (int)$econAfdNr;
-        if ($attachData) $payload['attachment']      = $attachData;
 
-        $econRaw = @file_get_contents("https://apis.e-conomic.com/api/journals/{$journalNr}/vouchers", false,
+        $econRaw = @file_get_contents("https://restapi.e-conomic.com/journals/{$journalNr}/vouchers", false,
             stream_context_create(['http' => [
                 'method'        => 'POST',
                 'header'        => "X-AppSecretToken: {$econAppToken}\r\nX-AgreementGrantToken: {$econAgrToken}\r\nContent-Type: application/json\r\n",
@@ -258,7 +261,7 @@ $econStatus    = 'skipped';
 $econSvarStr   = '';
 $econVoucherId = null;
 if ($econAppToken && $econAgrToken && $kontering && $kontering !== '__bogholder__') {
-    $econIsError = isset($econResult['message']) || isset($econResult['httpStatusCode']);
+    $econIsError = isset($econResult['message']) || isset($econResult['httpStatusCode']) || isset($econResult['errorCode']);
     if ($econResult && !$econIsError) {
         $econStatus    = 'posted';
         $econVoucherId = $econResult['voucherNumber'] ?? null;
