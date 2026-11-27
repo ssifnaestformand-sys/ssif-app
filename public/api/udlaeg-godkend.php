@@ -172,6 +172,7 @@ if ($econAppToken && $econAgrToken && $kontering && $kontering !== '__bogholder_
         'accountingYear'  => ['year' => date('Y', strtotime(substr($now, 0, 10)))],
         'date'    => substr($now, 0, 10),
         'entries' => ['financeVouchers' => [[
+            'date'          => substr($now, 0, 10),
             'text'          => substr($uf['beskrivelse']['stringValue'] ?? '', 0, 250),
             'amount'        => $belob,
             'account'       => ['accountNumber' => (int)$kontering],
