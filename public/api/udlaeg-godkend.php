@@ -184,15 +184,16 @@ if ($econAppToken && $econAgrToken && $kontering && $kontering !== '__bogholder_
                 'ignore_errors' => true,
             ]]));
 
-        // ── Trin 3: Download og base64-encod kvittering ───────────────────────
-        $kvitUrl    = $uf['kvitteringUrl']['stringValue'] ?? '';
-        $attachData = null;
+        // ── Trin 3: Download kvittering (rå bytes til multipart upload bagefter) ─
+        $kvitUrl   = $uf['kvitteringUrl']['stringValue'] ?? '';
+        $fileBytes = null;
+        $fileMime  = null;
         if ($kvitUrl) {
-            $fileBytes = @file_get_contents($kvitUrl, false, stream_context_create(['http' => ['timeout' => 15, 'ignore_errors' => true]]));
-            if ($fileBytes) {
-                $ext  = strtolower(pathinfo(parse_url($kvitUrl, PHP_URL_PATH), PATHINFO_EXTENSION));
-                $mime = match($ext) { 'pdf' => 'application/pdf', 'png' => 'image/png', 'gif' => 'image/gif', default => 'image/jpeg' };
-                $attachData = ['content' => base64_encode($fileBytes), 'contentType' => $mime];
+            $fb = @file_get_contents($kvitUrl, false, stream_context_create(['http' => ['timeout' => 15, 'ignore_errors' => true]]));
+            if ($fb) {
+                $ext      = strtolower(pathinfo(parse_url($kvitUrl, PHP_URL_PATH), PATHINFO_EXTENSION));
+                $fileMime = match($ext) { 'pdf' => 'application/pdf', 'png' => 'image/png', 'gif' => 'image/gif', default => 'image/jpeg' };
+                $fileBytes = $fb;
             }
         }
 
@@ -211,9 +212,8 @@ if ($econAppToken && $econAgrToken && $kontering && $kontering !== '__bogholder_
             'text'         => $tekst,
             'contraAccount' => ['accountNumber' => (int)$kontering],
         ];
-        if ($creditorNr) $entry['supplier']   = ['supplierNumber' => $creditorNr];
-        if ($econAfdNr)  $entry['project']    = ['projectNumber'  => (int)$econAfdNr];
-        if ($attachData) $entry['attachment'] = $attachData;
+        if ($creditorNr) $entry['supplier'] = ['supplierNumber' => $creditorNr];
+        if ($econAfdNr)  $entry['project']  = ['projectNumber'  => (int)$econAfdNr];
 
         $payload = [
             'accountingYear' => ['year' => date('Y')],
@@ -267,6 +267,33 @@ if ($econAppToken && $econAgrToken && $kontering && $kontering !== '__bogholder_
         $econStatus    = 'posted';
         $econVoucherId = $econResult['voucherNumber'] ?? null;
         $econSvarStr   = substr(json_encode($econResult, JSON_UNESCAPED_UNICODE), 0, 800);
+
+        // ── Vedhæft kvittering som multipart upload til bilaget ───────────────
+        if ($econMode === 'leverandorfaktura' && $fileBytes && $fileMime) {
+            $econYear = $econResult['accountingYear']['year'] ?? date('Y');
+            $econVnr  = $econResult['entries']['supplierInvoices'][0]['voucher']['voucherNumber']
+                        ?? ($econVoucherId ?? $nextNr);
+            $boundary = '----EconBoundary' . uniqid();
+            $fileExt  = match($fileMime) { 'application/pdf' => 'pdf', 'image/png' => 'png', 'image/gif' => 'gif', default => 'jpg' };
+            $mpBody   = "--{$boundary}\r\n"
+                      . "Content-Disposition: form-data; name=\"\"; filename=\"kvittering.{$fileExt}\"\r\n"
+                      . "Content-Type: {$fileMime}\r\n\r\n"
+                      . $fileBytes . "\r\n"
+                      . "--{$boundary}--\r\n";
+            @file_get_contents(
+                "https://restapi.e-conomic.com/journals/{$journalNr}/vouchers/{$econYear}-{$econVnr}/attachment/file",
+                false,
+                stream_context_create(['http' => [
+                    'method'        => 'POST',
+                    'header'        => "X-AppSecretToken: {$econAppToken}\r\n"
+                                     . "X-AgreementGrantToken: {$econAgrToken}\r\n"
+                                     . "Content-Type: multipart/form-data; boundary={$boundary}\r\n",
+                    'content'       => $mpBody,
+                    'timeout'       => 20,
+                    'ignore_errors' => true,
+                ]])
+            );
+        }
     } else {
         $econStatus = 'error';
         if ($econResult) {
