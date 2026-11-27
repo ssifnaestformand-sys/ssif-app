@@ -7982,6 +7982,8 @@ function UdlaegKonfig({ authUser }) {
   const [journals,        setJournals]        = useState([]) // [{nr, navn}] fra e-conomic
   const [journalsLoading, setJournalsLoading] = useState(false)
   const [journalsError,   setJournalsError]   = useState('')
+  const [econTest,        setEconTest]        = useState(null)  // { journal, konto, leverandoer }
+  const [econTesting,     setEconTesting]     = useState(false)
 
   useEffect(() => {
     // Hent trænere (isLeder=true i members) til formand-dropdown — samme kilde som Trænere-oversigten
@@ -8038,6 +8040,26 @@ function UdlaegKonfig({ authUser }) {
       else setJournalsError(data.error || 'Fejl fra e-conomic')
     } catch { setJournalsError('Netværksfejl') }
     finally { setJournalsLoading(false) }
+  }
+
+  async function testEconomic() {
+    setEconTesting(true); setEconTest(null)
+    try {
+      const idToken = await authUser.getIdToken()
+      const res = await fetch('/api/udlaeg-economic-test.php', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          journalNr:     parseInt(journalNr) || 0,
+          accountNumber: 0, // ingen specifik konto at tjekke fra config
+          creditorNumber: parseInt(econCreditorNr) || 0,
+        }),
+      })
+      const data = await res.json()
+      if (data.ok) setEconTest(data.results)
+      else setEconTest({ _error: data.error || 'Fejl' })
+    } catch { setEconTest({ _error: 'Netværksfejl' }) }
+    finally { setEconTesting(false) }
   }
 
   async function handleGem() {
@@ -8141,6 +8163,41 @@ function UdlaegKonfig({ authUser }) {
         )}
         {econMode === 'leverandorfaktura' && (
           <LabelInput label="e-conomic kreditornummer (f.eks. 1111)" value={econCreditorNr} onChange={setEconCreditorNr} type="number" placeholder="1111" />
+        )}
+        {econMode === 'leverandorfaktura' && (
+          <div>
+            <button type="button" onClick={testEconomic} disabled={econTesting}
+              style={{ fontSize: 13, padding: '7px 14px', borderRadius: 8, border: '1.5px solid var(--border)', background: 'none', cursor: 'pointer', fontWeight: 600 }}>
+              {econTesting ? 'Tester…' : '🔍 Test e-conomic forbindelse'}
+            </button>
+            {econTest && !econTest._error && (
+              <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {[
+                  ['journal',     `Kladde nr. ${econTest.journal?.nr}`],
+                  ['konto',       econTest.konto?.nr ? `Konto ${econTest.konto.nr}` : null],
+                  ['leverandoer', econTest.leverandoer?.nr ? `Leverandør ${econTest.leverandoer.nr}` : null],
+                ].filter(([, lbl]) => lbl).map(([key, lbl]) => {
+                  const r = econTest[key]
+                  const ok = r?.ok
+                  if (ok === null || ok === undefined) return null
+                  return (
+                    <div key={key} style={{ fontSize: 13, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                      <span>{ok ? '✓' : '✗'}</span>
+                      <span style={{ color: ok ? '#166534' : '#dc2626' }}>
+                        <strong>{lbl}</strong>
+                        {r.navn ? ` — ${r.navn}` : ''}
+                        {!ok && r.status ? ` (HTTP ${r.status})` : ''}
+                      </span>
+                    </div>
+                  )
+                })}
+                {econTest.leverandoer?.ok === null && (
+                  <div style={{ fontSize: 12, color: 'var(--text3)' }}>⚪ Leverandør — intet kreditornummer konfigureret</div>
+                )}
+              </div>
+            )}
+            {econTest?._error && <p style={{ fontSize: 13, color: '#dc2626', marginTop: 8 }}>{econTest._error}</p>}
+          </div>
         )}
       </div>
 
