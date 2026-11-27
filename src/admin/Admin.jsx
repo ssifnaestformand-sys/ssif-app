@@ -7844,7 +7844,8 @@ function UdlaegOversigt({ authUser }) {
               }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>e-conomic</div>
                 {!selected.econStatus && <p style={{ fontSize: 13, color: 'var(--text3)', margin: 0 }}>Ingen data — godkendt før logging blev tilføjet</p>}
-                {selected.econStatus === 'skipped' && <p style={{ fontSize: 13, color: 'var(--text3)', margin: 0 }}>Spring over (kontering: bogholderen)</p>}
+                {selected.econStatus === 'skipped' && <p style={{ fontSize: 13, color: 'var(--text3)', margin: 0 }}>Spring over — konteres af bogholderen</p>}
+        {selected.econStatus === 'skipped_no_supplier' && <p style={{ fontSize: 13, color: '#b45309', margin: 0 }}>⚠ Leverandørnummer ikke konfigureret i backoffice</p>}
                 {selected.econStatus === 'posted' && (
                   <p style={{ fontSize: 13, color: '#166534', margin: 0, fontWeight: 600 }}>
                     ✓ Bilag oprettet{selected.econVoucherId ? ` — faktura #${selected.econVoucherId}` : ''}

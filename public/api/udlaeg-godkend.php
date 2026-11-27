@@ -195,7 +195,7 @@ if ($econAppToken && $econAgrToken && $supplierNr && $kontering && $kontering !=
 }
 
 // ── Gem e-conomic-svar i Firestore ────────────────────────────────────────────
-$econStatus    = 'skipped';
+$econStatus    = ($kontering === '__bogholder__') ? 'skipped' : 'skipped_no_supplier';
 $econSvarStr   = '';
 $econVoucherId = null;
 if ($econAppToken && $econAgrToken && $supplierNr && $kontering && $kontering !== '__bogholder__') {
