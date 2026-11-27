@@ -17,7 +17,9 @@
       "Bash(LANG=C LC_ALL=C perl -pe 's/\\\\xd0\\\\xa7\\\\xd0\\\\xbb\\\\xd0\\\\xb5\\\\xd0\\\\xbd/Medl\\\\x65m/g' /Users/peterh.-kristensen/Documents/GitHub/ssif-app/src/App.jsx)",
       "Bash(grep -v \"^$\")",
       "Bash(python3 -c ' *)",
-      "Bash(firebase deploy *)"
+      "Bash(firebase deploy *)",
+      "WebFetch(domain:restdocs.e-conomic.com)",
+      "WebFetch(domain:restapi.e-conomic.com)"
     ]
   }
 }
