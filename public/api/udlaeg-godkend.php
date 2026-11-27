@@ -211,17 +211,23 @@ if ($econAppToken && $econAgrToken && $supplierNr && $kontering && $kontering !=
 $econFields = ['econStatus' => ['stringValue' => $econStatus]];
 if ($econSvarStr)   $econFields['econSvar']     = ['stringValue'  => $econSvarStr];
 if ($econVoucherId) $econFields['econVoucherId'] = ['integerValue' => (string)$econVoucherId];
-$econMask = implode('&', array_map(fn($k) => 'updateMask.fieldPaths=' . urlencode($k), array_keys($econFields)));
-@file_get_contents("{$base}/udlaeg/{$udlaegId}?{$econMask}", false, stream_context_create(['http' => [
+$econMask    = implode('&', array_map(fn($k) => 'updateMask.fieldPaths=' . urlencode($k), array_keys($econFields)));
+$econPatchRaw = @file_get_contents("{$base}/udlaeg/{$udlaegId}?{$econMask}", false, stream_context_create(['http' => [
     'method'        => 'PATCH',
     'header'        => "Authorization: Bearer {$fsToken}\r\nContent-Type: application/json\r\n",
     'content'       => json_encode(['fields' => $econFields]),
     'timeout'       => 5,
     'ignore_errors' => true,
 ]]));
+$econPatchStatus = ($http_response_header ?? [''])[0] ?? '';
+$econPatchOk     = str_contains($econPatchStatus, '200');
 
 echo json_encode([
-    'ok'       => true,
-    'status'   => 'godkendt',
-    'economic' => $econStatus,
+    'ok'            => true,
+    'status'        => 'godkendt',
+    'economic'      => $econStatus,
+    'econSvar'      => $econSvarStr ?: null,
+    'econPatchOk'   => $econPatchOk,
+    'econPatchHttp' => $econPatchStatus,
+    'supplierNr'    => $supplierNr,
 ], JSON_UNESCAPED_UNICODE);
