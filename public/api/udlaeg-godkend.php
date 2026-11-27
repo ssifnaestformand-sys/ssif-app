@@ -22,6 +22,39 @@ set_cors_headers();
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(200); exit; }
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') { http_response_code(405); echo json_encode(['error' => 'Kun POST']); exit; }
 
+function generate_approval_pdf(array $lines): string {
+    $stream = "BT\n/F1 11 Tf\n18 TL\n50 790 Td\n";
+    foreach ($lines as $line) {
+        $safe    = str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], $line);
+        $stream .= "({$safe}) Tj\nT*\n";
+    }
+    $stream .= "ET";
+    $slen = strlen($stream);
+    $objects = [
+        1 => "<</Type /Catalog /Pages 2 0 R>>",
+        2 => "<</Type /Pages /Kids [3 0 R] /Count 1>>",
+        3 => "<</Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources <</Font <</F1 4 0 R>>>> /Contents 5 0 R>>",
+        4 => "<</Type /Font /Subtype /Type1 /BaseFont /Helvetica>>",
+        5 => "<</Length {$slen}>>\nstream\n{$stream}\nendstream",
+    ];
+    $pdf = "%PDF-1.4\n";
+    $offsets = [];
+    foreach ($objects as $n => $obj) {
+        $offsets[$n] = strlen($pdf);
+        $pdf .= "{$n} 0 obj\n{$obj}\nendobj\n";
+    }
+    $xref  = strlen($pdf);
+    $count = count($objects) + 1;
+    $pdf  .= "xref\n0 {$count}\n";
+    $pdf  .= "0000000000 65535 f \n";
+    for ($i = 1; $i <= count($objects); $i++) {
+        $pdf .= sprintf("%010d 00000 n \n", $offsets[$i]);
+    }
+    $pdf .= "trailer\n<</Size {$count} /Root 1 0 R>>\n";
+    $pdf .= "startxref\n{$xref}\n%%EOF";
+    return $pdf;
+}
+
 $auth       = trainer_auth();
 $uid        = $auth['uid'];
 $email      = $auth['email'];
@@ -214,6 +247,12 @@ if ($econAppToken && $econAgrToken && $kontering && $kontering !== '__bogholder_
         ];
         if ($creditorNr) $entry['supplier'] = ['supplierNumber' => $creditorNr];
         if ($econAfdNr)  $entry['project']  = ['projectNumber'  => (int)$econAfdNr];
+        if ($regNr && $kontoNr) {
+            $bankStr = str_pad($regNr, 4, '0', STR_PAD_LEFT) . str_pad($kontoNr, 8, '0', STR_PAD_LEFT);
+            $entry['supplierPaymentBank']    = $bankStr;
+            $entry['supplierPaymentMessage'] = 'XXXXX';
+            $entry['supplierPaymentType']    = 7;
+        }
 
         $payload = [
             'accountingYear' => ['year' => date('Y')],
@@ -289,6 +328,41 @@ if ($econAppToken && $econAgrToken && $kontering && $kontering !== '__bogholder_
                                      . "X-AgreementGrantToken: {$econAgrToken}\r\n"
                                      . "Content-Type: multipart/form-data; boundary={$boundary}\r\n",
                     'content'       => $mpBody,
+                    'timeout'       => 20,
+                    'ignore_errors' => true,
+                ]])
+            );
+
+            // ── Godkendelsesdokument (PATCH — tilføjer side til eksisterende attachment) ─
+            $pdfLines    = [
+                'Godkendelse af udlaeg',
+                '',
+                'Beskrivelse:  ' . substr($uf['beskrivelse']['stringValue'] ?? '', 0, 80),
+                'Belob:        ' . number_format($belob, 2, ',', '.') . ' DKK',
+                '',
+                'Indsender:    ' . ($uf['afsenderNavn']['stringValue'] ?? ''),
+                'Godkendt af:  ' . $displayName,
+                'Email:        ' . $email,
+                'Tidspunkt:    ' . substr($now, 0, 19) . ' UTC',
+                '',
+                'Automatisk genereret af SSIF-traenervaerktoejet.',
+            ];
+            $approvalPdf = generate_approval_pdf($pdfLines);
+            $boundary2   = '----EconBoundary' . uniqid();
+            $mpBody2     = "--{$boundary2}\r\n"
+                         . "Content-Disposition: form-data; name=\"\"; filename=\"godkendelse.pdf\"\r\n"
+                         . "Content-Type: application/pdf\r\n\r\n"
+                         . $approvalPdf . "\r\n"
+                         . "--{$boundary2}--\r\n";
+            @file_get_contents(
+                "https://restapi.e-conomic.com/journals/{$journalNr}/vouchers/{$econYear}-{$econVnr}/attachment/file",
+                false,
+                stream_context_create(['http' => [
+                    'method'        => 'PATCH',
+                    'header'        => "X-AppSecretToken: {$econAppToken}\r\n"
+                                     . "X-AgreementGrantToken: {$econAgrToken}\r\n"
+                                     . "Content-Type: multipart/form-data; boundary={$boundary2}\r\n",
+                    'content'       => $mpBody2,
                     'timeout'       => 20,
                     'ignore_errors' => true,
                 ]])
